@@ -259,19 +259,28 @@ impl App {
         if self.logs.package_job.is_some() {
             return;
         }
-        let Some(dir) = pick_folder(&t("Choose where to save the silent installer")) else {
+        let Some(dir) = pick_folder(&t("Choose where to save the setup package")) else {
             return;
         };
         let reg = self.reg.clone();
         let root = self.store.root.clone();
         self.set_status(tf(
-            "Making a silent installer for {name}…",
+            "Creating a setup package for {name}…",
             &[("name", log.name.clone())],
         ));
         self.logs.package_job = Some(Job::spawn(&self.ctx, move |pr| {
             let s =
                 expunge_core::repackage::repackage(&log, reg.as_ref(), &dir, &|p| pr.set_phase(p))
                     .map_err(|e| e.to_string())?;
+            if s.missing > 0 {
+                return Ok((
+                    s.folder,
+                    Err(format!(
+                        "{} captured file(s) are missing; no Setup.exe was created. Review the install log or make a fresh capture.",
+                        s.missing
+                    )),
+                ));
+            }
             let setup = expunge_core::patools::ensure(&root, &|p| pr.set_phase(p.to_string()))
                 .and_then(|tc| {
                     expunge_core::patools::build_silent_setup(
@@ -295,14 +304,14 @@ impl App {
         match r {
             Ok((_, Ok(setup))) => {
                 self.set_status(tf(
-                    "Silent installer ready: {file}",
+                    "Setup package ready: {file}",
                     &[("file", setup.display().to_string())],
                 ));
                 expunge_core::platform::reveal(&setup.to_string_lossy());
             }
             Ok((folder, Err(e))) => {
                 self.set_status(tf(
-                    "The deploy folder is ready, but Setup.exe couldn't be made: {error}",
+                    "The deploy folder is ready, but Setup.exe could not be created: {error}",
                     &[("error", e)],
                 ));
                 expunge_core::platform::shell_open(&folder.to_string_lossy());
@@ -632,6 +641,23 @@ impl App {
                         let full = self.logs.logs[idx].clone();
                         self.uninstall_from_log(&full);
                     }
+                    if ui
+                        .add_enabled(
+                            self.logs.package_job.is_none(),
+                            egui::Button::new(t("Create Setup Package…")),
+                        )
+                        .on_hover_text(t("Build a silent Setup.exe and deploy folder from this recorded installation."))
+                        .clicked()
+                    {
+                        let id = self.logs.logs[idx].id.clone();
+                        match self.store.load_log(&id) {
+                            Ok(full) => self.start_silent_package(full),
+                            Err(error) => self.set_status(tf(
+                                "Could not load this install log: {error}",
+                                &[("error", error.to_string())],
+                            )),
+                        }
+                    }
                     ui.menu_button(t("Export"), |ui| {
                         for (ext, label) in [
                             ("html", "HTML report"),
@@ -646,16 +672,6 @@ impl App {
                                 let full = self.logs.logs[idx].clone();
                                 self.export_log(&full, ext);
                             }
-                        }
-                        ui.separator();
-                        if ui
-                            .add_enabled(self.logs.package_job.is_none(), egui::Button::new(t("Silent installer (Setup.exe)…")))
-                            .on_hover_text(t("Redeploy this exact version later without the setup wizard: one silent Setup.exe, plus a folder with the files, install.reg, install.ps1 and uninstall.ps1."))
-                            .clicked()
-                        {
-                            ui.close();
-                            let full = self.store.load_log(&self.logs.logs[idx].id).unwrap_or_else(|_| self.logs.logs[idx].clone());
-                            self.start_silent_package(full);
                         }
                     });
                     if ui.button(format!("🖨 {}", t("Print"))).on_hover_text(t("Open the report in your browser and print it.")).clicked() {

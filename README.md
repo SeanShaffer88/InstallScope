@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <b>A free, open-source replacement for Total Uninstall, built for Windows 11</b><br>
-  Record exactly what an installation changes, then remove exactly that, and nothing else.
+  <b>An all-Rust Windows 11 utility for safer software removal, install monitoring, and portable packaging</b><br>
+  Record what an installation changes. Review it, restore it, or repackage it.
 </p>
 
 <p align="center">
@@ -27,15 +27,15 @@
 
 ## Overview
 
-Most uninstallers run the vendor's own uninstaller and then *guess* at what was left behind. Snapshot tools such as Regshot show a before-and-after comparison, but stop there.
+Most uninstallers run the vendor's uninstaller and then *guess* at what was left behind. Snapshot tools show a before-and-after comparison, but stop there.
 
-**Expunge closes that gap.** It takes a snapshot of the system before and after an installation and records every file, folder, registry key and value, service, and scheduled task that changed. Later, it turns that record into a precise, reviewable removal plan. Everything Expunge deletes or changes is backed up first, so it can be undone.
+**Expunge connects install monitoring to reviewable cleanup.** It records installation changes, builds an itemized removal plan, and backs up supported changes before applying them so they can be restored. Its Windows toolkit also includes classic uninstall with a leftover scan, startup and cleanup utilities, snapshots, a System Restore manager, a Portable App Builder, and silent setup-package generation from a recorded install.
 
-Expunge does everything [Total Uninstall](https://www.martau.com/) does, from install monitoring and complete uninstallation to the cleaner, the autorun manager, snapshots, profiles and moving programs to another PC, and it is free for everyone under the GPLv3. It also adds tools of its own: a **map of where every installation put things**, **confidence colours** on every leftover, a **pre-install check** for adware with an optional test run in Windows Sandbox, **silent installers** made from any recorded installation, **Ask Expunge** for questions in plain language, **usage tracking** that finds the programs you never open, suggestions of **lightweight alternatives** installable through winget or Scoop, a **right-click menu manager**, a one-click **Bloatware Shield**, a **System Restore manager** and a **Portable App Builder** that turns any installer into a PortableApps.com package.
+Expunge is free software under the GPLv3. It is built for everyday Windows users, power users, and developers who want clear reviews, recoverable changes, local-first operation, and practical setup tools. See the feature guide below for what is available today and the roadmap for work that is still planned.
 
-## Everything Total Uninstall does, and more
+## Core uninstaller and install-monitoring workflows
 
-Total Uninstall's features, as listed on its website, and where to find each one in Expunge:
+Expunge covers many workflows found in established uninstallers, with an emphasis on inspectable changes and recovery:
 
 | Total Uninstall feature | In Expunge |
 |---|---|
@@ -58,7 +58,7 @@ Total Uninstall's features, as listed on its website, and where to find each one
 | Command line | Full command line (`expunge --help`) |
 | Portable version | Portable download, for x64 and Arm64 |
 
-And what only Expunge has:
+Additional Expunge tools and differentiators:
 
 | Only in Expunge | Where |
 |---|---|
@@ -66,7 +66,7 @@ And what only Expunge has:
 | Confidence colours on leftovers: green (safe), yellow (review), red (careful), each with its reasons | Every removal review: **Select only green** |
 | Pre-install check for bundled adware, offer screens, coin miners, web installers and unsigned or tampered files | Monitor page, before an installer runs |
 | Test an installer in Windows Sandbox first and see everything it would change | Monitor page: **Test in Windows Sandbox first** |
-| Silent installer (`Setup.exe`) made from a recorded installation, for redeploying without the setup wizard | Install logs > Export > **Silent installer** |
+| Silent setup package (`Setup.exe`) made from a recorded installation, for redeploying without the setup wizard | Install logs > **Create Setup Package…** |
 | Questions in plain language ("top 5 space-wasters I haven't opened in 6 months") | **Ask Expunge** (Ctrl+K) |
 | When each program was last used, how often, its CPU use and startup cost | Program details, **Not used for 6 months** view, Dashboard |
 | Lightweight and open-source alternatives, installed with one click through winget or Scoop | Program details and after an uninstall |
@@ -101,7 +101,7 @@ Every installed program, and the safest way to remove it.
 - **Add a program by hand:** list a program Windows doesn't know about, such as a portable program, by choosing its folder. Expunge can then analyze it and remove it with everything it left behind.
 - **Program details:** publisher, version, install date, size, location, digital signature, uninstaller, and registry key, with buttons to open its folder, open its registry key, search online, or visit its website.
 - **Precise uninstallation of monitored programs:** added files, folders, registry keys, and values are deleted; values the installer changed or removed are **restored**; services are stopped and deleted; scheduled tasks are removed; and only the `PATH` entries the installer added are taken out.
-- **Classic uninstallation with a deep leftover scan:** after the vendor's uninstaller finishes, Expunge looks for remaining folders, shortcuts, registry keys, autostart entries, App Paths, services, COM registrations, file types and associations, context-menu entries, shell extensions, environment variables, `PATH` entries, firewall rules, scheduled tasks, and folders left empty. Every item is labeled *Safe*, *Review*, or *Careful* before anything is removed.
+- **Classic uninstallation with a deep leftover scan:** after the vendor's uninstaller finishes, Expunge looks for remaining folders, shortcuts, registry keys, autostart entries, App Paths, services, COM registrations, file types and associations, context-menu entries, shell extensions, environment variables, `PATH` entries, firewall rules, scheduled tasks, and folders left empty. The system-wide scan also finds clearly stale uninstall registry entries, but only when both the declared install folder and uninstaller are missing; it excludes MSI, hidden, protected, and Windows-owned entries. Every item is reviewed before removal and registry data is backed up.
 - **Unattended batch uninstallation:** tick any number of programs and walk away. Silent switches are detected for each installer technology (Windows Installer, Inno Setup, NSIS, WiX, and Squirrel); uninstallers run one at a time; restarts are held until the end; stalled uninstallers are skipped; and one combined leftover scan follows.
 - **Silent uninstallation** of a single program, and **forced removal** (Advanced mode) when a program's uninstaller is broken or missing.
 - **Trust information:** who digitally signed each program, with unsigned programs and broken signatures (possible tampering) flagged.
@@ -144,7 +144,7 @@ Everything each monitored installation changed.
 - **"Which program created this?":** type part of any file or registry path to find the monitored program it belongs to.
 - **Merge logs:** combine a program and its update or plugins into one log. Later changes win, and the originals are kept.
 - **Export** a log as an HTML report, XML, a `.reg` undo script, a PowerShell removal script, JSON for import on another PC, or **PortableApps.com Launcher settings**. **Print** opens a print-ready report.
-- **Silent installer:** turn a recorded installation into a `Setup.exe` that installs exactly that version again without any wizard, plus a folder with the files, `install.reg`, `install.ps1` and `uninstall.ps1`, for redeploying to other PCs.
+- **Setup Package Creator:** select **Create Setup Package…** on an install log to build a silent `Setup.exe` and companion deploy folder (`install.reg`, `install.ps1`, `uninstall.ps1`, and captured files) for redeploying that recorded installation on another PC. Expunge refuses to create `Setup.exe` when captured files are missing or copying fails, rather than producing a misleading partial installer. This creates a silent deployment package, not a customizable interactive setup wizard.
 - **Uninstall from the log** with the same precise removal as the Programs page.
 
 ### Backups
@@ -335,6 +335,27 @@ cargo build --release
 
 Expunge builds with stable Rust on Windows. If Visual Studio is not installed, push to GitHub and let the included Actions workflow build it, or cross-compile from Linux (see `scripts/cross-env.sh`). Releases are built automatically when a `v*` tag is pushed.
 
+The first native Win32 Programs view is available as an experimental preview.
+Its dark/red app shell and sidebar follow the product screenshots; Programs is
+the only migrated page, and the other sidebar destinations are visual
+placeholders while their workflows remain in the regular interface:
+
+```
+cargo run --features native-ui-preview
+```
+
+It supports browsing, search, program details, and **Find by window**. The
+Tools menu also runs the same reviewed, backup-aware system-wide leftovers
+scan as the regular interface, including the conservative stale uninstall
+registration checks.
+**Uninstall** starts the vendor uninstaller for registered desktop programs or
+asks Windows to remove a Store app for the current user. After the operation
+succeeds, Expunge presents leftovers in a risk-scored checklist before removal;
+cleanup uses Expunge's backup and protected-target checks. Manually added
+entries remain browse-only in this preview. The window picker requires a
+unique executable path/install-location match and never starts an uninstall.
+The regular build continues to use the complete interface.
+
 The core engine (`src/`, excluding `gui/`) is fully unit-tested against an in-memory registry: `cargo test --lib`. Real installers are also installed, removed, checked, and turned into portable packages on clean Windows runners by the Integration workflow.
 
 ## How it works
@@ -399,7 +420,22 @@ If something does go wrong, almost anything Expunge does can be undone. Every fi
 
 ## Roadmap
 
-See [ROADMAP.md](ROADMAP.md). Ideas and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+Expunge already includes the [Portable App Builder](#portable-app-builder),
+[System Restore manager](#system-restore), [Snapshots](#snapshots), installer
+preflight checks, and Windows Sandbox-assisted installer preview/package
+capture on supported editions. The visible **Create Setup Package…** action
+builds a silent redeployment package from a captured install log; it is not a
+general-purpose interactive installer authoring wizard.
+
+The separate in-app Disposable Runner, read-only VSS content browser,
+temporary scratch volume, reviewed WinGet project-setup export, reversible
+per-project environment profiles, Dev Drive guidance, and optional handoff to
+installed Sysinternals tools remain planned—not available features. The
+Disposable Runner is intended to use restricted-token and Job Object
+containment; it must not be presented as a virtual machine or a stronger
+security boundary than its implementation. See [ROADMAP.md](ROADMAP.md) for
+scope and safety boundaries. Ideas and pull requests are welcome; see
+[CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ## License
 

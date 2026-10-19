@@ -260,7 +260,7 @@ impl App {
         let mut flow =
             super::plan::RemovalFlow::new(t("Leftovers of removed programs"), plan, false, false);
         flow.plan.info.push(t(
-            "These registrations point to files or folders that no longer exist. Windows' own entries are never included.",
+            "Uninstall entries are included only when both their declared install folder and uninstaller are missing. MSI, hidden, protected, and Windows-owned entries are excluded. Review every item before removal; selected registry data is backed up.",
         ));
         self.open_removal(flow);
     }
@@ -370,7 +370,7 @@ impl App {
                             d.insert_temp(egui::Id::new("expunge_keyboard_mode"), true)
                         });
                     }
-                    ui.menu_button(t("Tools"), |ui| {
+                    ui.menu_button(t("Utilities"), |ui| {
                         if ui.button(t("Install and monitor…")).clicked() {
                             ui.close();
                             self.tab = Tab::Monitor;
@@ -550,7 +550,7 @@ impl App {
                         "Monitor",
                         monitoring.then(|| "REC".to_string()),
                     ),
-                    (Tab::Logs, "📋", "Install logs", None),
+                    (Tab::Logs, "📋", "Install Logs", None),
                     (Tab::Backups, "💾", "Backups", None),
                     (Tab::Startup, "🚀", "Startup", None),
                     (Tab::Cleaner, "🗑", "Cleaner", None),
@@ -562,7 +562,7 @@ impl App {
                     }
                 }
                 ui.add_space(14.0);
-                ui.label(RichText::new(t("TOOLS")).small().color(theme::MUTED));
+                ui.label(RichText::new(t("Utilities")).small().color(theme::MUTED));
                 ui.add_space(2.0);
                 if theme::nav_item(
                     ui,
@@ -606,7 +606,7 @@ impl App {
                 if theme::nav_item(
                     ui,
                     "☰",
-                    &t("Right-click menu"),
+                    &t("Right-Click Menu"),
                     self.tab == Tab::Shell,
                     None,
                 )

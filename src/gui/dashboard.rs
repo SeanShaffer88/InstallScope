@@ -144,7 +144,7 @@ impl App {
                         ui,
                         "🔍",
                         "Find leftovers of removed programs",
-                        "Registrations, file types, PATH entries, firewall rules and tasks pointing to files that are gone",
+                        "Includes clearly stale uninstall entries and other registrations pointing to missing files",
                     ) {
                         self.scan_orphans();
                     }

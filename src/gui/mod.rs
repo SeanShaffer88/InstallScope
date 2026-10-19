@@ -15,6 +15,8 @@ mod filedialog;
 mod lab;
 mod logs;
 mod monitor;
+#[cfg(all(windows, feature = "native-ui-preview"))]
+mod native_programs;
 mod plan;
 mod precheck;
 mod programs;
@@ -160,27 +162,36 @@ fn install_fonts(ctx: &egui::Context) {
     ctx.set_fonts(fonts);
 }
 
-pub fn run(install_target: Option<String>, launch_args: Vec<String>) -> eframe::Result<()> {
-    let mut viewport = egui::ViewportBuilder::default()
-        .with_title("Expunge")
-        .with_inner_size([1180.0, 760.0])
-        .with_min_inner_size([820.0, 520.0])
-        .with_app_id("Expunge");
-    if let Some(icon) = load_icon() {
-        viewport = viewport.with_icon(Arc::new(icon));
+pub fn run(install_target: Option<String>, launch_args: Vec<String>) -> anyhow::Result<()> {
+    #[cfg(all(windows, feature = "native-ui-preview"))]
+    {
+        return native_programs::run(install_target, launch_args);
     }
-    let options = eframe::NativeOptions {
-        viewport,
-        renderer: eframe::Renderer::Wgpu,
-        centered: true,
-        ..Default::default()
-    };
-    eframe::run_native(
-        "Expunge",
-        options,
-        Box::new(|cc| {
-            install_fonts(&cc.egui_ctx);
-            Ok(Box::new(app::App::new(cc, install_target, launch_args)))
-        }),
-    )
+
+    #[cfg(not(all(windows, feature = "native-ui-preview")))]
+    {
+        let mut viewport = egui::ViewportBuilder::default()
+            .with_title("Expunge")
+            .with_inner_size([1180.0, 760.0])
+            .with_min_inner_size([820.0, 520.0])
+            .with_app_id("Expunge");
+        if let Some(icon) = load_icon() {
+            viewport = viewport.with_icon(Arc::new(icon));
+        }
+        let options = eframe::NativeOptions {
+            viewport,
+            renderer: eframe::Renderer::Wgpu,
+            centered: true,
+            ..Default::default()
+        };
+        eframe::run_native(
+            "Expunge",
+            options,
+            Box::new(|cc| {
+                install_fonts(&cc.egui_ctx);
+                Ok(Box::new(app::App::new(cc, install_target, launch_args)))
+            }),
+        )?;
+        Ok(())
+    }
 }

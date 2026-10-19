@@ -206,7 +206,8 @@ pub fn repackage_with(
         if let Some(parent) = dest.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        sum.bytes += std::fs::copy(src, &dest).unwrap_or(0);
+        sum.bytes += std::fs::copy(src, &dest)
+            .with_context(|| format!("could not copy captured file {}", src.display()))?;
         sum.files += 1;
     }
 

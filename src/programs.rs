@@ -463,10 +463,7 @@ pub fn parse_store_json(json: &str) -> Vec<InstalledProgram> {
 }
 
 pub fn remove_store_app(full_name: &str) -> anyhow::Result<String> {
-    let safe: String = full_name
-        .chars()
-        .filter(|c| c.is_alphanumeric() || "._-~".contains(*c))
-        .collect();
+    let safe = validate_store_package_name(full_name)?;
     let (code, out) = crate::platform::run_hidden(
         "powershell.exe",
         &[
@@ -481,6 +478,17 @@ pub fn remove_store_app(full_name: &str) -> anyhow::Result<String> {
     } else {
         anyhow::bail!("Remove-AppxPackage failed: {out}")
     }
+}
+
+fn validate_store_package_name(full_name: &str) -> anyhow::Result<&str> {
+    if full_name.is_empty()
+        || !full_name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || "._-~".contains(c))
+    {
+        anyhow::bail!("Invalid Store package full name");
+    }
+    Ok(full_name)
 }
 
 /// Export the program list as CSV.
@@ -702,6 +710,13 @@ mod tests {
         assert_eq!(l.len(), 1);
         assert_eq!(l[0].publisher, "Contoso");
         assert_eq!(parse_store_json(&format!("[{one},{one}]")).len(), 2);
+    }
+
+    #[test]
+    fn store_package_name_validation_rejects_empty_or_command_characters() {
+        assert!(validate_store_package_name("").is_err());
+        assert!(validate_store_package_name("Contoso.App'; Remove-Item").is_err());
+        assert!(validate_store_package_name("Contoso.App_1.0_x64__publisher").is_ok());
     }
 }
 
