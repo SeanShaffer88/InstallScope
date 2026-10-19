@@ -100,7 +100,12 @@ impl AppDetails {
     /// The folder in `App\` that holds the program's own files.
     pub fn app_dir(&self) -> String {
         let id = self.app_id();
-        id.strip_suffix("Portable").unwrap_or(&id).to_string()
+        let dir = id.strip_suffix("Portable").unwrap_or(&id);
+        if dir.is_empty() {
+            "App".into()
+        } else {
+            dir.to_string()
+        }
     }
 
     pub fn display_name(&self) -> String {
@@ -163,6 +168,15 @@ fn appinfo_ini_with_associations(
     file_types: &[String],
     protocols: &[String],
 ) -> String {
+    let name = paf_text(&d.display_name());
+    let publisher_name = paf_text(&d.publisher);
+    let packager_name = paf_text(&d.packager);
+    let publisher = match (publisher_name.as_str(), packager_name.as_str()) {
+        ("", "") => "Unknown".to_string(),
+        (p, "") => p.to_string(),
+        ("", k) => k.to_string(),
+        (p, k) => format!("{p} & {k}"),
+    };
     let yes_no = |v: bool| if v { "yes" } else { "no" };
     let deps = if needs.java || needs.x64_only || needs.admin {
         format!(
@@ -188,28 +202,24 @@ fn appinfo_ini_with_associations(
         section
     };
     let b = |v: bool| if v { "true" } else { "false" };
-    let publisher = match (d.publisher.trim(), d.packager.trim()) {
-        ("", "") => "Unknown".to_string(),
-        (p, "") => p.to_string(),
-        ("", k) => k.to_string(),
-        (p, k) => format!("{p} & {k}"),
-    };
     let category = if CATEGORIES.contains(&d.category.as_str()) {
         d.category.as_str()
     } else {
         "Utilities"
     };
-    let description: String = d
-        .description
-        .replace(['\r', '\n'], " ")
-        .chars()
-        .take(512)
-        .collect();
+    let description: String = paf_text(&d.description).chars().take(512).collect();
     let display_version = if d.version.trim().is_empty() {
         "1.0"
     } else {
         d.version.trim()
     };
+    let display_version = paf_text(display_version);
+    let homepage = paf_text(&d.homepage);
+    let language = paf_text(if d.language.trim().is_empty() {
+        "Multilingual"
+    } else {
+        d.language.trim()
+    });
     format!(
         "[Format]\r\nType=PortableApps.comFormat\r\nVersion=3.9\r\n\r\n\
          [Details]\r\nName={name}\r\nAppID={id}\r\nPublisher={publisher}\r\nHomepage={home}\r\n\
@@ -217,18 +227,32 @@ fn appinfo_ini_with_associations(
          [License]\r\nShareable={sh}\r\nOpenSource={os}\r\nFreeware={fw}\r\nCommercialUse={cu}\r\n\r\n\
          [Version]\r\nPackageVersion={pv}\r\nDisplayVersion={dv}\r\n\r\n\
          {deps}[Control]\r\nIcons=1\r\nStart={id}.exe\r\n\r\n{associations}",
-        name = d.display_name(),
+        name = name,
         id = d.app_id(),
-        home = d.homepage.trim(),
-        lang = if d.language.trim().is_empty() { "Multilingual" } else { d.language.trim() },
+        home = homepage,
+        lang = language,
         sh = b(d.shareable),
         os = b(d.open_source),
         fw = b(d.freeware),
         cu = b(d.commercial_use),
-        pv = package_version(display_version),
+        pv = package_version(&display_version),
         dv = display_version,
         associations = associations,
     )
+}
+
+fn paf_text(value: &str) -> String {
+    value
+        .chars()
+        .map(|c| match c {
+            '"' => '\'',
+            c if c.is_control() || c.is_whitespace() => ' ',
+            c => c,
+        })
+        .collect::<String>()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 fn registered_file_types(changes: &ChangeSet) -> Vec<String> {
@@ -698,6 +722,23 @@ fn help_html(d: &AppDetails) -> String {
         s.replace('&', "&amp;")
             .replace('<', "&lt;")
             .replace('>', "&gt;")
+            .replace('"', "&quot;")
+            .replace('\'', "&#39;")
+    };
+    let homepage = d.homepage.trim();
+    let safe_homepage = if (homepage
+        .get(..8)
+        .is_some_and(|scheme| scheme.eq_ignore_ascii_case("https://"))
+        || homepage
+            .get(..7)
+            .is_some_and(|scheme| scheme.eq_ignore_ascii_case("http://")))
+        && homepage
+            .chars()
+            .all(|c| !c.is_control() && !c.is_whitespace())
+    {
+        Some(homepage)
+    } else {
+        None
     };
     format!(
         "<!DOCTYPE html>\n<html lang=\"en\"><head><meta charset=\"utf-8\"><title>{name}</title>\
@@ -711,11 +752,9 @@ fn help_html(d: &AppDetails) -> String {
         name = h(&d.display_name()),
         base = h(d.name.trim()),
         desc = h(d.description.trim()),
-        home = if d.homepage.trim().is_empty() {
-            String::new()
-        } else {
-            format!("<p><a href=\"{0}\">{0}</a></p>\n", h(d.homepage.trim()))
-        },
+        home = safe_homepage
+            .map(|url| format!("<p><a href=\"{0}\">{0}</a></p>\n", h(url)))
+            .unwrap_or_default(),
     )
 }
 
@@ -1374,6 +1413,12 @@ mod tests {
         };
         assert_eq!(d.app_id(), "GIMPPortable");
         assert_eq!(d.display_name(), "GIMP Portable");
+        let d = AppDetails {
+            name: "Portable".into(),
+            ..Default::default()
+        };
+        assert_eq!(d.app_id(), "Portable");
+        assert_eq!(d.app_dir(), "App");
         assert_eq!(package_version("8.6.5"), "8.6.5.0");
         assert_eq!(package_version("v24.08 beta 2"), "24.8.2.0");
         assert_eq!(package_version("1.2.3.4.5"), "1.2.3.4");
@@ -1403,6 +1448,56 @@ mod tests {
         ] {
             assert!(ini.contains(want), "{want} missing:\n{ini}");
         }
+    }
+
+    #[test]
+    fn appinfo_metadata_cannot_inject_ini_sections() {
+        let d = AppDetails {
+            name: "Foo\r\n[Dependencies]\r\nRequiresAdmin=yes".into(),
+            publisher: "Acme\r\n[Control]\r\nIcons=99".into(),
+            packager: "Builder\"quoted".into(),
+            version: "1.2\r\n[Associations]\r\nProtocols=evil".into(),
+            homepage: "https://example.test/\r\n[License]\r\nShareable=false".into(),
+            language: "English\r\n[Dependencies]\r\nUsesJava=yes".into(),
+            description: "Useful\r\n[Control]\r\nIcons=0".into(),
+            ..Default::default()
+        };
+        let ini = appinfo_ini(&d);
+        let section_count = |section: &str| ini.lines().filter(|line| *line == section).count();
+        assert_eq!(section_count("[Dependencies]"), 0);
+        assert_eq!(section_count("[Control]"), 1);
+        assert_eq!(section_count("[Associations]"), 0);
+        assert_eq!(section_count("[License]"), 1);
+        assert!(
+            ini.contains("Publisher=Acme [Control] Icons=99 & Builder'quoted"),
+            "{ini}"
+        );
+        assert!(ini.contains("Homepage=https://example.test/ [License] Shareable=false"));
+        assert!(ini.contains("Language=English [Dependencies] UsesJava=yes"));
+        assert!(ini.contains("Description=Useful [Control] Icons=0"));
+    }
+
+    #[test]
+    fn help_html_escapes_metadata_and_only_links_http_urls() {
+        let d = AppDetails {
+            name: "Foo <script>alert(1)</script>".into(),
+            description: "A \"quoted\" & useful app".into(),
+            homepage: "javascript:alert(1)".into(),
+            ..Default::default()
+        };
+        let html = help_html(&d);
+        assert!(!html.contains("<script>"));
+        assert!(html.contains("&lt;script&gt;"));
+        assert!(html.contains("&quot;quoted&quot; &amp; useful app"));
+        assert!(!html.contains("href="));
+
+        let d = AppDetails {
+            homepage: "https://example.test/\"onmouseover=\"alert(1)".into(),
+            ..Default::default()
+        };
+        let html = help_html(&d);
+        assert!(html.contains("href=\"https://example.test/&quot;onmouseover=&quot;alert(1)\""));
+        assert!(!html.contains("\" onmouseover=\""));
     }
 
     #[test]
