@@ -4,9 +4,9 @@
 use super::theme;
 use super::widgets::*;
 use egui::{Color32, RichText};
-use expunge_core::difftree::{self, Area, Change, Counts, DiffTree, Node};
-use expunge_core::i18n::{t, tf};
-use expunge_core::model::{human_size, ChangeSet};
+use installscope_core::difftree::{self, Area, Change, Counts, DiffTree, Node};
+use installscope_core::i18n::{t, tf};
+use installscope_core::model::{human_size, ChangeSet};
 use std::rc::Rc;
 
 pub fn area_color(a: Area) -> Color32 {

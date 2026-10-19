@@ -7,10 +7,10 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use expunge_core::i18n::{t, tf};
-use expunge_core::model::{human_size, InstallLog};
-use expunge_core::pafbuild;
-use expunge_core::prescreen::{self, Level, Screening};
+use installscope_core::i18n::{t, tf};
+use installscope_core::model::{human_size, InstallLog};
+use installscope_core::pafbuild;
+use installscope_core::prescreen::{self, Level, Screening};
 use std::path::PathBuf;
 
 #[derive(Default)]
@@ -78,8 +78,9 @@ impl App {
                 } else {
                     match std::fs::read(work.join("install-log.json"))
                         .ok()
-                        .and_then(|b| expunge_core::json::compat::from_slice::<InstallLog>(&b).ok())
-                    {
+                        .and_then(|b| {
+                            installscope_core::json::compat::from_slice::<InstallLog>(&b).ok()
+                        }) {
                         Some(mut log) => {
                             log.tags = vec!["sandbox-preview".into()];
                             pc.preview = Some(log);
@@ -110,7 +111,7 @@ impl App {
             .store
             .root
             .join("builder")
-            .join(expunge_core::util::new_id());
+            .join(installscope_core::util::new_id());
         pc.error = None;
         pc.sandbox_phase = t("Starting Windows Sandbox");
         match pafbuild::start_sandbox(&job, &work) {

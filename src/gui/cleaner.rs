@@ -6,10 +6,10 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use expunge_core::cleaner::{self, Category, ScanResult};
-use expunge_core::i18n::{t, tf};
-use expunge_core::model::human_size;
-use expunge_core::slimmer::{self, Analysis, DeepItem};
+use installscope_core::cleaner::{self, Category, ScanResult};
+use installscope_core::i18n::{t, tf};
+use installscope_core::model::human_size;
+use installscope_core::slimmer::{self, Analysis, DeepItem};
 
 pub struct CleanerState {
     pub cats: Vec<(Category, bool, Option<ScanResult>)>,
@@ -22,9 +22,9 @@ pub struct CleanerState {
     pub clean_job: Option<Job<Vec<ScanResult>>>,
     pub freed: Option<u64>,
     /// Scheduled cleaning, read from Task Scheduler on first view.
-    pub schedule: Option<Option<(expunge_core::schedule::Frequency, Vec<String>)>>,
+    pub schedule: Option<Option<(installscope_core::schedule::Frequency, Vec<String>)>>,
     pub schedule_error: Option<String>,
-    pub schedule_job: Option<Job<Option<(expunge_core::schedule::Frequency, Vec<String>)>>>,
+    pub schedule_job: Option<Job<Option<(installscope_core::schedule::Frequency, Vec<String>)>>>,
 }
 
 impl Default for CleanerState {
@@ -184,7 +184,12 @@ impl App {
         let job = Job::spawn(&self.ctx, move |pr| {
             if rp {
                 pr.set_phase(t("Creating a restore point…"));
-                let _ = expunge_core::restore::create_restore_point("Before Expunge deep cleanup");
+                installscope_core::restore::create_restore_point(
+                    "Before InstallScope deep cleanup",
+                )
+                .map_err(|error| {
+                    format!("Restore point not created; deep cleanup was canceled: {error:#}")
+                })?;
             }
             slimmer::clean(item, &|s| pr.set_phase(s)).map_err(|e| e.to_string())
         });
@@ -198,7 +203,10 @@ impl App {
             small_muted(ui, t("One-time cleanups of Windows itself, using Windows' own tools. Each one is explained and confirmed separately and can't be undone."));
             ui.add_space(6.0);
             if !self.elevated {
-                theme::warning_banner(ui, t("Run Expunge as Administrator to use deep cleanup."));
+                theme::warning_banner(
+                    ui,
+                    t("Run InstallScope as Administrator to use deep cleanup."),
+                );
                 return;
             }
             if let Some((item, job)) = &self.cleaner.deep_run {
@@ -285,7 +293,7 @@ impl App {
                         self.tab = super::app::Tab::Programs;
                         self.programs.view = super::programs::View::Store;
                         if self.programs.store_apps.is_empty() && self.programs.store_job.is_none() {
-                            self.programs.store_job = Some(Job::spawn(&self.ctx, |_| expunge_core::programs::list_store_apps()));
+                            self.programs.store_job = Some(Job::spawn(&self.ctx, |_| installscope_core::programs::list_store_apps()));
                         }
                     }
                 });
@@ -405,7 +413,7 @@ impl App {
     }
 
     fn ui_schedule(&mut self, ui: &mut egui::Ui) {
-        use expunge_core::schedule::{self, Frequency};
+        use installscope_core::schedule::{self, Frequency};
         // Task Scheduler is asked in the background (it takes a moment).
         if let Some(r) = self.cleaner.schedule_job.as_ref().and_then(|j| j.poll()) {
             self.cleaner.schedule_job = None;
@@ -437,7 +445,7 @@ impl App {
                         }
                     });
             });
-            small_muted(ui, t("Cleans the kinds of junk ticked above through Windows Task Scheduler, even when Expunge is closed."));
+            small_muted(ui, t("Cleans the kinds of junk ticked above through Windows Task Scheduler, even when InstallScope is closed."));
             if let Some((_, cats)) = &current {
                 let names: Vec<String> = cats.iter().map(|id| t(cat_text(id).0)).collect();
                 small_muted(

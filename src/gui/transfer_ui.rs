@@ -5,11 +5,11 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use expunge_core::backup::{ActionResult, BackupWriter};
-use expunge_core::i18n::{t, tf};
-use expunge_core::model::human_size;
-use expunge_core::programs::InstalledProgram;
-use expunge_core::transfer::{self, Check, Collected, Manifest};
+use installscope_core::backup::{ActionResult, BackupWriter};
+use installscope_core::i18n::{t, tf};
+use installscope_core::model::human_size;
+use installscope_core::programs::InstalledProgram;
+use installscope_core::transfer::{self, Check, Collected, Manifest};
 use std::path::PathBuf;
 
 type RestoreOutcome = Result<(Vec<ActionResult>, Option<String>), String>;
@@ -77,7 +77,7 @@ impl App {
     pub fn start_transfer_import(&mut self) {
         let Some(path) = pick_file(
             &t("Restore programs from a transfer package"),
-            "Expunge transfer package",
+            "InstallScope transfer package",
             &[transfer::EXTENSION],
         ) else {
             return;
@@ -153,11 +153,11 @@ impl App {
                                 ui.label(RichText::new(format!("✔ {}", t("Package saved."))).color(theme::OK).strong());
                                 small_muted(ui, path.display().to_string());
                                 ui.add_space(6.0);
-                                small_muted(ui, t("Copy it to the other PC, open Expunge there and choose File > Restore programs from a package."));
+                                small_muted(ui, t("Copy it to the other PC, open InstallScope there and choose File > Restore programs from a package."));
                                 ui.add_space(8.0);
                                 ui.horizontal(|ui| {
                                     if ui.button(t("Show in folder")).clicked() {
-                                        expunge_core::platform::reveal(&path.to_string_lossy());
+                                        installscope_core::platform::reveal(&path.to_string_lossy());
                                     }
                                     if theme::primary_button(ui, t("Close")).clicked() {
                                         close = true;
@@ -211,10 +211,10 @@ impl App {
                         if ui.add_enabled(can, egui::Button::new(format!("💾 {}", t("Save package…")))).clicked() {
                             let default = format!(
                                 "{}.{}",
-                                expunge_core::util::safe_file_name(&if names.len() == 1 { names[0].clone() } else { tf("{n} programs", &[("n", names.len().to_string())]) }),
+                                installscope_core::util::safe_file_name(&if names.len() == 1 { names[0].clone() } else { tf("{n} programs", &[("n", names.len().to_string())]) }),
                                 transfer::EXTENSION
                             );
-                            if let Some(path) = save_file(&t("Save transfer package"), &default, "Expunge transfer package", transfer::EXTENSION) {
+                            if let Some(path) = save_file(&t("Save transfer package"), &default, "InstallScope transfer package", transfer::EXTENSION) {
                                 let c2 = c.clone();
                                 let reg2 = reg.clone();
                                 *write_job = Some(Job::spawn(ui.ctx(), move |pr| {
@@ -315,10 +315,10 @@ impl App {
                     let blocked = !c.problems.is_empty() || (c.needs_admin && !elevated);
                     if c.needs_admin && !elevated {
                         ui.add_space(6.0);
-                        theme::warning_banner(ui, t("Run Expunge as Administrator to restore these programs (they go into Program Files and the machine-wide registry)."));
+                        theme::warning_banner(ui, t("Run InstallScope as Administrator to restore these programs (they go into Program Files and the machine-wide registry)."));
                     }
                     ui.add_space(6.0);
-                    small_muted(ui, t("Everything Expunge writes is recorded, so the transfer can be undone from the Backups page."));
+                    small_muted(ui, t("Everything InstallScope writes is recorded, so the transfer can be undone from the Backups page."));
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         if ui.add_enabled(!blocked, egui::Button::new(format!("📥 {}", t("Restore")))).clicked() {
@@ -334,7 +334,14 @@ impl App {
                                     bw.discard();
                                     None
                                 } else {
-                                    bw.finish().ok().map(|b| b.id)
+                                    match bw.finish() {
+                                        Ok(backup) => Some(backup.id),
+                                        Err(error) => {
+                                            return Err(format!(
+                                                "The restore may have completed, but its backup could not be finalized: {error:#}"
+                                            ));
+                                        }
+                                    }
                                 };
                                 res.map(|r| (r, id))
                             }));

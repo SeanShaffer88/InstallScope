@@ -8,7 +8,7 @@
 use egui::{Context, Id, Key, Modifiers, Response, WidgetInfo, WidgetType};
 
 fn mode_id() -> Id {
-    Id::new("expunge_keyboard_mode")
+    Id::new("installscope_keyboard_mode")
 }
 
 /// True while the user is navigating with the keyboard (the focus ring is

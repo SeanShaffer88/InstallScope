@@ -28,7 +28,7 @@ jobs:
         run: |
           $hours = [double]('${{ inputs.hours }}' -replace '^$', '5')
           if ($hours -gt 5.5) { $hours = 5.5 }
-          ./scripts/soak.ps1 -Expunge target/release/expunge.exe -Hours $hours -Work "$env:RUNNER_TEMP\soak"
+          ./scripts/soak.ps1 -InstallScope target/release/installscope.exe -Hours $hours -Work "$env:RUNNER_TEMP\soak"
       - name: Summary
         if: always()
         shell: pwsh

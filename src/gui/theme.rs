@@ -1,4 +1,4 @@
-//! Expunge's look: a single dark theme with a red accent and red window border.
+//! InstallScope's look: a single dark theme with a red accent and red window border.
 
 use egui::{Color32, CornerRadius, Stroke, Visuals};
 
@@ -195,19 +195,22 @@ pub fn page_title(ui: &mut egui::Ui, title: &str, subtitle: &str) {
 /// effects); animations are skipped when it is off.
 pub fn animations_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(expunge_core::platform::animations_enabled)
+    *ON.get_or_init(installscope_core::platform::animations_enabled)
 }
 
-pub fn nav_item(
+pub fn nav_item_with_hint(
     ui: &mut egui::Ui,
     icon: &str,
     label: &str,
     selected: bool,
     badge: Option<String>,
+    hint: Option<&str>,
 ) -> egui::Response {
     let (rect, resp) =
         ui.allocate_exact_size(egui::vec2(ui.available_width(), 38.0), egui::Sense::click());
-    super::a11y::selectable(&resp, label, selected);
+    let accessible_label =
+        hint.map_or_else(|| label.to_string(), |hint| format!("{label}. {hint}"));
+    super::a11y::selectable(&resp, &accessible_label, selected);
     let painter = ui.painter_at(rect);
     let pill = rect.shrink2(egui::vec2(2.0, 2.0));
     // Hover and selection fade in and out instead of switching abruptly.
@@ -264,7 +267,12 @@ pub fn nav_item(
         painter.rect_filled(br, CornerRadius::same(9), fill);
         painter.galley(br.center() - galley.size() / 2.0, galley, text);
     }
-    resp.on_hover_cursor(egui::CursorIcon::PointingHand)
+    let resp = resp.on_hover_cursor(egui::CursorIcon::PointingHand);
+    if let Some(hint) = hint {
+        resp.on_hover_text(hint)
+    } else {
+        resp
+    }
 }
 
 /// A small coloured badge.

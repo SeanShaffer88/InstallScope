@@ -7,14 +7,14 @@ use super::widgets::*;
 use super::Job;
 use egui::RichText;
 use egui_extras::{Column, TableBuilder};
-use expunge_core::i18n::{t, tf};
-use expunge_core::leftovers::{find_leftovers, LeftoverScope};
-use expunge_core::model::{fold, human_size};
-use expunge_core::platform::{self, ChildProcess};
-use expunge_core::programs::{self, InstalledProgram, Source};
-use expunge_core::revert::{build_plan, Action, Plan, PlanItem};
-use expunge_core::silent::{self, Engine, ExitMeaning};
-use expunge_core::trust::{self, Trust};
+use installscope_core::i18n::{t, tf};
+use installscope_core::leftovers::{find_leftovers, LeftoverScope};
+use installscope_core::model::{fold, human_size};
+use installscope_core::platform::{self, ChildProcess};
+use installscope_core::programs::{self, InstalledProgram, Source};
+use installscope_core::revert::{build_plan, Action, Plan, PlanItem};
+use installscope_core::silent::{self, Engine, ExitMeaning};
+use installscope_core::trust::{self, Trust};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Instant;
 
@@ -51,8 +51,8 @@ pub struct ProgramsState {
     pub broken: HashSet<String>,
     pub sizes: HashMap<String, u64>,
     /// Last opened, memory, CPU and startup delay, by program key.
-    pub usage: HashMap<String, expunge_core::usage::ProgramUsage>,
-    pub usage_job: Option<Job<HashMap<String, expunge_core::usage::ProgramUsage>>>,
+    pub usage: HashMap<String, installscope_core::usage::ProgramUsage>,
+    pub usage_job: Option<Job<HashMap<String, installscope_core::usage::ProgramUsage>>>,
     pub job: Option<Job<(Vec<InstalledProgram>, HashSet<String>)>>,
     pub store_job: Option<Job<Vec<InstalledProgram>>>,
     pub size_job: Option<Job<HashMap<String, u64>>>,
@@ -63,7 +63,7 @@ pub struct ProgramsState {
     /// Digital-signature status by registry key (checked in the background).
     pub trust: HashMap<String, Trust>,
     /// Sizes and signature results kept between launches.
-    pub cache: std::sync::Arc<std::sync::Mutex<expunge_core::cache::Cache>>,
+    pub cache: std::sync::Arc<std::sync::Mutex<installscope_core::cache::Cache>>,
     pub trust_job: Option<Job<Vec<(String, Trust)>>>,
     pub restore_job: Option<Job<Result<(), String>>>,
     pub filter: String,
@@ -98,7 +98,7 @@ enum ItemStatus {
     TimedOut,
 }
 
-/// Unattended limits: one uninstaller may run this long before Expunge moves on…
+/// Unattended limits: one uninstaller may run this long before InstallScope moves on…
 const UNATTENDED_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15 * 60);
 /// …and an uninstaller that exited gets this long for its entry to disappear
 /// (many relaunch themselves from %TEMP% and finish in the background).
@@ -128,7 +128,7 @@ pub struct Wizard {
     started: Option<Instant>,
     notes: Vec<String>,
     /// Restore point; returns notes.
-    rp_job: Option<Job<Vec<String>>>,
+    rp_job: Option<Job<std::result::Result<(), String>>>,
     store_job: Option<Job<Result<String, String>>>,
     scan_job: Option<Job<(Plan, Vec<String>, bool)>>,
 }
@@ -252,7 +252,7 @@ pub fn merge_plans(into: &mut Plan, other: Plan) {
     into.info.extend(other.info);
 }
 
-pub use expunge_core::programs::log_for;
+pub use installscope_core::programs::log_for;
 
 impl App {
     pub fn refresh_programs(&mut self, ctx: &egui::Context) {
@@ -280,12 +280,12 @@ impl App {
     /// Days since a program was last opened; for programs Windows has no
     /// record of opening, days since it was installed. None while unknown.
     pub fn unused_days(&self, p: &InstalledProgram) -> Option<i64> {
-        let now = expunge_core::time::unix_now();
+        let now = installscope_core::time::unix_now();
         let u = self.programs.usage.get(&p.key)?;
         match u.last_opened {
             Some(ts) => Some((now - ts) / 86_400),
-            None => expunge_core::nlquery::parse_date(&p.install_date)
-                .map(|d| expunge_core::time::Date::today_local().days_since(d)),
+            None => installscope_core::nlquery::parse_date(&p.install_date)
+                .map(|d| installscope_core::time::Date::today_local().days_since(d)),
         }
     }
 
@@ -311,7 +311,7 @@ impl App {
             let root = self.store.root.clone();
             let list = self.programs.list.clone();
             self.programs.usage_job = Some(Job::spawn(ctx, move |_| {
-                let data = expunge_core::usage::UsageData::gather(reg.as_ref(), &root);
+                let data = installscope_core::usage::UsageData::gather(reg.as_ref(), &root);
                 list.iter()
                     .map(|p| (p.key.clone(), data.for_program(p)))
                     .collect()
@@ -329,7 +329,7 @@ impl App {
                 .map(|p| (p.key.clone(), p.install_location.clone()))
                 .collect();
             // Forget programs that were uninstalled; reuse sizes measured recently.
-            let now = expunge_core::cache::now();
+            let now = installscope_core::cache::now();
             let versions: HashMap<String, String> = self
                 .programs
                 .list
@@ -353,7 +353,7 @@ impl App {
                     .collect()
             };
             if !todo.is_empty() {
-                let protected = expunge_core::util::protected_dirs();
+                let protected = installscope_core::util::protected_dirs();
                 let cache = self.programs.cache.clone();
                 self.programs.size_job = Some(Job::spawn(ctx, move |pr| {
                     let mut m = HashMap::new();
@@ -361,7 +361,7 @@ impl App {
                         if pr.cancelled() {
                             break;
                         }
-                        if !expunge_core::util::is_protected_dir(&loc, &protected)
+                        if !installscope_core::util::is_protected_dir(&loc, &protected)
                             && std::path::Path::new(&loc).is_dir()
                         {
                             let bytes = programs::dir_size(&loc);
@@ -420,7 +420,7 @@ impl App {
                     let Some(path) = trust::trust_target(p, reg.as_ref()) else {
                         return (p.key.clone(), Trust::Unknown);
                     };
-                    let stamp = expunge_core::cache::file_stamp(&path);
+                    let stamp = installscope_core::cache::file_stamp(&path);
                     if let Some(t) = cache.lock().unwrap().trust(&p.key, &path, stamp) {
                         return (p.key.clone(), t);
                     }
@@ -503,7 +503,7 @@ impl App {
                 return m.clone();
             }
         }
-        use expunge_core::model::fold;
+        use installscope_core::model::fold;
         let by_key: HashSet<String> = self
             .logs
             .logs
@@ -635,7 +635,7 @@ impl App {
                         }
                         if ui
                             .button(format!("➕ {}", t("Add program…")))
-                            .on_hover_text(t("Add a program Windows doesn't list (for example a portable program) by choosing its folder, so Expunge can analyze and remove it with everything it left behind."))
+                            .on_hover_text(t("Add a program Windows doesn't list (for example a portable program) by choosing its folder, so InstallScope can analyze and remove it with everything it left behind."))
                             .clicked()
                         {
                             if let Some(dir) = pick_folder(&t("Choose the program's folder")) {
@@ -989,7 +989,7 @@ impl App {
                 field(ui, "Location", &p.install_location);
                 if let Some(u) = self.programs.usage.get(&p.key) {
                     let ago = |ts: i64| {
-                        let days = (expunge_core::time::unix_now() - ts) / 86_400;
+                        let days = (installscope_core::time::unix_now() - ts) / 86_400;
                         match days {
                             0 => t("today"),
                             1 => t("yesterday"),
@@ -1079,7 +1079,7 @@ impl App {
                 && ui
                     .button(t("Uninstall silently"))
                     .on_hover_text(t(
-                        "No windows or prompts; Expunge runs the uninstaller in its silent mode.",
+                        "No windows or prompts; InstallScope runs the uninstaller in its silent mode.",
                     ))
                     .clicked()
             {
@@ -1093,7 +1093,7 @@ impl App {
                 && self.settings.advanced_mode
                 && ui
                     .button(t("Forced removal"))
-                    .on_hover_text(t("Skip the program's own uninstaller and remove everything Expunge can find."))
+                    .on_hover_text(t("Skip the program's own uninstaller and remove everything InstallScope can find."))
                     .clicked()
             {
                 self.start_uninstall(vec![p.clone()], true);
@@ -1139,7 +1139,7 @@ impl App {
             let id = log.id.clone();
             egui::Frame::group(ui.style()).show(ui, |ui| {
                 ui.label(RichText::new(format!("⏺ {}", t("Monitored installation"))).color(theme::ACCENT_TEXT).strong());
-                small_muted(ui, t("Expunge recorded this installation, so it can remove exactly what was added."));
+                small_muted(ui, t("InstallScope recorded this installation, so it can remove exactly what was added."));
                 if ui.link(t("View install log")).clicked() {
                     self.logs.selected = Some(id);
                     self.tab = super::app::Tab::Logs;
@@ -1164,14 +1164,24 @@ impl App {
         if w.stage == Stage::RestorePoint {
             if let Some(r) = w.rp_job.as_ref().and_then(|j| j.poll()) {
                 w.rp_job = None;
-                w.notes.extend(r);
-                w.stage = if w.force {
-                    Stage::Scanning
-                } else {
-                    Stage::Running
-                };
-                if w.force {
-                    start_scan = true;
+                match r {
+                    Ok(()) => {
+                        w.stage = if w.force {
+                            Stage::Scanning
+                        } else {
+                            Stage::Running
+                        };
+                        if w.force {
+                            start_scan = true;
+                        }
+                    }
+                    Err(error) => {
+                        self.status = tf(
+                            "Restore point not created; uninstall canceled: {error}",
+                            &[("error", error)],
+                        );
+                        close = true;
+                    }
                 }
             }
         }
@@ -1374,9 +1384,9 @@ impl App {
                 match w.stage {
                     Stage::Confirm => {
                         ui.label(if w.force {
-                            t("Expunge will skip the programs' own uninstallers and remove everything it can find:")
+                            t("InstallScope will skip the programs' own uninstallers and remove everything it can find:")
                         } else {
-                            t("These programs will be uninstalled, then Expunge scans for leftovers:")
+                            t("These programs will be uninstalled, then InstallScope scans for leftovers:")
                         });
                         let detecting = w.detect_job.is_some();
                         egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
@@ -1406,7 +1416,7 @@ impl App {
                         ui.add_space(6.0);
                         if !w.force {
                             ui.checkbox(&mut w.quiet, t("Unattended: no windows, prompts or restarts"))
-                                .on_hover_text(t("Expunge uses each uninstaller's silent mode, runs them one at a time, holds back restarts until the end, and moves on if one gets stuck. You can walk away."));
+                                .on_hover_text(t("InstallScope uses each uninstaller's silent mode, runs them one at a time, holds back restarts until the end, and moves on if one gets stuck. You can walk away."));
                             if w.quiet {
                                 let manual = w.engines.iter().filter(|e| **e == Engine::Manual).count();
                                 if manual > 0 {
@@ -1428,11 +1438,11 @@ impl App {
                                 if w.restore_point && elevated {
                                     w.stage = Stage::RestorePoint;
                                     w.rp_job = Some(Job::spawn(ui.ctx(), move |_| {
-                                        let mut notes = Vec::new();
-                                        if let Err(e) = expunge_core::restore::create_restore_point("Before Expunge uninstall") {
-                                            notes.push(tf("Restore point not created: {error}", &[("error", e.to_string())]));
-                                        }
-                                        notes
+                                        installscope_core::restore::create_restore_point(
+                                            "Before InstallScope uninstall",
+                                        )
+                                        .map(|_| ())
+                                        .map_err(|error| error.to_string())
                                     }));
                                 } else if w.force {
                                     w.stage = Stage::Scanning;
@@ -1487,9 +1497,9 @@ impl App {
                         small_muted(
                             ui,
                             if unattended_now {
-                                t("Running silently. You can leave this running; Expunge continues by itself.")
+                                t("Running silently. You can leave this running; InstallScope continues by itself.")
                             } else {
-                                t("Follow the program's own uninstaller. When it has finished, Expunge continues automatically.")
+                                t("Follow the program's own uninstaller. When it has finished, InstallScope continues automatically.")
                             },
                         );
                         ui.add_space(8.0);

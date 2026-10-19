@@ -1,9 +1,9 @@
-//! Explorer integration: the "Install with Expunge" right-click command on
+//! Explorer integration: the "Install with InstallScope" right-click command on
 //! installers (.exe and .msi).
 //!
 //! The installer registers it for all users under HKLM; the in-app toggle
 //! (used by the portable version) registers it for the current user under
-//! HKCU. Both point at `Expunge.exe --monitor-install "<file>"`.
+//! HKCU. Both point at `InstallScope.exe --monitor-install "<file>"`.
 //!
 //! On Windows 11 the command appears under "Show more options" (the classic
 //! menu); the compact top-level menu only accepts packaged (MSIX) apps.
@@ -15,7 +15,7 @@ use anyhow::Result;
 /// Command-line switch that starts monitoring the given installer.
 pub const MONITOR_ARG: &str = "--monitor-install";
 
-const VERB: &str = "ExpungeInstall";
+const VERB: &str = "InstallScopeInstall";
 const EXTENSIONS: [&str; 2] = [".exe", ".msi"];
 
 fn verb_key(root: &str, ext: &str) -> String {
@@ -83,19 +83,22 @@ mod tests {
         assert!(!is_registered(&reg, false));
         register(
             &reg,
-            "C:\\Tools\\Expunge.exe",
-            "Install with Expunge",
+            "C:\\Tools\\InstallScope.exe",
+            "Install with InstallScope",
             false,
         )
         .unwrap();
         assert!(is_registered(&reg, false));
         assert!(!is_registered(&reg, true));
         let cmd = reg
-            .read_key("HKCU\\Software\\Classes\\SystemFileAssociations\\.msi\\shell\\ExpungeInstall\\command")
+            .read_key("HKCU\\Software\\Classes\\SystemFileAssociations\\.msi\\shell\\InstallScopeInstall\\command")
             .unwrap()
             .get_string("")
             .unwrap();
-        assert_eq!(cmd, "\"C:\\Tools\\Expunge.exe\" --monitor-install \"%1\"");
+        assert_eq!(
+            cmd,
+            "\"C:\\Tools\\InstallScope.exe\" --monitor-install \"%1\""
+        );
         unregister(&reg, false).unwrap();
         assert!(!is_registered(&reg, false));
         unregister(&reg, false).unwrap(); // idempotent

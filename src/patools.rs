@@ -1,12 +1,12 @@
-//! The PortableApps.com toolchain, built in: Expunge compiles launchers
+//! The PortableApps.com toolchain, built in: InstallScope compiles launchers
 //! with the official PortableApps.com Launcher source (GPL, from GitHub,
 //! which includes the NSIS compiler it needs) exactly as the Launcher
 //! Generator does, and builds `.paf.exe` installers with its own NSIS
 //! script, so neither tool has to be installed.
 //!
-//! The Launcher source is looked for next to Expunge.exe (release
+//! The Launcher source is looked for next to InstallScope.exe (release
 //! downloads include it in `tools\PortableApps.com Launcher`), then in
-//! Expunge's data folder, and is downloaded from GitHub when missing. The
+//! InstallScope's data folder, and is downloaded from GitHub when missing. The
 //! compiler is only used when its SHA-256 matches the pinned release.
 
 use anyhow::{anyhow, Context, Result};
@@ -17,7 +17,7 @@ pub const LAUNCHER_COMMIT: &str = "5470210a6841c38950c348e1190ad92787b8b727";
 /// App\NSIS\makensis.exe at that commit.
 pub const MAKENSIS_SHA256: &str =
     "9bffbceea9af5cdd15299ec957e5ee479a048bfb824dd45ea51414c1c2c750e0";
-/// Folder name used next to Expunge.exe and in the data folder.
+/// Folder name used next to InstallScope.exe and in the data folder.
 /// (No spaces: parts of the Launcher source don't quote their paths.)
 pub const TOOLS_DIR: &str = "PortableApps.comLauncher";
 
@@ -100,7 +100,7 @@ pub fn ini_value(path: &Path, section: &str, key: &str) -> Option<String> {
     None
 }
 
-/// Where a copy could be: next to Expunge.exe, then in the data folder.
+/// Where a copy could be: next to InstallScope.exe, then in the data folder.
 pub fn candidates(data_root: &Path) -> Vec<PathBuf> {
     let mut v = Vec::new();
     if let Some(dir) = std::env::current_exe()
@@ -305,7 +305,7 @@ pub fn build_launcher(tc: &Toolchain, pkg: &Path) -> Result<PathBuf> {
     Ok(out)
 }
 
-/// Expunge's installer script (GPLv3): installs a PortableApps.com Format
+/// InstallScope's installer script (GPLv3): installs a PortableApps.com Format
 /// package like PortableApps.com installers do. It honours /DESTINATION=
 /// and /AUTOCLOSE= from the PortableApps.com Platform and /S, keeps Data on
 /// upgrades and replaces App and Other.
@@ -358,7 +358,7 @@ pub fn build_installer(tc: &Toolchain, pkg: &Path, work: &Path) -> Result<PathBu
     Ok(out)
 }
 
-/// Expunge's silent setup script (GPLv3): one file that redeploys a
+/// InstallScope's silent setup script (GPLv3): one file that redeploys a
 /// repackaged installation without questions.
 pub const SILENT_SETUP_NSI: &str = include_str!("silent_setup.nsi");
 
@@ -412,7 +412,7 @@ mod tests {
 
     #[test]
     fn reads_ini_values() {
-        let dir = std::env::temp_dir().join(format!("expunge-ini-{}", crate::util::new_id()));
+        let dir = std::env::temp_dir().join(format!("installscope-ini-{}", crate::util::new_id()));
         std::fs::create_dir_all(&dir).unwrap();
         let p = dir.join("appinfo.ini");
         std::fs::write(&p, "\u{feff}[Details]\r\nName=Foo Portable\r\nAppID = FooPortable\r\n[Version]\r\nPackageVersion=1.2.0.0\r\n").unwrap();
@@ -440,7 +440,7 @@ mod tests {
 
     #[test]
     fn extracts_without_docs_and_rejects_wrong_compiler() {
-        let dir = std::env::temp_dir().join(format!("expunge-pal-{}", crate::util::new_id()));
+        let dir = std::env::temp_dir().join(format!("installscope-pal-{}", crate::util::new_id()));
         std::fs::create_dir_all(&dir).unwrap();
         let zp = dir.join("l.zip");
         {
@@ -477,7 +477,8 @@ mod tests {
 
     #[test]
     fn quotes_the_registry_include() {
-        let dir = std::env::temp_dir().join(format!("expunge-patch-{}", crate::util::new_id()));
+        let dir =
+            std::env::temp_dir().join(format!("installscope-patch-{}", crate::util::new_id()));
         let src = dir.join("Other").join("Source");
         std::fs::create_dir_all(&src).unwrap();
         std::fs::write(

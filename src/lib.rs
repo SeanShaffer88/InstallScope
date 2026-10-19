@@ -1,4 +1,4 @@
-//! Expunge core library: snapshots, diffs, precise uninstall plans, backups,
+//! InstallScope core library: snapshots, diffs, precise uninstall plans, backups,
 //! leftover scanning, startup management, cleanup, and reports.
 //!
 //! Copyright (C) 2026 Sean Shaffer
@@ -67,6 +67,6 @@ mod lock_tests;
 #[cfg(test)]
 mod stress_tests;
 
-pub const APP_NAME: &str = "Expunge";
+pub const APP_NAME: &str = "InstallScope";
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const APP_AUTHOR: &str = "Sean Shaffer";

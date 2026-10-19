@@ -991,7 +991,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "expunge"
+name = "installscope"
 version = "0.1.0"
 dependencies = [
  "anyhow",

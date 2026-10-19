@@ -2,14 +2,14 @@
 //! the release default until native workflows are ready to replace it.
 
 use anyhow::{anyhow, Context, Result};
-use expunge_core::backup::{ActionResult, BackupWriter};
-use expunge_core::i18n::{self, t, tf};
-use expunge_core::leftovers::{self, LeftoverScope};
-use expunge_core::model::InstallLog;
-use expunge_core::platform::{self, Registry};
-use expunge_core::programs::{self, InstalledProgram};
-use expunge_core::revert::{self, ExecOptions, Plan};
-use expunge_core::store::Store;
+use installscope_core::backup::{ActionResult, BackupWriter};
+use installscope_core::i18n::{self, t, tf};
+use installscope_core::leftovers::{self, LeftoverScope};
+use installscope_core::model::InstallLog;
+use installscope_core::platform::{self, Registry};
+use installscope_core::programs::{self, InstalledProgram};
+use installscope_core::revert::{self, ExecOptions, Plan};
+use installscope_core::store::Store;
 use std::ffi::c_void;
 use std::sync::{mpsc, Arc};
 use std::time::Instant;
@@ -35,16 +35,17 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     LoadCursorW, MoveWindow, PostQuitMessage, RegisterClassW, SendMessageW, SetCursor, SetMenu,
     SetMenuInfo, SetTimer, SetWindowLongPtrW, SetWindowTextW, ShowWindow, TranslateMessage,
     WindowFromPoint, CREATESTRUCTW, CW_USEDEFAULT, GA_ROOT, GWLP_USERDATA, HMENU, IDC_ARROW,
-    IDC_CROSS, LBS_HASSTRINGS, LBS_NOTIFY, LBS_OWNERDRAWFIXED, LB_ADDSTRING, LB_GETCURSEL,
-    LB_RESETCONTENT, LB_SETCURSEL, MB_ICONINFORMATION, MB_ICONWARNING, MB_YESNO, MENUINFO,
-    MF_GRAYED, MF_OWNERDRAW, MF_POPUP, MF_STRING, MIM_APPLYTOSUBMENUS, MIM_BACKGROUND, MSG,
-    SW_HIDE, SW_SHOW, WM_CANCELMODE, WM_CAPTURECHANGED, WM_CLOSE, WM_COMMAND, WM_CREATE,
-    WM_DESTROY, WM_DRAWITEM, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONUP, WM_MEASUREITEM, WM_NCCREATE,
-    WM_NCDESTROY, WM_SETCURSOR, WM_SIZE, WM_TIMER, WNDCLASSW, WS_CHILD, WS_CLIPCHILDREN,
-    WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE, WS_VSCROLL,
+    IDC_CROSS, LBS_EXTENDEDSEL, LBS_HASSTRINGS, LBS_NOTIFY, LBS_OWNERDRAWFIXED, LB_ADDSTRING,
+    LB_GETCURSEL, LB_GETSELCOUNT, LB_GETSELITEMS, LB_RESETCONTENT, LB_SETCURSEL,
+    MB_ICONINFORMATION, MB_ICONWARNING, MB_YESNO, MENUINFO, MF_GRAYED, MF_OWNERDRAW, MF_POPUP,
+    MF_STRING, MIM_APPLYTOSUBMENUS, MIM_BACKGROUND, MSG, SW_HIDE, SW_SHOW, WM_CANCELMODE,
+    WM_CAPTURECHANGED, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_DRAWITEM, WM_ERASEBKGND,
+    WM_KEYDOWN, WM_LBUTTONUP, WM_MEASUREITEM, WM_NCCREATE, WM_NCDESTROY, WM_SETCURSOR, WM_SIZE,
+    WM_TIMER, WNDCLASSW, WS_CHILD, WS_CLIPCHILDREN, WS_OVERLAPPEDWINDOW, WS_TABSTOP, WS_VISIBLE,
+    WS_VSCROLL,
 };
 
-const CLASS_NAME: &str = "ExpungeNativeProgramsPreview";
+const CLASS_NAME: &str = "InstallScopeNativeProgramsPreview";
 const WINDOW_WIDTH: i32 = 1000;
 const WINDOW_HEIGHT: i32 = 680;
 const ID_SEARCH: u16 = 101;
@@ -63,6 +64,7 @@ const ID_PAGE_SUBTITLE: u16 = 113;
 const ID_LIST_HEADING: u16 = 114;
 const ID_TABLE_HEADER: u16 = 115;
 const ID_FOOTER: u16 = 116;
+const ID_ADD_MANUAL: u16 = 117;
 const ID_NAV_BASE: u16 = 120;
 const ID_NAV_TOOLS: u16 = ID_NAV_BASE + 6;
 const ID_MENU_EXIT: u16 = 200;
@@ -118,7 +120,7 @@ struct NativePrograms {
     brand_mark: HWND,
     brand_name: HWND,
     nav_programs: HWND,
-    nav_items: [HWND; 13],
+    nav_items: [HWND; 17],
     page_title: HWND,
     page_subtitle: HWND,
     list_heading: HWND,
@@ -131,6 +133,7 @@ struct NativePrograms {
     status: HWND,
     refresh: HWND,
     hunter: HWND,
+    add_manual: HWND,
     uninstall_button: HWND,
     toggle_item: HWND,
     remove_selected: HWND,
@@ -152,6 +155,10 @@ struct NativePrograms {
     labels: Vec<String>,
     receiver: Option<mpsc::Receiver<ProgramResult>>,
     uninstall_program: Option<InstalledProgram>,
+    batch_queue: Vec<InstalledProgram>,
+    batch_active: bool,
+    batch_total: usize,
+    batch_completed: usize,
     uninstall_child: Option<platform::ChildProcess>,
     uninstall_exit: Option<(u32, Instant)>,
     store_uninstall_receiver: Option<mpsc::Receiver<std::result::Result<String, String>>>,
@@ -282,6 +289,7 @@ impl NativePrograms {
                 );
             }
         }
+        self.update_selection_action();
         if self.programs.is_empty() {
             self.set_status(&t("No installed programs found."));
         } else if self.visible.is_empty() {
@@ -313,6 +321,223 @@ impl NativePrograms {
             t("The vendor uninstaller runs first; any leftover cleanup is shown for review.")
         );
         unsafe { SetWindowTextW(self.details, wide(&details).as_ptr()) };
+    }
+
+    fn selected_indices(&self) -> Vec<usize> {
+        unsafe {
+            let count = SendMessageW(self.list, LB_GETSELCOUNT, 0, 0);
+            if count <= 0 {
+                return SendMessageW(self.list, LB_GETCURSEL, 0, 0)
+                    .try_into()
+                    .ok()
+                    .into_iter()
+                    .collect();
+            }
+            let mut indices = vec![0i32; count as usize];
+            let selected = SendMessageW(
+                self.list,
+                LB_GETSELITEMS,
+                indices.len(),
+                indices.as_mut_ptr() as LPARAM,
+            );
+            if selected < 0 {
+                return Vec::new();
+            }
+            indices.truncate(selected as usize);
+            indices
+                .into_iter()
+                .filter_map(|index| usize::try_from(index).ok())
+                .collect()
+        }
+    }
+
+    fn update_selection_action(&self) {
+        if self.view != View::Programs {
+            return;
+        }
+        let indices = self.selected_indices();
+        let label = if indices.len() == 1
+            && self
+                .visible
+                .get(indices[0])
+                .is_some_and(|program| program.source == programs::Source::Manual)
+        {
+            t("Remove from list")
+        } else if indices.len() > 1 {
+            tf(
+                "Uninstall {n} selected",
+                &[("n", indices.len().to_string())],
+            )
+        } else {
+            t("Uninstall")
+        };
+        unsafe { SetWindowTextW(self.uninstall_button, wide(&label).as_ptr()) };
+    }
+
+    fn add_manual_program(&mut self) {
+        let Some(folder) = super::filedialog::pick_folder(&t("Choose the program's folder")) else {
+            return;
+        };
+        match programs::add_manual(&self.store_root, &folder.to_string_lossy(), "") {
+            Ok(program) => {
+                self.set_status(&tf("Added {name}", &[("name", program.name)]));
+                self.request_refresh();
+            }
+            Err(error) => {
+                let message = format!("{}: {error:#}", t("Could not add the program"));
+                self.set_status(&message);
+                show_error(self.hwnd, &message);
+            }
+        }
+    }
+
+    fn remove_manual_program(&mut self, program: InstalledProgram) {
+        let prompt = tf(
+            "Remove {name} from InstallScope's program list? Its files and settings will not be deleted.",
+            &[("name", program.name.clone())],
+        );
+        let confirmed = unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::MessageBoxW(
+                self.hwnd,
+                wide(&prompt).as_ptr(),
+                wide("Remove from list").as_ptr(),
+                MB_YESNO | MB_ICONWARNING,
+            ) == 6
+        };
+        if !confirmed {
+            return;
+        }
+        match programs::remove_manual(&self.store_root, &program.key) {
+            Ok(()) => {
+                self.set_status(&tf(
+                    "Removed {name} from InstallScope's list. No files were deleted.",
+                    &[("name", program.name)],
+                ));
+                self.request_refresh();
+            }
+            Err(error) => {
+                let message = format!("{}: {error:#}", t("Could not remove the list entry"));
+                self.set_status(&message);
+                show_error(self.hwnd, &message);
+            }
+        }
+    }
+
+    fn uninstall_command(&self, program: &InstalledProgram) -> Result<Option<String>, String> {
+        if program.source == programs::Source::Manual {
+            return Err(t(
+                "Manually added entries are analysis-only. Remove them from InstallScope's list instead.",
+            ));
+        }
+        if program.no_remove {
+            return Err(t("This program does not allow removal."));
+        }
+        if program.source == programs::Source::Store {
+            return Ok(None);
+        }
+        if !self.registry.exists(&program.key) {
+            return Err(t(
+                "This program is no longer registered; refresh the list before uninstalling.",
+            ));
+        }
+        program
+            .uninstall_command(false)
+            .map(Some)
+            .ok_or_else(|| t("This program has no registered uninstaller."))
+    }
+
+    fn start_selected_action(&mut self) {
+        let indices = self.selected_indices();
+        let selected: Vec<InstalledProgram> = indices
+            .iter()
+            .filter_map(|index| self.visible.get(*index).cloned())
+            .collect();
+        if selected.is_empty() {
+            self.set_status(&t("Select a program first."));
+            return;
+        }
+        if selected.len() == 1 && selected[0].source == programs::Source::Manual {
+            self.remove_manual_program(selected[0].clone());
+        } else if selected.len() > 1 {
+            self.start_batch_uninstall(selected);
+        } else {
+            self.start_uninstall(indices[0]);
+        }
+    }
+
+    fn start_batch_uninstall(&mut self, selected: Vec<InstalledProgram>) {
+        for program in &selected {
+            if let Err(error) = self.uninstall_command(program) {
+                let message = format!("{}: {error}", program.name);
+                self.set_status(&message);
+                show_error(self.hwnd, &message);
+                return;
+            }
+        }
+        let prompt = tf(
+            "Uninstall {n} selected programs one at a time? InstallScope will show a separate leftover review after each program. Nothing is removed until you review that program's findings.",
+            &[("n", selected.len().to_string())],
+        );
+        let confirmed = unsafe {
+            windows_sys::Win32::UI::WindowsAndMessaging::MessageBoxW(
+                self.hwnd,
+                wide(&prompt).as_ptr(),
+                wide("Confirm batch uninstall").as_ptr(),
+                MB_YESNO | MB_ICONWARNING,
+            ) == 6
+        };
+        if !confirmed {
+            return;
+        }
+        self.batch_total = selected.len();
+        self.batch_completed = 0;
+        self.batch_queue = selected;
+        self.batch_active = true;
+        self.launch_next_batch_program();
+    }
+
+    fn launch_next_batch_program(&mut self) {
+        let Some(program) = self.batch_queue.first().cloned() else {
+            self.finish_batch();
+            return;
+        };
+        match self.uninstall_command(&program) {
+            Ok(command) => {
+                self.set_status(&tf(
+                    "Batch {current} of {total}: uninstalling {name}…",
+                    &[
+                        ("current", (self.batch_completed + 1).to_string()),
+                        ("total", self.batch_total.to_string()),
+                        ("name", program.name.clone()),
+                    ],
+                ));
+                if let Err(error) = self.launch_uninstall(program, command) {
+                    self.abort_batch(&format!("{error:#}"));
+                }
+            }
+            Err(error) => self.abort_batch(&format!("{}: {error}", program.name)),
+        }
+    }
+
+    fn finish_batch(&mut self) {
+        self.batch_active = false;
+        self.batch_queue.clear();
+        self.set_status(&tf(
+            "Batch uninstall complete: {n} programs reviewed.",
+            &[("n", self.batch_completed.to_string())],
+        ));
+        self.request_refresh();
+        self.layout_controls();
+    }
+
+    fn abort_batch(&mut self, error: &str) {
+        self.batch_active = false;
+        self.batch_queue.clear();
+        self.set_status(error);
+        show_error(self.hwnd, error);
+        self.view = View::Programs;
+        self.uninstall_program = None;
+        self.layout_controls();
     }
 
     fn identify_window_target(&mut self) {
@@ -399,40 +624,25 @@ impl NativePrograms {
             return;
         };
         if program.source == programs::Source::Manual {
-            self.set_status(&t(
-                "Manually added entries are analysis-only and cannot be uninstalled here.",
-            ));
+            self.remove_manual_program(program);
             return;
         }
-        if program.no_remove {
-            self.set_status(&t("This program does not allow removal."));
-            return;
-        }
-        let is_store = program.source == programs::Source::Store;
-        if !is_store && !self.registry.exists(&program.key) {
-            self.set_status(&t(
-                "This program is no longer registered; refreshing the list.",
-            ));
-            self.request_refresh();
-            return;
-        }
-        let command = if is_store {
-            None
-        } else {
-            let Some(command) = program.uninstall_command(false) else {
-                self.set_status(&t("This program has no registered uninstaller."));
+        let command = match self.uninstall_command(&program) {
+            Ok(command) => command,
+            Err(error) => {
+                self.set_status(&error);
+                show_error(self.hwnd, &error);
                 return;
-            };
-            Some(command)
+            }
         };
-        let prompt = if is_store {
+        let prompt = if program.source == programs::Source::Store {
             tf(
-                "Expunge will ask Windows to uninstall {name} for this user. Any leftover cleanup will be presented for review afterward.\r\n\r\nContinue?",
+                "InstallScope will ask Windows to uninstall {name} for this user. Any leftover cleanup will be presented for review afterward.\r\n\r\nContinue?",
                 &[("name", program.name.clone())],
             )
         } else {
             tf(
-                "Expunge will start {name}'s own uninstaller. Any leftover cleanup will be presented for review afterward.\r\n\r\nContinue?",
+                "InstallScope will start {name}'s own uninstaller. Any leftover cleanup will be presented for review afterward.\r\n\r\nContinue?",
                 &[("name", program.name.clone())],
             )
         };
@@ -447,7 +657,19 @@ impl NativePrograms {
         if !confirmed {
             return;
         }
-        if is_store {
+        if let Err(error) = self.launch_uninstall(program, command) {
+            let message = format!("{error:#}");
+            self.set_status(&message);
+            show_error(self.hwnd, &message);
+        }
+    }
+
+    fn launch_uninstall(
+        &mut self,
+        program: InstalledProgram,
+        command: Option<String>,
+    ) -> Result<()> {
+        if program.source == programs::Source::Store {
             let package = program.key.clone();
             let window = self.hwnd as isize;
             let (tx, rx) = mpsc::channel();
@@ -469,11 +691,9 @@ impl NativePrograms {
                     )
                 };
             });
-            return;
+            return Ok(());
         }
-        let Some(command) = command else {
-            return;
-        };
+        let command = command.context("The program has no registered uninstaller")?;
         match platform::spawn_command_line(&platform::expand_env(&command)) {
             Ok(child) => {
                 self.uninstall_program = Some(program.clone());
@@ -486,26 +706,23 @@ impl NativePrograms {
                 };
                 if timer == 0 {
                     let error = std::io::Error::last_os_error();
-                    self.set_status(&format!(
-                        "The uninstaller started, but Expunge could not monitor it: {error}"
+                    self.uninstall_program = None;
+                    self.uninstall_child = None;
+                    self.uninstall_exit = None;
+                    self.view = View::Programs;
+                    self.layout_controls();
+                    return Err(anyhow!(
+                        "The uninstaller started, but InstallScope could not monitor it ({error}). Check whether it completed before trying again."
                     ));
-                    show_error(
-                        self.hwnd,
-                        &format!("Could not monitor the uninstaller: {error}"),
-                    );
-                    return;
                 }
                 self.set_status(&tf(
                     "Waiting for {name}'s uninstaller…",
                     &[("name", program.name)],
                 ));
                 self.layout_controls();
+                Ok(())
             }
-            Err(error) => {
-                let message = format!("{}: {error:#}", t("Could not start the uninstaller"));
-                self.set_status(&message);
-                show_error(self.hwnd, &message);
-            }
+            Err(error) => Err(error).context("Could not start the uninstaller"),
         }
     }
 
@@ -525,6 +742,9 @@ impl NativePrograms {
                 self.layout_controls();
                 self.set_status(&error);
                 show_error(self.hwnd, &error);
+                if self.batch_active {
+                    self.abort_batch(&error);
+                }
             }
             Err(mpsc::TryRecvError::Empty) => self.store_uninstall_receiver = Some(receiver),
             Err(mpsc::TryRecvError::Disconnected) => {
@@ -534,6 +754,9 @@ impl NativePrograms {
                 let error = t("The Store app uninstall stopped unexpectedly.");
                 self.set_status(&error);
                 show_error(self.hwnd, &error);
+                if self.batch_active {
+                    self.abort_batch(&error);
+                }
             }
         }
     }
@@ -572,10 +795,14 @@ impl NativePrograms {
             self.uninstall_exit = None;
             self.view = View::Programs;
             self.layout_controls();
-            self.set_status(&tf(
-                "{name} is still registered; Expunge did not scan or remove leftovers.",
+            let error = tf(
+                "{name} is still registered; InstallScope did not scan or remove leftovers.",
                 &[("name", program.name)],
-            ));
+            );
+            self.set_status(&error);
+            if self.batch_active {
+                self.abort_batch(&error);
+            }
             return;
         }
         self.set_status(&tf(
@@ -644,7 +871,7 @@ impl NativePrograms {
         self.plan_receiver = Some(rx);
         std::thread::spawn(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let mut plan = expunge_core::orphans::scan_system(registry.as_ref());
+                let mut plan = installscope_core::orphans::scan_system(registry.as_ref());
                 plan.info.push(t(
                     "Uninstall registrations are proposed only when both the install folder and every registered uninstaller are missing. MSI, hidden, protected, and Windows-owned entries are excluded.",
                 ));
@@ -695,6 +922,9 @@ impl NativePrograms {
                 self.layout_controls();
                 self.set_status(&scan_error);
                 show_error(self.hwnd, &scan_error);
+                if self.batch_active {
+                    self.abort_batch(&scan_error);
+                }
             }
             Err(mpsc::TryRecvError::Empty) => self.plan_receiver = Some(receiver),
             Err(mpsc::TryRecvError::Disconnected) => {
@@ -710,6 +940,9 @@ impl NativePrograms {
                 self.layout_controls();
                 self.set_status(&error);
                 show_error(self.hwnd, &error);
+                if self.batch_active {
+                    self.abort_batch(&error);
+                }
             }
         }
     }
@@ -809,7 +1042,7 @@ impl NativePrograms {
             return;
         }
         let prompt = tf(
-            "Remove {n} selected items? Expunge will back them up first when backups are enabled.",
+            "Remove {n} selected items? InstallScope will back them up first when backups are enabled.",
             &[("n", count.to_string())],
         );
         let confirmed = unsafe {
@@ -901,7 +1134,7 @@ impl NativePrograms {
                         if self.backup_enabled {
                             String::new()
                         } else {
-                            t("Backups were disabled in Expunge settings.")
+                            t("Backups were disabled in InstallScope settings.")
                         }
                     });
                 let backup_warning = backup_error
@@ -959,8 +1192,14 @@ impl NativePrograms {
         self.selected_plan_item = None;
         self.uninstall_program = None;
         self.view = View::Programs;
-        self.request_refresh();
         self.layout_controls();
+        if self.batch_active {
+            self.batch_queue.remove(0);
+            self.batch_completed += 1;
+            self.launch_next_batch_program();
+        } else {
+            self.request_refresh();
+        }
     }
 
     fn layout_controls(&self) {
@@ -973,21 +1212,46 @@ impl NativePrograms {
                     SW_HIDE
                 },
             );
+            ShowWindow(
+                self.add_manual,
+                if self.view == View::Programs {
+                    SW_SHOW
+                } else {
+                    SW_HIDE
+                },
+            );
             let show_review = matches!(self.view, View::Review | View::Results);
             for control in [self.toggle_item, self.remove_selected, self.back] {
                 ShowWindow(control, if show_review { SW_SHOW } else { SW_HIDE });
             }
             if self.view == View::Review {
                 SetWindowTextW(self.back, wide(&t("Skip cleanup")).as_ptr());
+                if self.batch_active {
+                    SetWindowTextW(self.back, wide(&t("Skip cleanup and continue")).as_ptr());
+                }
                 EnableWindow(
                     self.remove_selected,
                     i32::from(self.plan.as_ref().is_some_and(|plan| plan.selected() > 0)),
                 );
             } else if self.view == View::Results {
-                SetWindowTextW(self.back, wide(&t("Back to programs")).as_ptr());
+                let label = if self.batch_active {
+                    if self.batch_queue.len() > 1 {
+                        t("Next program")
+                    } else {
+                        t("Finish batch")
+                    }
+                } else {
+                    t("Back to programs")
+                };
+                SetWindowTextW(self.back, wide(&label).as_ptr());
             }
             EnableWindow(self.refresh, i32::from(self.view == View::Programs));
             EnableWindow(self.hunter, i32::from(self.view == View::Programs));
+            EnableWindow(self.add_manual, i32::from(self.view == View::Programs));
+            EnableWindow(
+                self.uninstall_button,
+                i32::from(self.view == View::Programs),
+            );
         }
         unsafe { layout_controls(self) };
     }
@@ -1141,11 +1405,11 @@ unsafe fn draw_menu_label(state: &NativePrograms, draw: &DRAWITEMSTRUCT) {
 pub fn run(install_target: Option<String>, _launch_args: Vec<String>) -> Result<()> {
     if install_target.is_some() {
         return Err(anyhow!(
-            "The native Programs preview does not yet support Explorer's Install with Expunge action. Build without --features native-ui-preview to use the complete interface."
+            "The native Programs preview does not yet support Explorer's Install with InstallScope action. Build without --features native-ui-preview to use the complete interface."
         ));
     }
 
-    let store = Store::open().context("Could not open Expunge's data folder")?;
+    let store = Store::open().context("Could not open InstallScope's data folder")?;
     let settings = store.load_settings();
     i18n::set_language(&settings.language);
     let registry: Arc<dyn Registry> = Arc::from(platform::system_registry());
@@ -1154,7 +1418,7 @@ pub fn run(install_target: Option<String>, _launch_args: Vec<String>) -> Result<
         brand_mark: std::ptr::null_mut(),
         brand_name: std::ptr::null_mut(),
         nav_programs: std::ptr::null_mut(),
-        nav_items: [std::ptr::null_mut(); 13],
+        nav_items: [std::ptr::null_mut(); 17],
         page_title: std::ptr::null_mut(),
         page_subtitle: std::ptr::null_mut(),
         list_heading: std::ptr::null_mut(),
@@ -1167,6 +1431,7 @@ pub fn run(install_target: Option<String>, _launch_args: Vec<String>) -> Result<
         status: std::ptr::null_mut(),
         refresh: std::ptr::null_mut(),
         hunter: std::ptr::null_mut(),
+        add_manual: std::ptr::null_mut(),
         uninstall_button: std::ptr::null_mut(),
         toggle_item: std::ptr::null_mut(),
         remove_selected: std::ptr::null_mut(),
@@ -1188,6 +1453,10 @@ pub fn run(install_target: Option<String>, _launch_args: Vec<String>) -> Result<
         labels: Vec::new(),
         receiver: None,
         uninstall_program: None,
+        batch_queue: Vec::new(),
+        batch_active: false,
+        batch_total: 0,
+        batch_completed: 0,
         uninstall_child: None,
         uninstall_exit: None,
         store_uninstall_receiver: None,
@@ -1251,7 +1520,7 @@ pub fn run(install_target: Option<String>, _launch_args: Vec<String>) -> Result<
     }
 
     let class_name = wide(CLASS_NAME);
-    let title = wide(&format!("Expunge - {}", t("Programs preview")));
+    let title = wide(&format!("InstallScope - {}", t("Programs preview")));
     let class = WNDCLASSW {
         style: 0,
         lpfnWndProc: Some(window_proc),
@@ -1358,7 +1627,12 @@ unsafe fn install_menu(hwnd: HWND, background: HBRUSH) -> Result<()> {
         MF_STRING,
     )?;
     append_item(view, 0, &t("Programs (preview)"), MF_STRING | MF_GRAYED)?;
-    append_item(help, ID_MENU_ABOUT as usize, &t("About Expunge"), MF_STRING)?;
+    append_item(
+        help,
+        ID_MENU_ABOUT as usize,
+        &t("About InstallScope"),
+        MF_STRING,
+    )?;
     append_menu_label(menu, file, ID_MENU_LABEL_FILE)?;
     append_menu_label(menu, tools, ID_MENU_LABEL_TOOLS)?;
     append_menu_label(menu, view, ID_MENU_LABEL_VIEW)?;
@@ -1439,17 +1713,14 @@ unsafe extern "system" fn window_proc(
                 (ID_MENU_REFRESH, _) => state.request_refresh(),
                 (ID_MENU_HUNTER, _) => state.arm_window_hunter(),
                 (ID_MENU_UNINSTALL, _) => {
-                    let index = SendMessageW(state.list, LB_GETCURSEL, 0, 0);
-                    if index >= 0 {
-                        state.start_uninstall(index as usize);
-                    }
+                    state.start_selected_action();
                 }
                 (ID_MENU_SCAN_ORPHANS, _) => state.start_system_orphan_scan(),
                 (ID_MENU_ABOUT, _) => show_info(
                     hwnd,
                     &format!(
-                        "Expunge {}\r\nOpen Source Install Monitor & Uninstaller",
-                        expunge_core::APP_VERSION
+                        "InstallScope {}\r\nWindows Install, Uninstall & Developer Tools",
+                        installscope_core::APP_VERSION
                     ),
                 ),
                 (ID_SEARCH, SEARCH_CHANGED) if state.view == View::Programs => {
@@ -1462,10 +1733,10 @@ unsafe extern "system" fn window_proc(
                     state.arm_window_hunter();
                 }
                 (ID_UNINSTALL, BUTTON_CLICKED) if state.view == View::Programs => {
-                    let index = SendMessageW(state.list, LB_GETCURSEL, 0, 0);
-                    if index >= 0 {
-                        state.start_uninstall(index as usize);
-                    }
+                    state.start_selected_action();
+                }
+                (ID_ADD_MANUAL, BUTTON_CLICKED) if state.view == View::Programs => {
+                    state.add_manual_program();
                 }
                 (ID_TOGGLE_ITEM, BUTTON_CLICKED) if state.view == View::Review => {
                     state.toggle_plan_item()
@@ -1487,6 +1758,9 @@ unsafe extern "system" fn window_proc(
                             }
                             _ => {}
                         }
+                    }
+                    if state.view == View::Programs {
+                        state.update_selection_action();
                     }
                 }
                 _ => {}
@@ -1602,8 +1876,8 @@ unsafe extern "system" fn window_proc(
                     draw_owned_label(state, draw);
                     return 1;
                 }
-                ID_NAV_PROGRAMS | ID_REFRESH | ID_HUNTER | ID_UNINSTALL | ID_TOGGLE_ITEM
-                | ID_REMOVE_SELECTED | ID_BACK => {
+                ID_NAV_PROGRAMS | ID_REFRESH | ID_HUNTER | ID_ADD_MANUAL | ID_UNINSTALL
+                | ID_TOGGLE_ITEM | ID_REMOVE_SELECTED | ID_BACK => {
                     draw_owned_button(state, draw);
                     return 1;
                 }
@@ -1683,7 +1957,7 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
 
     const SS_OWNERDRAW: u32 = 0x000D;
     state.brand_mark = create("STATIC", "E", SS_OWNERDRAW, 0, ID_BRAND_MARK);
-    state.brand_name = create("STATIC", "Expunge", SS_OWNERDRAW, 0, ID_BRAND_NAME);
+    state.brand_name = create("STATIC", "InstallScope", SS_OWNERDRAW, 0, ID_BRAND_NAME);
     state.nav_programs = create(
         "BUTTON",
         "□   Programs",
@@ -1701,7 +1975,11 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
         "Utilities",
         "⏪   System Restore",
         "📸   Snapshots",
-        "🎒   Portable App Builder",
+        "🎒   PortableApps Forge",
+        "📦   Setup Package Creator (Planned)",
+        "🧪   Developer Sandbox (Planned)",
+        "💿   Temporary Scratch Disk (Planned)",
+        "🗂   VSS Viewer (Planned)",
         "🛡   Bloatware Shield",
         "☰   Right-Click Menu",
         "⚙   Settings",
@@ -1734,9 +2012,9 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
     state.footer = create(
         "STATIC",
         &format!(
-            "Expunge {} · © {}",
-            expunge_core::APP_VERSION,
-            expunge_core::APP_AUTHOR
+            "InstallScope {} · © {}",
+            installscope_core::APP_VERSION,
+            installscope_core::APP_AUTHOR
         ),
         0x000D,
         0,
@@ -1763,6 +2041,13 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
         BS_OWNERDRAW | WS_TABSTOP,
         0,
         ID_HUNTER,
+    );
+    state.add_manual = create(
+        "BUTTON",
+        &t("Add program…"),
+        BS_OWNERDRAW | WS_TABSTOP,
+        0,
+        ID_ADD_MANUAL,
     );
     state.uninstall_button = create(
         "BUTTON",
@@ -1798,7 +2083,9 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
     state.list = create(
         "LISTBOX",
         "",
-        (LBS_NOTIFY | LBS_HASSTRINGS | LBS_OWNERDRAWFIXED) as u32 | WS_VSCROLL | WS_TABSTOP,
+        (LBS_NOTIFY | LBS_HASSTRINGS | LBS_OWNERDRAWFIXED | LBS_EXTENDEDSEL) as u32
+            | WS_VSCROLL
+            | WS_TABSTOP,
         0,
         ID_LIST,
     );
@@ -1828,6 +2115,10 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
         state.nav_items[10],
         state.nav_items[11],
         state.nav_items[12],
+        state.nav_items[13],
+        state.nav_items[14],
+        state.nav_items[15],
+        state.nav_items[16],
         state.page_title,
         state.page_subtitle,
         state.list_heading,
@@ -1837,6 +2128,7 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
         state.search,
         state.refresh,
         state.hunter,
+        state.add_manual,
         state.uninstall_button,
         state.toggle_item,
         state.remove_selected,
@@ -1862,6 +2154,7 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
         state.search,
         state.refresh,
         state.hunter,
+        state.add_manual,
         state.uninstall_button,
         state.toggle_item,
         state.remove_selected,
@@ -1913,6 +2206,10 @@ unsafe fn layout_controls(state: &NativePrograms) {
         444,
         482,
         520,
+        558,
+        596,
+        634,
+        672,
         height - 48,
     ]
     .into_iter()
@@ -1934,12 +2231,34 @@ unsafe fn layout_controls(state: &NativePrograms) {
         state.search,
         content_left,
         112,
-        (content_width - 230).max(160),
+        (content_width - 330).max(140),
         row_height,
         1,
     );
-    MoveWindow(state.hunter, width - margin - 220, 112, 130, row_height, 1);
-    MoveWindow(state.refresh, width - margin - 80, 112, 80, row_height, 1);
+    MoveWindow(
+        state.add_manual,
+        content_left + content_width - 302,
+        112,
+        104,
+        row_height,
+        1,
+    );
+    MoveWindow(
+        state.hunter,
+        content_left + content_width - 190,
+        112,
+        110,
+        row_height,
+        1,
+    );
+    MoveWindow(
+        state.refresh,
+        content_left + content_width - 72,
+        112,
+        72,
+        row_height,
+        1,
+    );
     MoveWindow(state.list_heading, content_left, 164, list_width, 24, 1);
     MoveWindow(
         state.table_header,
@@ -2131,7 +2450,7 @@ unsafe fn draw_program_row(state: &NativePrograms, draw: &DRAWITEMSTRUCT) {
         program.version.clone(),
         program.install_date.clone(),
         (program.size_kb > 0)
-            .then(|| expunge_core::model::human_size(program.size_kb.saturating_mul(1024)))
+            .then(|| installscope_core::model::human_size(program.size_kb.saturating_mul(1024)))
             .unwrap_or_default(),
     ];
     let positions = [0.0_f32, 0.30, 0.52, 0.73, 0.88];
@@ -2190,7 +2509,7 @@ unsafe fn draw_text_row(state: &NativePrograms, draw: &DRAWITEMSTRUCT) {
 
 fn show_error(hwnd: HWND, message: &str) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
-    let title = wide("Expunge");
+    let title = wide("InstallScope");
     unsafe {
         MessageBoxW(
             hwnd,
@@ -2207,7 +2526,7 @@ fn show_info(hwnd: HWND, message: &str) {
         MessageBoxW(
             hwnd,
             wide(message).as_ptr(),
-            wide("About Expunge").as_ptr(),
+            wide("About InstallScope").as_ptr(),
             MB_OK | MB_ICONINFORMATION,
         )
     };
@@ -2216,9 +2535,9 @@ fn show_info(hwnd: HWND, message: &str) {
 #[cfg(test)]
 mod tests {
     use super::{build_native_removal_plan, filter_programs, find_program_for_image};
-    use expunge_core::model::{ChangeSet, InstallLog, KeyData};
-    use expunge_core::platform::{MemRegistry, Registry};
-    use expunge_core::programs::InstalledProgram;
+    use installscope_core::model::{ChangeSet, InstallLog, KeyData};
+    use installscope_core::platform::{MemRegistry, Registry};
+    use installscope_core::programs::InstalledProgram;
 
     fn program(name: &str, publisher: &str) -> InstalledProgram {
         InstalledProgram {
@@ -2300,7 +2619,7 @@ mod tests {
         let plan = build_native_removal_plan(&program, &logs, &registry, false);
 
         assert!(plan.items.iter().any(|item| {
-            matches!(&item.action, expunge_core::revert::Action::DeleteKey { path } if path == key)
+            matches!(&item.action, installscope_core::revert::Action::DeleteKey { path } if path == key)
                 && item.selected
         }));
         assert!(!registry.exists(&program.key));

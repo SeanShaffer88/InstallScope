@@ -1,12 +1,12 @@
-//! Backups page: everything Expunge removed, ready to be put back.
+//! Backups page: everything InstallScope removed, ready to be put back.
 
 use super::app::{App, Confirm};
 use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use expunge_core::backup::{self, ActionResult, Backup};
-use expunge_core::i18n::{t, tf};
+use installscope_core::backup::{self, ActionResult, Backup};
+use installscope_core::i18n::{t, tf};
 
 #[derive(Default)]
 pub struct BackupsState {
@@ -137,10 +137,10 @@ impl App {
             let total: u64 = self.backups.list.iter().map(|b| b.bytes()).sum();
             ui.horizontal(|ui| {
                 muted(ui, tf("{n} backups", &[("n", self.backups.list.len().to_string())]));
-                muted(ui, format!("· {}", expunge_core::model::human_size(total)));
+                muted(ui, format!("· {}", installscope_core::model::human_size(total)));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     if ui.button(t("Open backup folder")).clicked() {
-                        expunge_core::platform::shell_open(&self.store.backups_dir().to_string_lossy());
+                        installscope_core::platform::shell_open(&self.store.backups_dir().to_string_lossy());
                     }
                 });
             });
@@ -151,7 +151,7 @@ impl App {
             }
             if self.backups.list.is_empty() {
                 theme::card(ui, |ui| {
-                    muted(ui, t("No backups yet. Every removal Expunge makes is backed up here first."));
+                    muted(ui, t("No backups yet. Every removal InstallScope makes is backed up here first."));
                 });
                 return;
             }
@@ -173,10 +173,10 @@ impl App {
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 if ui
                                     .button(t("Open folder"))
-                                    .on_hover_text(t("Backed-up files, plus a .reg file you can double-click to restore registry entries without Expunge."))
+                                    .on_hover_text(t("Backed-up files, plus a .reg file you can double-click to restore registry entries without InstallScope."))
                                     .clicked()
                                 {
-                                    expunge_core::platform::shell_open(&backups_dir.join(&b.id).to_string_lossy());
+                                    installscope_core::platform::shell_open(&backups_dir.join(&b.id).to_string_lossy());
                                 }
                                 if ui.button(t("Delete")).clicked() {
                                     action = Some(Confirm::DeleteBackup(b.id.clone()));

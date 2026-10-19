@@ -1,28 +1,28 @@
 [package]
-name = "expunge"
+name = "installscope"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.91"
 resolver = "3"
 authors = ["Sean Shaffer"]
-description = "Open Source Install Monitor & Uninstaller for Windows: snapshot, diff, revert."
+description = "Windows toolkit for install monitoring, safe uninstalls, recovery, and developer tools."
 license = "GPL-3.0-or-later"
-repository = "https://github.com/SeanShaffer88/Expunge"
-homepage = "https://github.com/SeanShaffer88/Expunge"
+repository = "https://github.com/SeanShaffer88/InstallScope"
+homepage = "https://github.com/SeanShaffer88/InstallScope"
 readme = "README.md"
 keywords = ["uninstaller", "windows", "install-monitor", "registry", "snapshot"]
 categories = ["command-line-utilities", "os::windows-apis", "gui"]
 build = "build.rs"
 
 [lib]
-name = "expunge_core"
+name = "installscope_core"
 path = "src/lib.rs"
 
 [features]
 native-ui-preview = []
 
 [[bin]]
-name = "expunge"
+name = "installscope"
 path = "src/main.rs"
 
 [dependencies]

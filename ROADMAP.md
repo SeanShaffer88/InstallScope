@@ -16,8 +16,9 @@ bounded, tested workflow rather than a broad rewrite.
   complete workflows one at a time; keep the existing working UI until each
   replacement is ready. The experimental Programs preview now includes
   browsing, search, details, window-targeted identification, desktop and
-  Store-app uninstalls, and reviewed leftover cleanup. Manual-entry removal,
-  batch actions, restore points, and full-flow parity remain.
+  Store-app uninstalls, reviewed leftover cleanup, analysis-only manual entries,
+  and sequential batch uninstall with a separate cleanup review per program.
+  Restore-point integration and full-flow parity remain.
 - **Window-targeted program identification** — a Revo Hunter Mode-inspired
   picker is prototyped in the native preview. Validate it in the full
   production interface; match using a unique executable-path/install-location
@@ -31,10 +32,28 @@ bounded, tested workflow rather than a broad rewrite.
   unsupported or malformed inputs safely.
 - **Setup Package Creator** — the Logs page can already build a silent
   `Setup.exe` plus a deploy folder from a captured installation. Extend this
-  into a guided, reviewable project only where it adds value: package identity,
-  destination mapping, shortcuts, prerequisites, install scope, and a clear
-  uninstall/rollback plan. Keep silent redeployment as the fast path; do not
-  imply arbitrary installers can be safely reconstructed from incomplete logs.
+  into a guided, reviewable project informed by the capabilities documented by
+  [InstallForge](https://docs.installforge.net/getting-started/features/) and
+  [Setup Factory](https://www.indigorose.com/setup-factory/features/): project
+  identity and target matrix; file and folder selection with destination
+  mapping; install types/components; prerequisites; shortcuts, registry and
+  other explicit install actions; customizable, localizable wizard pages;
+  compression; generated uninstall support; optional code signing; and a
+  source-control-friendly project with logged command-line builds.
+  **Completeness is a build requirement:** inventory and package every
+  application-owned file, resource, library, runtime, and transitive dependency
+  found in the selected build inputs and monitored installation. Combine
+  dependency inspection with monitored test installs, report unresolved or
+  missing inputs, and block builds with unresolved required dependencies rather
+  than silently producing incomplete packages. Never copy Windows-owned or
+  shared system binaries into an application package or bypass a dependency's
+  redistribution terms. For those dependencies, identify the supported OS or
+  prerequisite, accept only an authorized and verified redistributable source,
+  and make any remaining requirement visible to the user. Keep every inclusion
+  and install action reviewable, and make uninstall behavior explicit. Retain
+  silent log redeployment as the fast path; do not imply arbitrary installers
+  can be safely reconstructed from incomplete logs or that dependencies
+  outside the inspected inputs can be discovered with certainty.
 - **Disposable Runner for developers** — provide an in-app way to run arbitrary
   test applications and scripts in a disposable environment, distinct from
   the existing Windows Sandbox installer-preview flow. Use the agreed hybrid
@@ -54,6 +73,23 @@ bounded, tested workflow rather than a broad rewrite.
   isolation, not application sandboxing.
 
 **Product quality**
+- **Complete, production-ready tools** — do not ship placeholders as finished
+  features. Each tool must cover its end-to-end workflow, input and permission
+  checks, progress and cancellation where applicable, actionable failures,
+  recovery or cleanup, accessibility, localization, and documented supported
+  configurations. Verify normal use and failure paths before enabling it in the
+  interface; keep unfinished tools visibly marked as planned.
+- **Contextual guidance throughout** — provide concise, useful, localized
+  tooltips for interactive controls and settings, explaining their effect,
+  prerequisites, safety impact, or limitations as appropriate. Make help
+  available by keyboard focus as well as pointer hover; keep critical warnings
+  visible without requiring a tooltip.
+- **CLI coverage wherever practical** — extend the existing command line to
+  cover every workflow that can be operated safely without the GUI. Provide
+  documented noninteractive use, machine-readable output, stable exit codes,
+  preflight or dry-run support where applicable, and the same backup and
+  confirmation safeguards as the GUI. Document and test any justified
+  GUI-only workflows rather than implying complete parity prematurely.
 - **Safety and recovery first** — keep destructive work previewed, itemized,
   opt-in, and backed up; add failure-injection tests for interrupted removals,
   backup/restore, elevation handoff, and locked files. Explain uncertainty and
@@ -102,7 +138,7 @@ bounded, tested workflow rather than a broad rewrite.
 - **Diagnostic-tool handoff** — when useful, offer to open an already
   installed Microsoft Sysinternals diagnostic such as Process Explorer or
   Process Monitor at the relevant file/process, but do not bundle or download
-  third-party executables automatically. Expunge's own process, lock, and
+  third-party executables automatically. InstallScope's own process, lock, and
   install-monitoring views remain the primary experience. See the
   [Sysinternals tools](https://learn.microsoft.com/en-us/sysinternals/).
 
@@ -110,7 +146,7 @@ bounded, tested workflow rather than a broad rewrite.
 
 - **Already covered; avoid duplication:** Total Uninstall and Revo emphasize
   installed-program analysis, monitored installs, leftovers, forced removal,
-  and batch uninstall—workflows Expunge already has. Keep investment on
+  and batch uninstall—workflows InstallScope already has. Keep investment on
   reliability, review, and the native UI migration rather than parallel tools.
 - **Distinct Revo feature:** window-targeted identification is prototyped above.
   Browser-extension inventory is a separate, reversible follow-on, not a
@@ -118,24 +154,24 @@ bounded, tested workflow rather than a broad rewrite.
 - **Auslogics Windows Slimmer:** its official
   [feature page](https://www.auslogics.com/en/software/windows-slimmer/)
   describes reviewed junk and update cleanup, Rescue Center restore, and
-  Compact OS. Prefer extending Expunge's existing review/restore patterns for
+  Compact OS. Prefer extending InstallScope's existing review/restore patterns for
   relevant cleanup; defer Compact OS and secure deletion, which broaden scope
   and carry substantially higher system/data risk.
 
 ## Later
 
 **Related tools: current coverage and gaps**
-- **Available:** Portable App Builder creates PortableApps.com Format
+- **Available:** PortableApps Forge creates PortableApps.com Format
   packages from `.exe`/`.msi` installers, using Windows Sandbox when available
   or monitored host capture otherwise; its portability check, Launcher
   settings, and package creation are already implemented. See the
-  [README](README.md#portable-app-builder).
+  [README](README.md#portableapps-forge).
 - **Available:** System Restore manager lists, creates, deletes, and rolls
   back Windows restore points and configures System Protection and its disk
   limit. Snapshot comparison is available separately for before/after
   inspection of recorded system changes.
 - **Partial, not a substitute for the planned tools:** installer preview and
-  Portable App Builder can use Windows Sandbox on supported editions. This
+  PortableApps Forge can use Windows Sandbox on supported editions. This
   does not provide an in-app disposable runner for arbitrary developer tests.
 - **Not implemented:** a VSS content browser and a temporary scratch volume;
   both are planned above with read-only or bounded, recoverable behavior.
@@ -143,12 +179,12 @@ bounded, tested workflow rather than a broad rewrite.
 **Monitoring**
 - **Per-value live registry view** — the live activity panel shows which registry areas change; listing each value as it changes would need event tracing (ETW).
 
-**Portable App Builder**
+**PortableApps Forge**
 - **Drive-letter and path fixing** — find absolute paths inside captured settings files and write matching `[FileWrite]` sections, so settings follow the drive.
 - **An isolated sandbox for Windows 11 Home** — Home PCs now have *Try it, then undo*, which installs, records and removes again; a virtual machine option (Home has no Hyper-V, so VirtualBox or QEMU) would keep them entirely untouched.
 
 **Release readiness**
-- **Code signing certificate** — the release workflow already signs `Expunge.exe` (x64 and Arm64) and the installer, with a timestamp, as soon as the `CODESIGN_PFX` and `CODESIGN_PASSWORD` repository secrets are set. What's left is getting a certificate: a free open-source one (SignPath Foundation), Azure Artifact Signing, or an OV certificate.
+- **Code signing certificate** — the release workflow already signs `InstallScope.exe` (x64 and Arm64) and the installer, with a timestamp, as soon as the `CODESIGN_PFX` and `CODESIGN_PASSWORD` repository secrets are set. What's left is getting a certificate: a free open-source one (SignPath Foundation), Azure Artifact Signing, or an OV certificate.
 - **Antivirus false-positive reports** — the release workflow already uploads every download to VirusTotal when the `VIRUSTOTAL_API_KEY` secret is set, warns about any detection and links each report in the release notes. What's left is a free VirusTotal account for the key, and submitting any false positives to Microsoft Defender, Malwarebytes and other vendors before publishing.
 - **Windows 11 client validation** — the integration matrix (Windows Installer, NSIS, Inno Setup, Squirrel, WiX Burn, and InstallShield and Wise once the `INSTALLSHIELD_URL` and `WISE_URL` repository variables point to test installers) runs on Windows Server runners; run it on a freshly provisioned, snapshot-isolated Windows 11 virtual machine as well, and add a large MSI suite.
 - **Multi-day soak run** — `scripts/soak.ps1` is ready and runs for five hours every week in CI; run it for several days on a test VM before the first release.
@@ -160,11 +196,11 @@ bounded, tested workflow rather than a broad rewrite.
 ## Considered and not planned
 - **Kernel minifilter driver for monitoring** — a driver must be signed by Microsoft, which open-source projects can't easily get, and a driver bug can crash Windows. Snapshots plus Windows' change notifications capture the same changes safely.
 - **Rewrite in C#/.NET with WinUI 3** — it would add a runtime dependency and give up the single self-contained exe. The Rust engine is already native and fast.
-- **Always require administrator rights in the manifest** — Expunge starts as the current user and offers a one-click relaunch as administrator, because much of it (browsing programs, junk cleaning in your profile, the Ask, Snapshots and Right-click menu pages for your account) needs no elevation, and the command line must run in unelevated scripts. Actions that need administrator rights say so and relaunch elevated.
-- **Self-contained .NET deployment, trimming and ReadyToRun** — not applicable: Expunge is a native Rust program with no runtime to bundle, already built as separate x64 and Arm64 executables with link-time optimization.
+- **Always require administrator rights in the manifest** — InstallScope starts as the current user and offers a one-click relaunch as administrator, because much of it (browsing programs, junk cleaning in your profile, the Ask, Snapshots and Right-click menu pages for your account) needs no elevation, and the command line must run in unelevated scripts. Actions that need administrator rights say so and relaunch elevated.
+- **Self-contained .NET deployment, trimming and ReadyToRun** — not applicable: InstallScope is a native Rust program with no runtime to bundle, already built as separate x64 and Arm64 executables with link-time optimization.
 - **SQLite index** — the program list is already filtered instantly in memory; the on-disk cache planned above covers the slow parts (sizes, icons, signatures) without a database.
 
 ## Known limitations
-- Contents of files the installer *modified* or *deleted* can't be restored (only their existence is recorded); Expunge lists them so you know.
+- Contents of files the installer *modified* or *deleted* can't be restored (only their existence is recorded); InstallScope lists them so you know.
 - A restored scheduled task file is not re-registered with Task Scheduler until it is re-imported.
 - Snapshots cover the current user's profile; changes to other users' profiles aren't captured.

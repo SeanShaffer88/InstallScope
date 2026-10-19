@@ -1,6 +1,6 @@
-# Translating Expunge
+# Translating InstallScope
 
-Expunge uses the English text itself as the translation key. Each language is a
+InstallScope uses the English text itself as the translation key. Each language is a
 flat JSON file in [`lang/`](../lang): the key is the English string and the
 value is the translation.
 
@@ -17,7 +17,7 @@ value is the translation.
 - Missing or empty entries fall back to English, so partial translations are fine.
 
 ## Trying a translation without rebuilding
-Create a `lang` folder next to `Expunge.exe` and put your file in it, named after the language code (for example `lang/pl.json` or `lang/ko.json`). Restart Expunge and pick the language under **View → Language** or **Settings**. A file with the same code as a built-in language replaces it, which is handy for improving an existing translation.
+Create a `lang` folder next to `InstallScope.exe` and put your file in it, named after the language code (for example `lang/pl.json` or `lang/ko.json`). Restart InstallScope and pick the language under **View → Language** or **Settings**. A file with the same code as a built-in language replaces it, which is handy for improving an existing translation.
 
 ## Adding it permanently
 1. Add `lang/<code>.json`.

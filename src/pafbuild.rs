@@ -1,9 +1,9 @@
-//! Portable App Builder: capture a program's installation and turn it into a
+//! PortableApps Forge: capture a program's installation and turn it into a
 //! PortableApps.com Format package, then compile it with the PortableApps.com
 //! Launcher Generator and Installer.
 //!
 //! The capture can run inside Windows Sandbox (the host PC is never touched)
-//! or on this PC (the installation is recorded as an install log, so Expunge
+//! or on this PC (the installation is recorded as an install log, so InstallScope
 //! can remove it precisely afterwards). In both cases it:
 //!
 //! 1. takes a snapshot, waits, and takes another to learn background noise;
@@ -133,6 +133,36 @@ pub fn appinfo_ini(d: &AppDetails) -> String {
 }
 
 pub fn appinfo_ini_with(d: &AppDetails, needs: &crate::portability::Needs) -> String {
+    appinfo_ini_with_file_types(d, needs, &[])
+}
+
+fn appinfo_ini_with_changes(
+    d: &AppDetails,
+    needs: &crate::portability::Needs,
+    changes: &ChangeSet,
+) -> String {
+    appinfo_ini_with_associations(
+        d,
+        needs,
+        &registered_file_types(changes),
+        &registered_protocols(changes),
+    )
+}
+
+fn appinfo_ini_with_file_types(
+    d: &AppDetails,
+    needs: &crate::portability::Needs,
+    file_types: &[String],
+) -> String {
+    appinfo_ini_with_associations(d, needs, file_types, &[])
+}
+
+fn appinfo_ini_with_associations(
+    d: &AppDetails,
+    needs: &crate::portability::Needs,
+    file_types: &[String],
+    protocols: &[String],
+) -> String {
     let yes_no = |v: bool| if v { "yes" } else { "no" };
     let deps = if needs.java || needs.x64_only || needs.admin {
         format!(
@@ -143,6 +173,19 @@ pub fn appinfo_ini_with(d: &AppDetails, needs: &crate::portability::Needs) -> St
         )
     } else {
         String::new()
+    };
+    let associations = if file_types.is_empty() && protocols.is_empty() {
+        String::new()
+    } else {
+        let mut section = String::from("[Associations]\r\n");
+        if !file_types.is_empty() {
+            section.push_str(&format!("FileTypes={}\r\n", file_types.join(",")));
+        }
+        if !protocols.is_empty() {
+            section.push_str(&format!("Protocols={}\r\n", protocols.join(",")));
+        }
+        section.push_str("\r\n");
+        section
     };
     let b = |v: bool| if v { "true" } else { "false" };
     let publisher = match (d.publisher.trim(), d.packager.trim()) {
@@ -173,7 +216,7 @@ pub fn appinfo_ini_with(d: &AppDetails, needs: &crate::portability::Needs) -> St
          Category={category}\r\nDescription={description}\r\nLanguage={lang}\r\n\r\n\
          [License]\r\nShareable={sh}\r\nOpenSource={os}\r\nFreeware={fw}\r\nCommercialUse={cu}\r\n\r\n\
          [Version]\r\nPackageVersion={pv}\r\nDisplayVersion={dv}\r\n\r\n\
-         {deps}[Control]\r\nIcons=1\r\nStart={id}.exe\r\n",
+         {deps}[Control]\r\nIcons=1\r\nStart={id}.exe\r\n\r\n{associations}",
         name = d.display_name(),
         id = d.app_id(),
         home = d.homepage.trim(),
@@ -184,7 +227,78 @@ pub fn appinfo_ini_with(d: &AppDetails, needs: &crate::portability::Needs) -> St
         cu = b(d.commercial_use),
         pv = package_version(display_version),
         dv = display_version,
+        associations = associations,
     )
+}
+
+fn registered_file_types(changes: &ChangeSet) -> Vec<String> {
+    let mut types = std::collections::BTreeSet::<String>::new();
+    let mut add_key = |key: &str| {
+        let lower = key.to_ascii_lowercase();
+        let ext = ["hkcu\\software\\classes\\", "hklm\\software\\classes\\"]
+            .iter()
+            .find_map(|root| lower.strip_prefix(root))
+            .and_then(|rest| {
+                let (ext, child) = rest.split_once('\\').unwrap_or((rest, ""));
+                (child.is_empty() && ext.starts_with('.') && ext.len() > 1).then_some(ext)
+            });
+        if let Some(ext) = ext {
+            let value = &ext[1..];
+            if value
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b"._+-".contains(&b))
+            {
+                types.insert(value.to_ascii_lowercase());
+            }
+        }
+    };
+    for key in &changes.keys_added {
+        add_key(&key.path);
+    }
+    for value in &changes.values_added {
+        add_key(&value.key);
+    }
+    for value in &changes.values_modified {
+        add_key(&value.key);
+    }
+    types.into_iter().collect()
+}
+
+fn registered_protocols(changes: &ChangeSet) -> Vec<String> {
+    let mut protocols = std::collections::BTreeSet::<String>::new();
+    let mut add_key = |key: &str, values: &[crate::model::RegValue]| {
+        let lower = key.to_ascii_lowercase();
+        let Some(rest) = ["hkcu\\software\\classes\\", "hklm\\software\\classes\\"]
+            .iter()
+            .find_map(|root| lower.strip_prefix(root))
+        else {
+            return;
+        };
+        if rest.contains('\\')
+            || !rest
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b".+-".contains(&b))
+            || !rest.as_bytes().first().is_some_and(u8::is_ascii_alphabetic)
+        {
+            return;
+        }
+        let is_protocol = values.iter().any(|value| {
+            value.name.eq_ignore_ascii_case("URL Protocol") && value.as_string().is_some()
+        });
+        if is_protocol {
+            protocols.insert(rest.to_string());
+        }
+    };
+    for key in &changes.keys_added {
+        add_key(&key.path, &key.values.values().cloned().collect::<Vec<_>>());
+    }
+    for value in &changes.values_added {
+        add_key(&value.key, std::slice::from_ref(&value.value));
+    }
+    for value in &changes.values_modified {
+        add_key(&value.key, std::slice::from_ref(&value.after));
+    }
+    protocols.into_iter().collect()
 }
 
 // ---- Installers ------------------------------------------------------------
@@ -682,7 +796,7 @@ pub fn build_package(
     progress("Writing the PortableApps.com files");
     std::fs::write(
         appinfo.join("appinfo.ini"),
-        appinfo_ini_with(d, &report.needs),
+        appinfo_ini_with_changes(d, &report.needs, cs),
     )?;
     if !write_icons(&exe, &appinfo) {
         warnings.push("No icon could be read from the program; add appicon.ico and the PNG icons to App\\AppInfo.".into());
@@ -698,7 +812,7 @@ pub fn build_package(
         std::slice::from_ref(&program_dir),
     );
     let launcher = format!(
-        "; Made by Expunge Portable App Builder. Review the sections below before publishing.\r\n\r\n\
+        "; Made by InstallScope PortableApps Forge. Review the sections below before publishing.\r\n\r\n\
          {java}[Launch]\r\nProgramExecutable={rel_exe}\r\nDirectoryMoveOK=yes\r\nSupportsUNC=yes\r\n\r\n{}{}{issues}",
         settings.sections.replace("\r\n", "\n").replace('\n', "\r\n"),
         settings.notes.replace("\r\n", "\n").replace('\n', "\r\n"),
@@ -718,7 +832,7 @@ pub fn build_package(
     std::fs::write(
         pkg.join("Other").join("Source").join("Readme.txt"),
         format!(
-            "{} was captured and packaged by Expunge (https://github.com/SeanShaffer88/Expunge).\r\n\r\n\
+            "{} was captured and packaged by InstallScope (https://github.com/SeanShaffer88/InstallScope).\r\n\r\n\
              The Launcher settings are in App\\AppInfo\\Launcher\\{id}.ini.\r\n\r\n\
              Portability check:\r\n{}",
             d.display_name(),
@@ -797,7 +911,7 @@ pub fn build_package(
 // ---- Capture --------------------------------------------------------------
 
 /// Everything a capture needs, saved as job.json (so the same run works
-/// inside Windows Sandbox, where it is started by Windows, not by Expunge).
+/// inside Windows Sandbox, where it is started by Windows, not by InstallScope).
 #[derive(Clone, Debug, Default)]
 pub struct Job {
     pub details: AppDetails,
@@ -910,7 +1024,7 @@ pub fn capture(
     Ok((log, pkg))
 }
 
-/// `expunge pa-capture <job.json>`: the capture as run inside the sandbox
+/// `installscope pa-capture <job.json>`: the capture as run inside the sandbox
 /// (or on this PC from the command line). Writes status.json and
 /// install-log.json next to job.json.
 pub fn run_job_file(job_path: &Path) -> Result<()> {
@@ -932,7 +1046,7 @@ pub fn run_job_file(job_path: &Path) -> Result<()> {
     };
     let ask = || {
         let msg = "When the installation has finished, start the program once, set it up the way you want it to start, and close it.\n\nThen click OK.";
-        platform::ask_ok("Expunge Portable App Builder", msg);
+        platform::ask_ok("InstallScope PortableApps Forge", msg);
     };
     let reg = platform::system_registry();
     let progress = Progress::default();
@@ -959,7 +1073,7 @@ pub fn run_job_file(job_path: &Path) -> Result<()> {
             });
             if job.sandbox {
                 platform::ask_ok(
-                    "Expunge Portable App Builder",
+                    "InstallScope PortableApps Forge",
                     &format!("The capture failed: {e}"),
                 );
             }
@@ -985,9 +1099,9 @@ pub fn sandbox_available() -> bool {
 }
 
 /// Where things appear inside the sandbox.
-pub const SANDBOX_EXPUNGE: &str = "C:\\Expunge";
+pub const SANDBOX_INSTALLSCOPE: &str = "C:\\InstallScope";
 pub const SANDBOX_INSTALLER: &str = "C:\\Installer";
-pub const SANDBOX_WORK: &str = "C:\\ExpungeWork";
+pub const SANDBOX_WORK: &str = "C:\\InstallScopeWork";
 
 fn xml(s: &str) -> String {
     s.replace('&', "&amp;")
@@ -996,7 +1110,7 @@ fn xml(s: &str) -> String {
 }
 
 pub fn wsb_config(
-    expunge_dir: &Path,
+    installscope_dir: &Path,
     installer_dir: &Path,
     work_dir: &Path,
     exe_name: &str,
@@ -1008,8 +1122,8 @@ pub fn wsb_config(
         )
     };
     format!(
-        "<Configuration>\n  <Networking>Default</Networking>\n  <ClipboardRedirection>Enable</ClipboardRedirection>\n  <MemoryInMB>4096</MemoryInMB>\n  <MappedFolders>\n{}{}{}  </MappedFolders>\n  <LogonCommand>\n    <Command>{SANDBOX_EXPUNGE}\\{} pa-capture {SANDBOX_WORK}\\job.json</Command>\n  </LogonCommand>\n</Configuration>\n",
-        map(expunge_dir, SANDBOX_EXPUNGE, true),
+        "<Configuration>\n  <Networking>Default</Networking>\n  <ClipboardRedirection>Enable</ClipboardRedirection>\n  <MemoryInMB>4096</MemoryInMB>\n  <MappedFolders>\n{}{}{}  </MappedFolders>\n  <LogonCommand>\n    <Command>{SANDBOX_INSTALLSCOPE}\\{} pa-capture {SANDBOX_WORK}\\job.json</Command>\n  </LogonCommand>\n</Configuration>\n",
+        map(installscope_dir, SANDBOX_INSTALLSCOPE, true),
         map(installer_dir, SANDBOX_INSTALLER, true),
         map(work_dir, SANDBOX_WORK, false),
         xml(exe_name),
@@ -1028,7 +1142,7 @@ pub fn start_sandbox(job: &Job, work_dir: &Path) -> Result<()> {
     let exe_name = exe
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "Expunge.exe".into());
+        .unwrap_or_else(|| "InstallScope.exe".into());
     let installer = PathBuf::from(&job.installer);
     let installer_dir = installer
         .parent()
@@ -1040,8 +1154,8 @@ pub fn start_sandbox(job: &Job, work_dir: &Path) -> Result<()> {
     inside_job.installer = format!("{SANDBOX_INSTALLER}\\{}", installer_name.to_string_lossy());
     inside_job.out_dir = format!("{SANDBOX_WORK}\\out");
     inside_job.sandbox = true;
-    // Don't capture Expunge's own folders inside the sandbox.
-    for d in [SANDBOX_EXPUNGE, SANDBOX_INSTALLER, SANDBOX_WORK] {
+    // Don't capture InstallScope's own folders inside the sandbox.
+    for d in [SANDBOX_INSTALLSCOPE, SANDBOX_INSTALLER, SANDBOX_WORK] {
         inside_job.settings.file_exclusions.push(d.to_string());
     }
     std::fs::write(
@@ -1049,7 +1163,7 @@ pub fn start_sandbox(job: &Job, work_dir: &Path) -> Result<()> {
         crate::json::compat::to_vec_pretty(&inside_job)?,
     )?;
     let _ = std::fs::remove_file(work_dir.join("status.json"));
-    let wsb = work_dir.join("Expunge.wsb");
+    let wsb = work_dir.join("InstallScope.wsb");
     std::fs::write(
         &wsb,
         wsb_config(exe_dir, installer_dir, work_dir, &exe_name),
@@ -1086,12 +1200,15 @@ pub fn collect_sandbox_package(work_dir: &Path, pkg: &Package, out_dir: &Path) -
 pub struct PaTools {
     pub launcher_generator: Option<PathBuf>,
     pub installer: Option<PathBuf>,
+    pub app_compactor: Option<PathBuf>,
 }
 
 pub const LAUNCHER_URL: &str =
     "https://portableapps.com/apps/development/portableapps.com_launcher";
 pub const INSTALLER_URL: &str =
     "https://portableapps.com/apps/development/portableapps.com_installer";
+pub const APP_COMPACTOR_URL: &str =
+    "https://portableapps.com/apps/utilities/portableapps.com_appcompactor";
 
 /// Look for the PortableApps.com Launcher and Installer in `portableapps_dir`
 /// (a PortableApps folder), then in X:\PortableApps on every drive and in the
@@ -1107,6 +1224,10 @@ pub fn find_tools(portableapps_dir: &str) -> PaTools {
     if let Ok(p) = std::env::var("USERPROFILE") {
         bases.push(Path::new(&p).join("PortableApps"));
     }
+    find_tools_in(bases)
+}
+
+fn find_tools_in(bases: impl IntoIterator<Item = PathBuf>) -> PaTools {
     let mut t = PaTools::default();
     for b in bases {
         let g = b
@@ -1120,6 +1241,12 @@ pub fn find_tools(portableapps_dir: &str) -> PaTools {
             .join("PortableApps.comInstaller.exe");
         if t.installer.is_none() && i.is_file() {
             t.installer = Some(i);
+        }
+        let c = b
+            .join("PortableApps.comAppCompactor")
+            .join("PortableApps.comAppCompactor.exe");
+        if t.app_compactor.is_none() && c.is_file() {
+            t.app_compactor = Some(c);
         }
         if t.launcher_generator.is_some() && t.installer.is_some() {
             break;
@@ -1163,7 +1290,7 @@ pub fn compile(
     let mut out = Compiled::default();
     let quote = |p: &Path| format!("\"{}\"", p.display());
     // The launcher: compiled from the official PortableApps.com Launcher
-    // source, which Expunge carries (or fetches once) with its compiler.
+    // source, which InstallScope carries (or fetches once) with its compiler.
     let toolchain = crate::patools::ensure(data_root, report);
     match (&toolchain, &tools.launcher_generator) {
         (Ok(tc), _) => {
@@ -1184,7 +1311,7 @@ pub fn compile(
     }
     // The installer: the official PortableApps.com Installer when it is
     // installed (needed only to publish on portableapps.com), otherwise
-    // Expunge's own.
+    // InstallScope's own.
     report("Making the installer");
     if let Some(i) = &tools.installer {
         let start = std::time::SystemTime::now() - std::time::Duration::from_secs(2);
@@ -1279,6 +1406,71 @@ mod tests {
     }
 
     #[test]
+    fn appinfo_includes_captured_file_associations_safely() {
+        use crate::model::{RegValue, ValueRef};
+
+        let changes = ChangeSet {
+            keys_added: vec![
+                KeyData::new("HKCU\\Software\\Classes\\.foo"),
+                KeyData::new("HKLM\\Software\\Classes\\.BAR"),
+                KeyData::new("HKCU\\Software\\Classes\\.foo\\OpenWithProgids"),
+                KeyData::new("HKCU\\Software\\Classes\\.bad,entry"),
+                KeyData::new("HKCU\\Software\\Other\\.ignored"),
+                KeyData::new("HKCU\\Software\\Classes\\myapp")
+                    .with(RegValue::string("URL Protocol", "")),
+                KeyData::new("HKCU\\Software\\Classes\\bad:scheme")
+                    .with(RegValue::string("URL Protocol", "")),
+            ],
+            values_added: vec![ValueRef {
+                key: "HKCU\\Software\\Classes\\.baz".into(),
+                value: RegValue::string("", "Baz.Program"),
+            }],
+            values_modified: vec![crate::model::ValueChange {
+                key: "HKLM\\Software\\Classes\\otherapp".into(),
+                before: RegValue::string("URL Protocol", "old"),
+                after: RegValue::string("URL Protocol", ""),
+            }],
+            ..Default::default()
+        };
+        let ini = appinfo_ini_with_changes(
+            &AppDetails::default(),
+            &crate::portability::Needs::default(),
+            &changes,
+        );
+        assert!(
+            ini.contains("[Associations]\r\nFileTypes=bar,baz,foo\r\nProtocols=myapp,otherapp\r\n")
+        );
+        assert!(!ini.contains("bad,entry"));
+        assert!(!ini.contains("bad:scheme"));
+        assert!(!ini.contains("ignored"));
+        assert_eq!(ini.matches("[Associations]").count(), 1);
+    }
+
+    #[test]
+    fn discovers_optional_app_compactor_in_portableapps_folder() {
+        let root =
+            std::env::temp_dir().join(format!("installscope-tools-{}", crate::util::new_id()));
+        let launcher = root
+            .join("PortableApps.comLauncher")
+            .join("PortableApps.comLauncherGenerator.exe");
+        let installer = root
+            .join("PortableApps.comInstaller")
+            .join("PortableApps.comInstaller.exe");
+        let compactor = root
+            .join("PortableApps.comAppCompactor")
+            .join("PortableApps.comAppCompactor.exe");
+        for path in [&launcher, &installer, &compactor] {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, b"test").unwrap();
+        }
+        let tools = find_tools_in([root.clone()]);
+        assert_eq!(tools.launcher_generator, Some(launcher));
+        assert_eq!(tools.installer, Some(installer));
+        assert_eq!(tools.app_compactor, Some(compactor));
+        let _ = std::fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn finds_program_folder_and_main_exe() {
         let cs = ChangeSet {
             files_added: vec![
@@ -1348,15 +1540,15 @@ mod tests {
     #[test]
     fn sandbox_config() {
         let c = wsb_config(
-            Path::new("D:\\Tools\\Expunge"),
+            Path::new("D:\\Tools\\InstallScope"),
             Path::new("D:\\Downloads"),
             Path::new("C:\\Work & Co"),
-            "Expunge.exe",
+            "InstallScope.exe",
         );
-        assert!(c.contains("<HostFolder>D:\\Tools\\Expunge</HostFolder>\n      <SandboxFolder>C:\\Expunge</SandboxFolder>\n      <ReadOnly>true</ReadOnly>"));
-        assert!(c.contains("<HostFolder>C:\\Work &amp; Co</HostFolder>\n      <SandboxFolder>C:\\ExpungeWork</SandboxFolder>\n      <ReadOnly>false</ReadOnly>"));
+        assert!(c.contains("<HostFolder>D:\\Tools\\InstallScope</HostFolder>\n      <SandboxFolder>C:\\InstallScope</SandboxFolder>\n      <ReadOnly>true</ReadOnly>"));
+        assert!(c.contains("<HostFolder>C:\\Work &amp; Co</HostFolder>\n      <SandboxFolder>C:\\InstallScopeWork</SandboxFolder>\n      <ReadOnly>false</ReadOnly>"));
         assert!(c.contains(
-            "<Command>C:\\Expunge\\Expunge.exe pa-capture C:\\ExpungeWork\\job.json</Command>"
+            "<Command>C:\\InstallScope\\InstallScope.exe pa-capture C:\\InstallScopeWork\\job.json</Command>"
         ));
     }
 

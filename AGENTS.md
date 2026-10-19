@@ -1,10 +1,10 @@
-# Expunge project guidance
+# InstallScope project guidance
 
 The Windows Desktop Software Project Policy below is the authoritative
 engineering and product-quality guidance for this repository. Apply it to
 planning, implementation, verification, and release work.
 
-## Confirmed Expunge decisions
+## Confirmed InstallScope decisions
 
 - Keep the product in Rust on `windows-sys`; do not substitute another
   language, framework family, or runtime without the user's approval.
@@ -17,13 +17,13 @@ planning, implementation, verification, and release work.
   literal support claim: define and test explicit support tiers and reject
   unsupported formats safely.
 - Replace the current `egui`/`eframe`/`wgpu` interface in measured phases with
-  a custom native Win32 UI. Preserve Expunge's established dark, black, and red
+  a custom native Win32 UI. Preserve InstallScope's established dark, black, and red
   visual direction. Do not attempt a full rewrite in one change; retain working
   workflows and verify each migrated slice before expanding it.
 - The Installer Decrapifier uses deterministic local rules by default and may
   use an optional OpenAI-compatible model restricted to loopback. It acts on
   an after-install review checklist; it must not block installers live.
-- The Disposable Runner belongs inside Expunge and uses hybrid restricted-token
+- The Disposable Runner belongs inside InstallScope and uses hybrid restricted-token
   containment plus a Job Object. Its per-run network toggle is on by default.
 - Continue to honor existing safety behavior: review and back up destructive
   changes, use least privilege, and keep processing local unless the user

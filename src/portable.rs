@@ -409,7 +409,7 @@ pub fn launcher_ini_for(
     // ---- Write the INI ------------------------------------------------
     let header = format!(
         "; PortableApps.com Launcher settings for {title}\n\
-         ; Made by Expunge from a snapshot comparison. Paste these sections into\n\
+         ; Made by InstallScope from a snapshot comparison. Paste these sections into\n\
          ; App\\AppInfo\\Launcher\\<AppName>Portable.ini and review every line.\n\
          ; Lines starting with ';' are suggestions that need a decision.\n\n"
     );

@@ -59,12 +59,12 @@ jobs:
       - name: Smoke test the CLI
         shell: pwsh
         run: |
-          ./target/release/expunge.exe --version
-          ./target/release/expunge.exe programs | Select-Object -First 5
+          ./target/release/installscope.exe --version
+          ./target/release/installscope.exe programs | Select-Object -First 5
       - uses: actions/upload-artifact@v4
         with:
-          name: Expunge-dev
-          path: target/release/expunge.exe
+          name: InstallScope-dev
+          path: target/release/installscope.exe
 
   arm64:
     name: Build (Windows Arm64)
@@ -94,14 +94,14 @@ jobs:
           # Cold start until the window exists, then 20 s untouched: CPU and memory.
           # Warm-up: the first launch measures program sizes and checks
           # signatures in the background, then caches them for later launches.
-          $w = Start-Process ./target/release/expunge.exe -PassThru
+          $w = Start-Process ./target/release/installscope.exe -PassThru
           Start-Sleep -Seconds 150
           Stop-Process $w -Force
           $runs = @()
           foreach ($n in 1..3) {
             $sw = [Diagnostics.Stopwatch]::StartNew()
-            $env:EXPUNGE_REPAINT_LOG = "$PWD\repaint-$n.log"
-            $p = Start-Process ./target/release/expunge.exe -PassThru
+            $env:INSTALLSCOPE_REPAINT_LOG = "$PWD\repaint-$n.log"
+            $p = Start-Process ./target/release/installscope.exe -PassThru
             while ($p.MainWindowHandle -eq 0 -and $sw.Elapsed.TotalSeconds -lt 30) { Start-Sleep -Milliseconds 25; $p.Refresh() }
             $startMs = [int]$sw.Elapsed.TotalMilliseconds
             Start-Sleep -Seconds 30; $p.Refresh()
@@ -139,16 +139,16 @@ jobs:
         run: |
           # Full system snapshot on the (large) CI image: time and peak memory.
           $sw = [Diagnostics.Stopwatch]::StartNew()
-          $p = Start-Process ./target/release/expunge.exe -ArgumentList 'snapshot','perf.snap' -PassThru -NoNewWindow
+          $p = Start-Process ./target/release/installscope.exe -ArgumentList 'snapshot','perf.snap' -PassThru -NoNewWindow
           $peak = 0
           while (-not $p.HasExited) { $p.Refresh(); $peak = [Math]::Max($peak, $p.PeakWorkingSet64); Start-Sleep -Milliseconds 200 }
           $sw.Stop()
           $secs = [Math]::Round($sw.Elapsed.TotalSeconds, 1)
           $mb = [Math]::Round($peak / 1MB)
           $snapMb = [Math]::Round((Get-Item perf.snap).Length / 1MB, 1)
-          $exeMb = [Math]::Round((Get-Item ./target/release/expunge.exe).Length / 1MB, 1)
+          $exeMb = [Math]::Round((Get-Item ./target/release/installscope.exe).Length / 1MB, 1)
           $sw2 = [Diagnostics.Stopwatch]::StartNew()
-          ./target/release/expunge.exe programs --trust --json | Out-Null
+          ./target/release/installscope.exe programs --trust --json | Out-Null
           $trustSecs = [Math]::Round($sw2.Elapsed.TotalSeconds, 1)
           @"
           ### Performance
@@ -158,7 +158,7 @@ jobs:
           | Snapshot peak memory | $mb MB | 1500 MB |
           | Snapshot file | $snapMb MB | |
           | Program list with signatures | $trustSecs s | 300 s |
-          | Expunge.exe size | $exeMb MB | 40 MB |
+          | InstallScope.exe size | $exeMb MB | 40 MB |
           "@ | Out-File -Append $env:GITHUB_STEP_SUMMARY
           Write-Host "snapshot ${secs}s, peak ${mb}MB, signatures ${trustSecs}s, exe ${exeMb}MB"
           Write-Host "::notice title=Performance::snapshot $secs s, peak $mb MB, file $snapMb MB, signatures $trustSecs s, exe $exeMb MB"

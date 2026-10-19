@@ -1,4 +1,4 @@
-//! Test helper for Expunge's locked-file tests; not part of Expunge. It
+//! Test helper for InstallScope's locked-file tests; not part of InstallScope. It
 //! holds files the way real programs do:
 //!
 //!   lockholder open <file> <seconds>      keep a file open, sharing nothing

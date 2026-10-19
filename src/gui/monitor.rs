@@ -5,12 +5,12 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use expunge_core::decrap::{self, Component, Verdict};
-use expunge_core::i18n::{t, tf};
-use expunge_core::model::{human_size, InstallLog};
-use expunge_core::platform::{self, ChildProcess};
-use expunge_core::snapshot::{detect_program, diff, filter_changes, take_snapshot};
-use expunge_core::store::{PendingSession, Store};
+use installscope_core::decrap::{self, Component, Verdict};
+use installscope_core::i18n::{t, tf};
+use installscope_core::model::{human_size, InstallLog};
+use installscope_core::platform::{self, ChildProcess};
+use installscope_core::snapshot::{detect_program, diff, filter_changes, take_snapshot};
+use installscope_core::store::{PendingSession, Store};
 
 #[derive(PartialEq, Eq, Default, Clone, Copy, Debug)]
 pub enum Phase {
@@ -105,7 +105,7 @@ impl App {
         let root = self.store.root.clone();
         let session = PendingSession {
             name: name.clone(),
-            started: expunge_core::util::now_string(),
+            started: installscope_core::util::now_string(),
             installer: installer.clone(),
             trial,
         };
@@ -123,7 +123,7 @@ impl App {
                 // A second safety net besides the log and the backup. Best
                 // effort: System Protection may be off, or one was made today.
                 pr.set_phase(t("Creating a restore point…"));
-                let _ = expunge_core::restore::create_restore_point(&point);
+                let _ = installscope_core::restore::create_restore_point(&point);
             }
             let snap = take_snapshot(reg.as_ref(), &settings, pr).map_err(|e| e.to_string())?;
             let store = Store::at(&root).map_err(|e| e.to_string())?;
@@ -153,9 +153,9 @@ impl App {
                 &settings.effective_file_exclusions(),
             );
             let mut log = InstallLog {
-                id: expunge_core::util::new_id(),
+                id: installscope_core::util::new_id(),
                 name,
-                created: expunge_core::util::now_string(),
+                created: installscope_core::util::now_string(),
                 installer,
                 ..Default::default()
             };
@@ -316,7 +316,7 @@ impl App {
                             });
                         }
                         ui.label(t("Install the program now, and run it once if you like, so first-run settings are captured too."));
-                        ui.label(t("When everything is finished, click Finish. You can close Expunge or restart Windows in between; monitoring resumes."));
+                        ui.label(t("When everything is finished, click Finish. You can close InstallScope or restart Windows in between; monitoring resumes."));
                         ui.add_space(14.0);
                         ui.horizontal(|ui| {
                             ui.add_space((ui.available_width() - 260.0).max(0.0) / 2.0);
@@ -347,7 +347,7 @@ impl App {
     }
 
     fn ui_live(&mut self, ui: &mut egui::Ui) {
-        use expunge_core::live::{LiveKind, LiveWatcher};
+        use installscope_core::live::{LiveKind, LiveWatcher};
         if self.live.is_none() {
             let folders: Vec<(std::path::PathBuf, bool)> = self
                 .settings
@@ -355,14 +355,15 @@ impl App {
                 .iter()
                 .map(|r| {
                     (
-                        std::path::PathBuf::from(expunge_core::platform::expand_env(&r.path)),
+                        std::path::PathBuf::from(installscope_core::platform::expand_env(&r.path)),
                         r.recursive,
                     )
                 })
                 .filter(|(p, _)| p.is_dir())
                 .collect();
-            let excl =
-                expunge_core::util::Exclusions::new(&self.settings.effective_file_exclusions());
+            let excl = installscope_core::util::Exclusions::new(
+                &self.settings.effective_file_exclusions(),
+            );
             self.live = Some(LiveWatcher::start(
                 &folders,
                 &self.settings.registry_roots,
@@ -411,7 +412,7 @@ impl App {
         ui.vertical_centered(|ui| {
             ui.heading(RichText::new(t("Install with monitoring")).strong());
             ui.add_space(4.0);
-            muted(ui, t("Expunge records every file, folder, registry key, service and scheduled task an installation adds or changes."));
+            muted(ui, t("InstallScope records every file, folder, registry key, service and scheduled task an installation adds or changes."));
             muted(ui, t("Later it can remove exactly those changes, and nothing else."));
         });
         ui.add_space(20.0);
@@ -419,7 +420,7 @@ impl App {
             egui::Frame::group(cols[0].style()).inner_margin(16).show(&mut cols[0], |ui| {
                 ui.set_min_height(150.0);
                 ui.label(RichText::new(format!("📦 {}", t("Install and monitor"))).strong().size(16.0));
-                small_muted(ui, t("Choose an installer. Expunge takes a snapshot, runs it, and waits for you to finish."));
+                small_muted(ui, t("Choose an installer. InstallScope takes a snapshot, runs it, and waits for you to finish."));
                 ui.add_space(10.0);
                 if theme::primary_button(ui, t("Choose installer…")).clicked() {
                     self.start_install_and_monitor(ctx);
@@ -622,7 +623,7 @@ impl App {
             let (app, publisher) = (log.name.clone(), log.publisher.clone());
             self.monitor.decrap_job = Some(Job::spawn(&self.ctx, move |_| {
                 let mut comps = comps;
-                expunge_core::llm::judge_unknowns(
+                installscope_core::llm::judge_unknowns(
                     &model_url,
                     &model_name,
                     &app,
@@ -700,18 +701,34 @@ impl App {
             self.monitor.save_job = Some(Job::spawn(&self.ctx, move |_| {
                 if !chosen.is_empty() {
                     let mut writer = if backup_on {
-                        expunge_core::backup::BackupWriter::new(
+                        match installscope_core::backup::BackupWriter::new(
                             &store.backups_dir(),
                             &format!("Strike background items of {}", log.name),
-                        )
-                        .ok()
+                        ) {
+                            Ok(writer) => Some(writer),
+                            Err(error) => {
+                                return Err((
+                                    log,
+                                    format!(
+                                        "Could not create a backup; selected components were not removed or saved: {error:#}"
+                                    ),
+                                ));
+                            }
+                        }
                     } else {
                         None
                     };
                     let refs: Vec<&Component> = chosen.iter().collect();
                     let results = decrap::strike(&mut log, &refs, reg.as_ref(), writer.as_mut());
                     if let Some(w) = writer {
-                        let _ = w.finish();
+                        if let Err(error) = w.finish() {
+                            return Err((
+                                log,
+                                format!(
+                                    "Selected components may have been removed, but the backup could not be finalized: {error:#}"
+                                ),
+                            ));
+                        }
                     }
                     let struck: Vec<&str> = chosen
                         .iter()
@@ -747,7 +764,7 @@ impl App {
     /// made minutes ago by this installer). Protected locations are still
     /// refused, and everything is backed up as usual.
     pub(super) fn undo_trial(&mut self, log: &InstallLog) {
-        let plan = expunge_core::revert::build_plan(&log.changes, self.reg.as_ref());
+        let plan = installscope_core::revert::build_plan(&log.changes, self.reg.as_ref());
         let mut flow = super::plan::RemovalFlow::new(
             tf("Undo the trial of {name}", &[("name", log.name.clone())]),
             plan,

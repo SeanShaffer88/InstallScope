@@ -458,7 +458,7 @@ mod tests {
             KeyData::new("HKCU\\Environment")
                 .with(RegValue::string(
                     "Path",
-                    "C:\\Program Files\\Here;C:\\Tools\\GoneSdk\\bin;%EXPUNGE_TEST_UNSET%\\bin",
+                    "C:\\Program Files\\Here;C:\\Tools\\GoneSdk\\bin;%INSTALLSCOPE_TEST_UNSET%\\bin",
                 ))
                 .with(RegValue::string("GONE_HOME", "C:\\Tools\\GoneSdk")),
         );
@@ -495,7 +495,7 @@ mod tests {
         assert!(!has("{44444444"), "{got:#?}");
         assert!(!has("{55555555"), "{got:#?}");
         assert!(!has("{rule2}"), "{got:#?}");
-        assert!(!has("%EXPUNGE_TEST_UNSET%"), "{got:#?}");
+        assert!(!has("%INSTALLSCOPE_TEST_UNSET%"), "{got:#?}");
     }
 
     #[test]

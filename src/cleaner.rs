@@ -391,8 +391,8 @@ mod tests {
         std::fs::write(tmp.path().join("Profile 1/Cache/a/f1"), "1234").unwrap();
         std::fs::write(tmp.path().join("Default/Cache/f2"), "12").unwrap();
         std::fs::write(tmp.path().join("Default/Keep/f3"), "1").unwrap();
-        std::env::set_var("EXPUNGE_CLEAN_TEST", tmp.path());
-        let pat: &'static str = "%EXPUNGE_CLEAN_TEST%/*/Cache";
+        std::env::set_var("INSTALLSCOPE_CLEAN_TEST", tmp.path());
+        let pat: &'static str = "%INSTALLSCOPE_CLEAN_TEST%/*/Cache";
         let found = resolve_pattern(pat);
         assert_eq!(found.len(), 2, "{found:?}");
         let cat = Category {
@@ -415,7 +415,7 @@ mod browser_tests {
 
     #[test]
     fn browser_items_cover_every_profile() {
-        let d = std::env::temp_dir().join(format!("expunge-browsers-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("installscope-browsers-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         for prof in ["Default", "Profile 2"] {
             let p = d.join("Chrome").join("User Data").join(prof);
