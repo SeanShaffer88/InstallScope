@@ -24,6 +24,7 @@ pub enum Tab {
     Builder,
     Shell,
     Debloat,
+    ExtInv,
     Settings,
 }
 
@@ -36,6 +37,10 @@ pub enum Confirm {
     CleanJunk,
     DeleteStartup(usize),
     DeleteTask(usize),
+    /// Disable a browser extension (reversibly, nothing is deleted).
+    DisableExtension(String),
+    /// Restore a browser extension disabled through InstallScope.
+    RestoreExtension(String),
     ResetSettings,
     CancelMonitoring,
     /// Turn an optional Windows feature on (true) or off.
@@ -80,6 +85,7 @@ pub struct App {
     pub builder: super::builder::BuilderState,
     pub shell: super::shell_ui::ShellState,
     pub debloat: super::debloat_ui::DebloatState,
+    pub extinv: super::extinv_ui::ExtInvState,
     pub alt: super::alt_ui::AltState,
     /// "Ask InstallScope" plain-language search (Ctrl+K).
     pub ask_ui: super::ask::AskState,
@@ -164,6 +170,7 @@ impl App {
             builder: Default::default(),
             shell: Default::default(),
             debloat: Default::default(),
+            extinv: Default::default(),
             shown_tab: None,
             tab_since: 0.0,
             alt: Default::default(),
@@ -317,6 +324,8 @@ impl App {
             Confirm::DeleteRestorePoint(seq) => self.delete_restore_point(seq),
             Confirm::DeleteStartup(i) => self.delete_startup(i),
             Confirm::DeleteTask(i) => self.delete_task(i),
+            Confirm::DisableExtension(key) => self.disable_extension(&key),
+            Confirm::RestoreExtension(key) => self.restore_extension(&key),
             Confirm::ResetSettings => {
                 let lang = self.settings.language.clone();
                 self.settings = Settings {
@@ -705,6 +714,20 @@ impl App {
                         }
                         if theme::nav_item_with_hint(
                             ui,
+                            "🧩",
+                            &t("Browser extensions"),
+                            self.tab == Tab::ExtInv,
+                            None,
+                            Some(&t(
+                                "See every browser extension, with safe disable and restore",
+                            )),
+                        )
+                        .clicked()
+                        {
+                            self.tab = Tab::ExtInv;
+                        }
+                        if theme::nav_item_with_hint(
+                            ui,
                             "☰",
                             &t("Right-Click Menu"),
                             self.tab == Tab::Shell,
@@ -791,6 +814,10 @@ impl App {
             Tab::Debloat => (
                 "Bloatware Shield",
                 "Remove the trials, promotions and pre-installed apps that came with this PC",
+            ),
+            Tab::ExtInv => (
+                "Browser extensions",
+                "See every browser extension, with safe disable and restore",
             ),
             Tab::Settings => ("Settings", ""),
         };
@@ -1010,6 +1037,7 @@ impl App {
         self.poll_builder(ctx);
         self.poll_shell();
         self.poll_debloat();
+        self.poll_extinv();
         self.poll_alternatives();
         self.poll_silent_package();
         self.poll_precheck(ctx);
@@ -1141,6 +1169,11 @@ fn page_help(tab: Tab) -> &'static [&'static str] {
         Tab::Debloat => &[
             "New PCs come with antivirus trials, sponsored games, promotions and maker apps. The Bloatware Shield finds them, including the Store apps that ordinary uninstallers skip.",
             "Recommended items are ticked; optional maker tools are not. Drivers, audio and hotkey tools and Windows' own parts are never listed. Removal goes through the usual review, and everything is backed up.",
+        ],
+        Tab::ExtInv => &[
+            "This page lists every extension installed in the supported Chromium-based and Firefox-based browsers, grouped by browser and profile.",
+            "Disable moves an extension's files into InstallScope's own data folder: nothing is deleted, and the rest of the profile (bookmarks, history, settings) is never touched. Restore puts the files back exactly where they were.",
+            "Close the browser before disabling or restoring, and restart it afterwards for the change to take effect.",
         ],
         Tab::Builder => &[
             "Choose a program's installer and describe the program. InstallScope snapshots Windows, runs the installer, lets you start the program once, snapshots again and builds a PortableApps.com Format package from the difference.",
@@ -1532,6 +1565,7 @@ impl eframe::App for App {
             Tab::Builder => self.ui_builder(ctx),
             Tab::Shell => self.ui_shell(ctx),
             Tab::Debloat => self.ui_debloat(ctx),
+            Tab::ExtInv => self.ui_extinv(ctx),
             Tab::Settings => self.ui_settings(ctx),
         }
         self.page_transition(ctx);
