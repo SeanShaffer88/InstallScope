@@ -89,8 +89,14 @@ pub struct Settings {
     /// programs' changed files while staying a small fraction of a modern
     /// drive.
     pub rewind_budget_bytes: u64,
+    /// Junk Cleaner protected list: paths, folders or glob patterns the
+    /// cleaner never touches, even inside a ticked category — e.g. a
+    /// browser's `Network\Cookies` file to stay signed in. Edited on the
+    /// Cleaner page; matched with the same rules as the monitoring
+    /// exclusions (`crate::util::Exclusions`).
+    pub cleaner_protect: Vec<String>,
 }
-crate::json_struct!(Settings, default, { language, zoom, registry_roots, file_roots, registry_exclusions, file_exclusions, auto_exclusions, backup_before_removal, create_restore_point, remove_unlogged_files, confirm_actions, use_recycle_bin, restart_explorer, close_programs, local_model_url, local_model_name, show_system_components, show_store_apps, advanced_mode, gatekeeper_enabled, high_contrast, first_run_done, portableapps_dir, packager_name, portable_out_dir, profiles, active_profile, rewind_budget_bytes });
+crate::json_struct!(Settings, default, { language, zoom, registry_roots, file_roots, registry_exclusions, file_exclusions, auto_exclusions, backup_before_removal, create_restore_point, remove_unlogged_files, confirm_actions, use_recycle_bin, restart_explorer, close_programs, local_model_url, local_model_name, show_system_components, show_store_apps, advanced_mode, gatekeeper_enabled, high_contrast, first_run_done, portableapps_dir, packager_name, portable_out_dir, profiles, active_profile, rewind_budget_bytes, cleaner_protect });
 
 /// A named monitoring scope: what snapshots capture and ignore.
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -226,6 +232,7 @@ impl Default for Settings {
             profiles: Vec::new(),
             active_profile: String::new(),
             rewind_budget_bytes: DEFAULT_REWIND_BUDGET_BYTES,
+            cleaner_protect: Vec::new(),
         }
     }
 }
@@ -454,5 +461,42 @@ mod restore_point_default_tests {
         s.create_restore_point = false;
         let text = crate::json::compat::to_string_pretty(&s).expect("must serialize");
         assert!(!settings_from(&text).create_restore_point);
+    }
+}
+
+#[cfg(test)]
+mod cleaner_protect_tests {
+    use super::*;
+
+    fn settings_from(json: &str) -> Settings {
+        crate::json::compat::from_str(json).expect("test JSON must parse")
+    }
+
+    #[test]
+    fn protected_list_is_empty_by_default() {
+        assert!(Settings::default().cleaner_protect.is_empty());
+    }
+
+    #[test]
+    fn old_settings_files_without_the_field_still_load() {
+        // An explicitly saved field is read verbatim; a missing one
+        // (settings written before this release) gets the empty default.
+        let s = settings_from(r#"{"cleaner_protect":["%LOCALAPPDATA%\\Cookies"]}"#);
+        assert_eq!(
+            s.cleaner_protect,
+            vec!["%LOCALAPPDATA%\\Cookies".to_string()]
+        );
+        assert!(settings_from("{}").cleaner_protect.is_empty());
+    }
+
+    #[test]
+    fn protected_list_round_trips() {
+        let mut s = Settings::default();
+        s.cleaner_protect = vec!["C:\\keep\\me".to_string()];
+        let text = crate::json::compat::to_string_pretty(&s).expect("must serialize");
+        assert_eq!(
+            settings_from(&text).cleaner_protect,
+            vec!["C:\\keep\\me".to_string()]
+        );
     }
 }
