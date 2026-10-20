@@ -121,6 +121,10 @@ pub struct Wizard {
     waiting_since: Option<Instant>,
     retries: u32,
     restore_point: bool,
+    /// A restore point was actually created for this run (set when the
+    /// restore-point job succeeds). The leftover-removal flow reads it
+    /// so its progress/summary text can name the rollback that exists.
+    restore_point_created: bool,
     /// Store apps (by display name) the user confirmed for deprovisioning
     /// in the Bloatware Shield. Consumed once, when the uninstalls finish:
     /// only names whose program was actually removed are deprovisioned.
@@ -153,6 +157,7 @@ impl Wizard {
             waiting_since: None,
             retries: 0,
             restore_point,
+            restore_point_created: false,
             deprovision: Vec::new(),
             stage: Stage::Confirm,
             index: 0,
@@ -1190,6 +1195,7 @@ impl App {
                 w.rp_job = None;
                 match r {
                     Ok(()) => {
+                        w.restore_point_created = true;
                         w.stage = if w.force {
                             Stage::Scanning
                         } else {
@@ -1379,6 +1385,7 @@ impl App {
             );
             flow.logs_to_delete = logs;
             flow.names = names;
+            flow.restore_point_created = w.restore_point_created;
             flow.plan.info.extend(w.notes.clone());
             self.open_removal(flow);
             self.wizard = None;
@@ -1479,7 +1486,11 @@ impl App {
                         ui.add_space(6.0);
                         if !w.force {
                             ui.label(t("Each program's own uninstaller runs first. InstallScope cannot undo changes made by a program's own uninstaller."));
-                            ui.label(t("Afterwards, InstallScope removes any leftovers it finds. That removal is backed up first, so it can be undone from the Backups page."));
+                            ui.label(if self.settings.backup_enabled() {
+                                t("Afterwards, InstallScope removes any leftovers it finds. That removal is backed up first, so it can be undone from the Backups page.")
+                            } else {
+                                t("Afterwards, InstallScope removes any leftovers it finds. Backups are off in Settings, so that removal will not be backed up and cannot be undone.")
+                            });
                             ui.add_space(6.0);
                             ui.checkbox(&mut w.quiet, t("Unattended: no windows, prompts or restarts"))
                                 .on_hover_text(t("InstallScope uses each uninstaller's silent mode, runs them one at a time, holds back restarts until the end, and moves on if one gets stuck. You can walk away."));
