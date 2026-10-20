@@ -63,13 +63,14 @@ impl App {
                 );
                 ui.add_space(4.0);
                 ui.horizontal(|ui| {
-                    if theme::primary_button(ui, t("Undo what was done")).clicked() {
+                    if super::a11y::explain(theme::primary_button(ui, t("Undo what was done")), &t("Undo everything this operation already changed, restoring it from the operation's backup.")).clicked() {
                         undo = true;
                     }
-                    if ui
-                        .button(t("Keep as it is"))
-                        .on_hover_text(t("Keep the changes; the backup stays on the Backups page."))
-                        .clicked()
+                    if super::a11y::explain(
+                        ui.button(t("Keep as it is")),
+                        &t("Keep the changes this operation already made and dismiss this warning. The backup stays on the Backups page, so you can still undo from there."),
+                    )
+                    .clicked()
                     {
                         keep = true;
                     }
