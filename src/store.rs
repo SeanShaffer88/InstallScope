@@ -1,8 +1,8 @@
 //! Where InstallScope keeps its data: install logs, backups, pending monitoring
 //! sessions and settings.
 //!
-//! Installed mode: `%LOCALAPPDATA%\Expunge` (kept for upgrade compatibility).
-//! Portable mode (a file named `portable` next to the exe): `ExpungeData\`
+//! Installed mode: `%LOCALAPPDATA%\InstallScope`.
+//! Portable mode (a file named `portable` next to the exe): `InstallScopeData\`
 //! next to the exe.
 
 use crate::model::InstallLog;
@@ -36,7 +36,7 @@ impl Store {
             .and_then(|p| p.parent().map(Path::to_path_buf));
         if let Some(dir) = &exe_dir {
             if dir.join("portable").exists() || dir.join("portable.txt").exists() {
-                let mut s = Store::at(&dir.join("ExpungeData"))?;
+                let mut s = Store::at(&dir.join("InstallScopeData"))?;
                 s.portable = true;
                 return Ok(s);
             }
@@ -47,7 +47,7 @@ impl Store {
                 std::env::var("HOME").map(|h| PathBuf::from(h).join(".local").join("share"))
             })
             .unwrap_or_else(|_| PathBuf::from("."));
-        Store::at(&base.join("Expunge"))
+        Store::at(&base.join("InstallScope"))
     }
 
     pub fn at(root: &Path) -> Result<Store> {
