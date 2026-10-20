@@ -179,8 +179,16 @@ impl App {
                 });
                 small_muted(ui, t("Recommended items are ticked: trials, ads, sponsored games and promotions. Optional ones are maker tools some people use, such as support assistants; tick them only if you don't need them. Drivers, audio and hotkey tools and Windows' own parts are never listed."));
                 if items.iter().any(|i| i.provisioned) {
+                    let kp_why = if self.elevated {
+                        t("Also remove the copy Windows keeps for new user accounts, so the removed apps don't come back for new accounts. This affects the whole PC and cannot be undone; it happens only after the app itself was removed, and asks for its own confirmation first.")
+                    } else {
+                        t("Unavailable: this needs administrator rights. Run InstallScope as administrator to use it.")
+                    };
                     ui.add_enabled_ui(self.elevated, |ui| {
-                        ui.checkbox(&mut self.debloat.keep_new_accounts_clean, t("Also stop Windows installing the removed Store apps for new user accounts"));
+                        super::a11y::explain(
+                            ui.checkbox(&mut self.debloat.keep_new_accounts_clean, t("Also stop Windows installing the removed Store apps for new user accounts")),
+                            &kp_why,
+                        );
                     });
                     small_muted(ui, t("Removes the copy Windows keeps for new user accounts, so the app doesn't come back. It affects the whole PC, and InstallScope cannot undo it."));
                     if !self.elevated {
