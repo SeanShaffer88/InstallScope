@@ -6,6 +6,10 @@ All notable changes to InstallScope are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.1.0] - 2026-10-20
+
+First public release on GitHub.
+
 ### Added
 - **Browser extensions** (Tools page): every extension installed in the supported Chromium-based browsers (Chrome, Edge, Brave, Vivaldi, Chromium, Opera, Opera GX) and Firefox-based browsers (Firefox, LibreWolf, Waterfox, Floorp), grouped by browser and profile. An extension can be disabled safely and reversibly: its files are moved into InstallScope's data folder (nothing is deleted, the rest of the profile is untouched) and restored to exactly where they were, with one click each way after a confirmation.
 - **App Rewind, early prototype (CLI only)**: rewind one program to a recorded state without touching the rest of the PC. `installscope rewind <log-id> --list` shows the program's recorded states; `--to <state> --dry-run` prints the full plan, and anything that cannot be restored is named — a partial rewind is never presented as complete. Running a rewind (with `--yes`) takes a backup of the current state first, so the rewind itself can be undone from Backups, and records the moment before the rewind as a new state. File contents come from a new content store (`rewind` folder in the data folder, contents kept once each under their SHA-256) fed by `rewind <log-id> --capture`; the registry is restored from the install log's recorded before-images by the same reviewed machinery that uninstalls. The store has a storage budget (Settings, 2 GiB by default): older file states are evicted first, but a program's before-state and its newest state are never evicted, and every eviction is listed by `--list`. Not yet included: a graphical interface, and automatic capture of file contents while monitoring (today, capture is explicit with `--capture`).
@@ -30,6 +34,30 @@ All notable changes to InstallScope are documented here. The format follows
 - **Autostart Gatekeeper** (opt-in; CLI `installscope gatekeeper`): when turned on (`installscope gatekeeper enable`, or Settings), each detection pass compares the programs that start with Windows — Run/RunOnce values and Startup-folder shortcuts — against a saved baseline. New or changed entries land in a review queue, attributed to the install log that added them when the evidence supports it (an entry recorded in a log is labeled with that program and the evidence; otherwise *unknown origin* — attribution is never guessed) and judged by the Installer Decrapifier rules. `installscope gatekeeper scan` runs one pass, `allow <id>` keeps an entry, `remove <id>` deletes it backed up first, exactly like other removals. The Gatekeeper never blocks an installer while it runs and never removes anything without your decision; undecided entries stay in the queue and out of the baseline.
 - **Per-command CLI help**: `installscope <command> --help` (or `installscope help <command>`) prints that command's usage, flags, what it changes — including its backup and undo story — and how it confirms before destructive actions, then exits without doing anything. (Until now `--help` after a command was mistaken for an argument: `installscope revert --help` tried to load a log called "--help".) Errors for missing arguments now show the command's usage line instead of just naming the missing piece.
 
+- Install monitoring: before/after snapshots of the registry and file system, run an installer under monitoring, or monitor manually; sessions survive restarts.
+- Review captured changes, remove noise, and save them as an install log with auto-detected name, publisher and version.
+- Precise uninstall from an install log: removes added files, folders, keys and values; restores changed and removed values; stops and deletes services; removes scheduled tasks; repairs `PATH` without touching later edits.
+- Program list with 64-bit, 32-bit, per-user and Microsoft Store programs, sorting, search, details, real folder sizes, and a broken-entry finder.
+- Uninstall wizard with vendor uninstaller, quiet uninstall, forced removal, batch uninstall, and leftover scanning.
+- Backups of everything removed or changed (quarantined files plus a double-clickable `.reg` file for registry entries), with one-click restore.
+- Optional: also send removed files to the Recycle Bin.
+- Optional System Restore point before uninstalling.
+- Windows Updates window: list installed updates and remove individual ones via DISM or WUSA.
+- Startup manager for Run keys, Startup folders, services and scheduled tasks.
+- Junk cleaner for temp files, crash dumps, caches, Windows Update downloads and the Recycle Bin.
+- "Which program created this?" search across install logs.
+- Export install logs as HTML report, `.reg` undo script, PowerShell removal script or JSON; import logs.
+- Dashboard with status and quick actions.
+- Simple and Advanced interface modes, first-run welcome, page help (F1), safety labels on removal items.
+- Accessibility: keyboard shortcuts, high-contrast option, adjustable text size, screen-reader support.
+- Installer Lab for developers: installer lint, uninstaller test with residue report, named snapshots and comparison.
+- CLI `lint` and `test-uninstall` commands and `--json` output for CI pipelines.
+- Dark interface with a native red Windows 11 window border and left-hand navigation.
+- Translations: English, Spanish, German, French, Portuguese (Brazil), Italian, Russian, Simplified Chinese, Japanese; external `lang/*.json` files supported.
+- Admin-rights check at every launch with relaunch as administrator.
+- Command-line interface (`monitor`, `snapshot`, `diff`, `logs`, `programs`, `revert`, `export`, `backups`, `restore`).
+- Installer (NSIS) and portable zip; single exe with no runtime dependencies.
+
 ### Changed
 - Rebranded the project from Expunge to InstallScope and renamed the executable and CLI command. **Breaking change:** the installed data folder is now `%LOCALAPPDATA%\InstallScope`, the portable data folder is `InstallScopeData`, Task Scheduler tasks live under `InstallScope\…`, the uninstall registry key is `Software\Microsoft\Windows\CurrentVersion\Uninstall\InstallScope`, the context-menu verb is `InstallScopeInstall`, and program-transfer packages use the `.installscope` extension. Data created by Expunge-branded builds is not carried over.
 - Thirteen fewer third-party libraries: dates and times (with Windows' own daylight-saving rules), SHA-256, byte search, folder walking, file-change watching, registry access, JSON reading and writing, compression (DEFLATE and gzip), ZIP archives, PNG images, the Open/Save/folder dialogs (Windows' own, called directly) and test folders are now InstallScope's own code, straight on the Windows API. Install logs, settings, backups and transfer packages are written byte for byte as before, and files from earlier versions open unchanged (checked against saved copies of the previous output). Snapshots and transfer packages are still standard gzip and ZIP files (checked against other programs' readers and writers); every ZIP entry's size and checksum is verified as it is read, and entry names that could escape the destination folder are refused.
@@ -37,8 +65,18 @@ All notable changes to InstallScope are documented here. The format follows
 - A System Restore point is now created before uninstalling by default (Settings > Safety; it was off before). Settings files that already record the choice keep it — the new default only applies where the choice was never saved.
 - **The command line asks before it destroys.** `revert`, `uninstall`, `clean`, `components --strike`, `restore`, `transfer import`, `gatekeeper remove`, `restore-point delete`, `restore-point rollback` and `rewind --to` now share one confirmation discipline, extending the `--yes` convention `rewind` and `rollback` started: in a terminal they describe what will happen — the targets, whether a backup is taken, what cannot be undone — and wait for a typed "yes"; without a terminal (scripts) they change nothing, refuse and exit 1 unless `--yes` is given. Read-only commands and `--dry-run` previews never ask; `clean --scheduled` (the Task Scheduler entry point) never asks, because the schedule is the standing instruction. **Scripted uses of these commands must add `--yes`** (the README's pipeline example now does). Relatedly, the "not running as Administrator" warning no longer fires for read-only commands, where it only trained users to ignore it.
 
+- The project moved to **github.com/SeanShaffer88/InstallScope** (formerly InstallScopeUninstaller); old links redirect.
+- The README now describes every tool in its own section.
+- **Windows 11 only.** InstallScope is engineered for Windows 11 (build 22000 or later): on older Windows the app and the installer explain this and stop, instead of running with rules meant for Windows 11.
+- Darker red accent (#6B0700) across the interface and window border; red text uses a lighter shade of it for readability.
+- "Administrator" is capitalized throughout.
+- New icon in #6B0700: dark card with a red E at large sizes, and an inverted red card with a black E at taskbar sizes (16–48 px), for the window and sidebar.
+- Backups also export registry entries as a double-clickable `.reg` file; optional Recycle Bin.
+
 ### Removed
 - The sidebar no longer shows four disabled “Planned” entries (Setup Package Creator, Developer Sandbox, Temporary Scratch Disk and VSS Viewer). They advertised features that do not exist yet; those features stay on the roadmap and will appear in the sidebar when they are real and working.
+
+- InstallScope now focuses on being a complete, free replacement for Total Uninstall. Tools outside that scope were removed: the Anti-Telemetry page, the disk space map, the duplicate file finder, the Windows Updates remover, winget updates, the system health panel, the online reputation check, installer lint and the uninstaller test, repackaging and MSIX output, uninstall scripts, the Windows features and app aliases views, and Find by window.
 
 ### Fixed
 - **Help and hover text no longer promises a backup unconditionally.** The page help for Programs, Backups, Bloatware Shield and the right-click menu, the first-run introduction, the Ask and Monitor review notes, the Backups page's empty state, the Startup and right-click menu notes and several hover texts all said removals are "backed up" without mentioning that Advanced mode can turn backups off, when no backup is taken. They now state the condition; the Recycle Bin setting's hover no longer claims "everything is backed up either way" (it appears on the same screen as the backups-off warning); the *Try it, then undo* hover says a restore point is attempted first rather than guaranteed (it is a best-effort extra — System Protection may be off); and the Installer Decrapifier entry above is corrected the same way. Text that was already conditional on the real setting, or that is only shown when a backup exists, is unchanged.
@@ -107,50 +145,8 @@ All notable changes to InstallScope are documented here. The format follows
 - **Programs page, uninstall wizard and removal review explanations are reachable without a mouse.** Following the System Restore page, every control on the Programs page (search, the six views, column sorting, the per-program buttons in the details pane, the batch Uninstall / Transfer / Clear actions and the per-row checkboxes), in the uninstall wizard (Unattended and its skip option, the restore-point checkbox — which now also says, while disabled, that it needs administrator rights — Start, Cancel, and the running stage's continue/skip buttons) and in the leftover review (Select only green, Select all / none, the item filter, the category headings, every item checkbox, the confidence chips' reasons, the two end-of-review checkboxes and the Remove button) now carries its explanation the same three ways: as the hover tooltip (including while disabled, with the reason), as a line that follows keyboard focus (at the top of the Programs page and at the foot of the wizard and review windows), and as the description screen readers announce. The program list's status glyphs — the signature shield, the monitored dot and the broken-entry warning — announce their meaning to screen readers too, instead of being a symbol only. Remaining pages follow in later phases of the same work.
 - **Settings explanations are reachable without a mouse, and its controls have names.** Every control on the Settings page now carries its explanation the same three ways as the System Restore page (hover — including while a control is unavailable, with the reason — a line at the top of the page that follows keyboard focus, and the description screen readers announce); the explanations that already existed as hover text are unchanged, only reachable by everyone now. The interface-size slider, the language and profile menus, the model address and name fields and the five scope list editors are also linked to their visible labels, so a screen reader announces what each control is, not just its value. The remaining pages follow in later phases of the same work.
 
-### Removed
-- InstallScope now focuses on being a complete, free replacement for Total Uninstall. Tools outside that scope were removed: the Anti-Telemetry page, the disk space map, the duplicate file finder, the Windows Updates remover, winget updates, the system health panel, the online reputation check, installer lint and the uninstaller test, repackaging and MSIX output, uninstall scripts, the Windows features and app aliases views, and Find by window.
-
-### Changed
-- The project moved to **github.com/SeanShaffer88/InstallScope** (formerly InstallScopeUninstaller); old links redirect.
-- The README now describes every tool in its own section.
-- **Windows 11 only.** InstallScope is engineered for Windows 11 (build 22000 or later): on older Windows the app and the installer explain this and stop, instead of running with rules meant for Windows 11.
-- Darker red accent (#6B0700) across the interface and window border; red text uses a lighter shade of it for readability.
-- "Administrator" is capitalized throughout.
-- New icon in #6B0700: dark card with a red E at large sizes, and an inverted red card with a black E at taskbar sizes (16–48 px), for the window and sidebar.
-- Backups also export registry entries as a double-clickable `.reg` file; optional Recycle Bin.
-
-### Fixed
 - Cleaner wildcard paths that mix `/` and `\` on Windows.
 - **Dashboard tiles and quick actions are keyboard-operable**: the stat tiles and quick-action rows are now real focusable buttons (they were mouse-only click frames), so Tab reaches them in a logical order, the focus ring outlines them, and Enter or Space — or a screen reader's activate command — clicks them. Nothing about their Command Deck look or behavior changed.
-
-## [0.1.0] - 2026-10-14
-
-First public release.
-
-### Added
-- Install monitoring: before/after snapshots of the registry and file system, run an installer under monitoring, or monitor manually; sessions survive restarts.
-- Review captured changes, remove noise, and save them as an install log with auto-detected name, publisher and version.
-- Precise uninstall from an install log: removes added files, folders, keys and values; restores changed and removed values; stops and deletes services; removes scheduled tasks; repairs `PATH` without touching later edits.
-- Program list with 64-bit, 32-bit, per-user and Microsoft Store programs, sorting, search, details, real folder sizes, and a broken-entry finder.
-- Uninstall wizard with vendor uninstaller, quiet uninstall, forced removal, batch uninstall, and leftover scanning.
-- Backups of everything removed or changed (quarantined files plus a double-clickable `.reg` file for registry entries), with one-click restore.
-- Optional: also send removed files to the Recycle Bin.
-- Optional System Restore point before uninstalling.
-- Windows Updates window: list installed updates and remove individual ones via DISM or WUSA.
-- Startup manager for Run keys, Startup folders, services and scheduled tasks.
-- Junk cleaner for temp files, crash dumps, caches, Windows Update downloads and the Recycle Bin.
-- "Which program created this?" search across install logs.
-- Export install logs as HTML report, `.reg` undo script, PowerShell removal script or JSON; import logs.
-- Dashboard with status and quick actions.
-- Simple and Advanced interface modes, first-run welcome, page help (F1), safety labels on removal items.
-- Accessibility: keyboard shortcuts, high-contrast option, adjustable text size, screen-reader support.
-- Installer Lab for developers: installer lint, uninstaller test with residue report, named snapshots and comparison.
-- CLI `lint` and `test-uninstall` commands and `--json` output for CI pipelines.
-- Dark interface with a native red Windows 11 window border and left-hand navigation.
-- Translations: English, Spanish, German, French, Portuguese (Brazil), Italian, Russian, Simplified Chinese, Japanese; external `lang/*.json` files supported.
-- Admin-rights check at every launch with relaunch as administrator.
-- Command-line interface (`monitor`, `snapshot`, `diff`, `logs`, `programs`, `revert`, `export`, `backups`, `restore`).
-- Installer (NSIS) and portable zip; single exe with no runtime dependencies.
 
 [Unreleased]: https://github.com/SeanShaffer88/InstallScope/compare/v0.1.0...HEAD
 [0.1.0]: https://github.com/SeanShaffer88/InstallScope/releases/tag/v0.1.0
