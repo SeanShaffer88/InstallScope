@@ -392,6 +392,114 @@ pub fn delete_backup(root: &Path, id: &str) -> Result<()> {
     Ok(())
 }
 
+/// Take a safety backup of the current state of everything restoring
+/// backup `id` would change, as an ordinary backup on the same page, so
+/// the restore itself can be undone. The capture records the inverse of
+/// each step [`restore_backup`] will take, in the order it takes them
+/// (folders first, then the remaining items newest-first): a file's
+/// current contents, a registry tree or value as it stands now, or the
+/// fact that a path the restore will (re)create is absent now.
+///
+/// Returns `Ok(None)` when nothing the restore touches exists or would
+/// be created, so there is nothing to keep. An `Err` means the safety
+/// backup could not be taken (any partial capture is removed); the
+/// caller must not go ahead with the restore in that case.
+pub fn backup_before_restore(root: &Path, id: &str, reg: &dyn Registry) -> Result<Option<Backup>> {
+    let manifest = root.join(id).join("manifest.json");
+    let source: Backup = crate::json::compat::from_str(&std::fs::read_to_string(&manifest)?)?;
+    let mut w = BackupWriter::new(root, &format!("Before restoring: {}", source.title))?;
+    if let Err(e) = capture_current_state(&mut w, &source, reg) {
+        // Leave no half-taken safety backup behind: marked unfinished,
+        // it would surface later as an interrupted operation.
+        w.discard();
+        return Err(e);
+    }
+    if w.is_empty() {
+        w.discard();
+        return Ok(None);
+    }
+    Ok(Some(w.finish()?))
+}
+
+/// Record, into `w`, the current state of everything `restore_backup`
+/// would change when replaying `source` — the inverse of each item.
+fn capture_current_state(w: &mut BackupWriter, source: &Backup, reg: &dyn Registry) -> Result<()> {
+    // Folders first, as in restore_backup: a folder the restore will
+    // create is absent now, so record that it must go again.
+    for item in &source.items {
+        if let BackupItem::Dir { original } = item {
+            if !Path::new(original).exists() {
+                w.add_dir_absent(original)?;
+            }
+        }
+    }
+    // Then the remaining items, newest first, as restore replays them.
+    for item in source.items.iter().rev() {
+        match item {
+            BackupItem::Dir { .. } => {}
+            BackupItem::File { original, .. } => {
+                // The restore overwrites this path with its stored copy:
+                // keep what is there now, or that it is not there.
+                let p = Path::new(original);
+                if p.exists() {
+                    w.add_file(p)?;
+                } else {
+                    w.add_file_absent(original)?;
+                }
+            }
+            BackupItem::RegTree { keys } => {
+                // The restore writes this tree back (merge: keys and
+                // values are created or set, nothing is deleted). The
+                // first key is the tree's root (read_tree is parents
+                // first). Keep the tree as it stands; keys it does not
+                // have yet are recorded absent, so the undo removes the
+                // ones the restore recreates.
+                if let Some(root_key) = keys.first() {
+                    if reg.exists(&root_key.path) {
+                        w.add_tree(reg, &root_key.path)?;
+                        for k in keys {
+                            if !reg.exists(&k.path) {
+                                w.add_key_absent(&k.path)?;
+                            }
+                        }
+                    } else {
+                        w.add_key_absent(&root_key.path)?;
+                    }
+                }
+            }
+            BackupItem::RegValue { key, name, .. } => {
+                // Captures the value as it stands (or that it is absent):
+                // exactly the state undoing the restore must bring back.
+                w.add_value(reg, key, name)?;
+            }
+            BackupItem::FileAbsent { path } => {
+                // The restore deletes this file if it is there: keep its
+                // current contents.
+                let p = Path::new(path);
+                if p.exists() {
+                    w.add_file(p)?;
+                }
+            }
+            BackupItem::DirAbsent { path } => {
+                // The restore removes this folder (its recorded files go
+                // through their own FileAbsent items): record that the
+                // folder itself exists now, so the undo recreates it.
+                if Path::new(path).exists() {
+                    w.add_dir(Path::new(path))?;
+                }
+            }
+            BackupItem::KeyAbsent { path } => {
+                // The restore deletes this key if it is there: keep its
+                // current contents.
+                if reg.exists(path) {
+                    w.add_tree(reg, path)?;
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Undo an operation by replaying its backup in reverse order.
 pub fn restore_backup(root: &Path, id: &str, reg: &dyn Registry) -> Result<Vec<ActionResult>> {
     let dir = root.join(id);
@@ -649,5 +757,145 @@ mod tests {
 
         assert!(writer.add_file_absent("new-file").is_err());
         assert!(writer.add_dir_absent("new-folder").is_err());
+    }
+
+    #[test]
+    fn a_restore_can_itself_be_undone() {
+        let tmp = crate::util::tempdir().unwrap();
+        let broot = tmp.path().join("backups");
+        let work = tmp.path().join("work");
+        std::fs::create_dir_all(work.join("sub")).unwrap();
+        std::fs::write(work.join("sub").join("a.txt"), "hello").unwrap();
+
+        let reg = MemRegistry::new();
+        reg.put(KeyData::new("HKCU\\Software\\X\\Y").with(RegValue::string("v", "1")));
+        reg.put(KeyData::new("HKCU\\Software\\Z").with(RegValue::dword("n", 5)));
+
+        // A removal's backup.
+        let mut w = BackupWriter::new(&broot, "test").unwrap();
+        w.add_dir_tree(&work).unwrap();
+        w.add_tree(&reg, "HKCU\\Software\\X").unwrap();
+        w.add_value(&reg, "HKCU\\Software\\Z", "n").unwrap();
+        w.add_value(&reg, "HKCU\\Software\\Z", "new").unwrap();
+        let b = w.finish().unwrap();
+
+        // The state the removal left behind (and later changes on top).
+        std::fs::remove_dir_all(&work).unwrap();
+        reg.delete_tree("HKCU\\Software\\X").unwrap();
+        reg.set_value("HKCU\\Software\\Z", &RegValue::dword("n", 99))
+            .unwrap();
+        reg.set_value("HKCU\\Software\\Z", &RegValue::dword("new", 1))
+            .unwrap();
+
+        // The safety backup captures that current state, as an ordinary
+        // backup listed beside the original.
+        let safety = backup_before_restore(&broot, &b.id, &reg)
+            .unwrap()
+            .expect("the restore overwrites and recreates, so there is state to keep");
+        assert_eq!(safety.title, "Before restoring: test");
+        assert!(list_backups(&broot).iter().any(|x| x.id == safety.id));
+
+        // Restoring the removal works as before…
+        let res = restore_backup(&broot, &b.id, &reg).unwrap();
+        assert!(res.iter().all(|r| r.ok), "{res:?}");
+        assert_eq!(
+            std::fs::read_to_string(work.join("sub").join("a.txt")).unwrap(),
+            "hello"
+        );
+        assert!(reg.exists("HKCU\\Software\\X\\Y"));
+
+        // …and restoring the safety backup brings back the exact state
+        // the restore replaced.
+        let res = restore_backup(&broot, &safety.id, &reg).unwrap();
+        assert!(res.iter().all(|r| r.ok), "{res:?}");
+        assert!(!work.exists(), "recreated folders are removed again");
+        assert!(!reg.exists("HKCU\\Software\\X"));
+        let z = reg.read_key("HKCU\\Software\\Z").unwrap();
+        assert_eq!(z.get_u32("n"), Some(99));
+        assert_eq!(z.get_u32("new"), Some(1));
+    }
+
+    #[test]
+    fn a_restore_that_recreates_can_itself_be_undone() {
+        let tmp = crate::util::tempdir().unwrap();
+        let broot = tmp.path().join("backups");
+        let newdir = tmp.path().join("newdir");
+        let created = tmp.path().join("created.txt");
+        let reg = MemRegistry::new();
+
+        // A backup of an operation that only created things (recorded in
+        // creation order, as the operations record them).
+        let mut w = BackupWriter::new(&broot, "install").unwrap();
+        w.add_dir_absent(&newdir.to_string_lossy()).unwrap();
+        w.add_file_absent(&newdir.join("inner.txt").to_string_lossy())
+            .unwrap();
+        w.add_file_absent(&created.to_string_lossy()).unwrap();
+        w.add_key_absent("HKCU\\Software\\New").unwrap();
+        let b = w.finish().unwrap();
+
+        // The created things, as they stand now.
+        std::fs::create_dir_all(&newdir).unwrap();
+        std::fs::write(newdir.join("inner.txt"), "inner").unwrap();
+        std::fs::write(&created, "added").unwrap();
+        reg.put(KeyData::new("HKCU\\Software\\New").with(RegValue::string("v", "on")));
+
+        let safety = backup_before_restore(&broot, &b.id, &reg)
+            .unwrap()
+            .expect("the restore deletes, so there is state to keep");
+
+        // Restoring removes everything the operation created…
+        let res = restore_backup(&broot, &b.id, &reg).unwrap();
+        assert!(res.iter().all(|r| r.ok), "{res:?}");
+        assert!(!newdir.exists() && !created.exists());
+        assert!(!reg.exists("HKCU\\Software\\New"));
+
+        // …and the safety backup puts it all back.
+        let res = restore_backup(&broot, &safety.id, &reg).unwrap();
+        assert!(res.iter().all(|r| r.ok), "{res:?}");
+        assert_eq!(
+            std::fs::read_to_string(newdir.join("inner.txt")).unwrap(),
+            "inner"
+        );
+        assert_eq!(std::fs::read_to_string(&created).unwrap(), "added");
+        assert_eq!(
+            reg.read_key("HKCU\\Software\\New")
+                .unwrap()
+                .get_string("v")
+                .unwrap(),
+            "on"
+        );
+    }
+
+    #[test]
+    fn a_safety_backup_with_nothing_to_keep_is_not_made() {
+        let tmp = crate::util::tempdir().unwrap();
+        let broot = tmp.path().join("backups");
+        let reg = MemRegistry::new();
+        // A backup that changed nothing.
+        let w = BackupWriter::new(&broot, "nothing").unwrap();
+        let b = w.finish().unwrap();
+        assert!(backup_before_restore(&broot, &b.id, &reg)
+            .unwrap()
+            .is_none());
+        // No half-made folder is left behind either.
+        assert_eq!(list_backups(&broot).len(), 1);
+    }
+
+    #[test]
+    fn a_safety_backup_that_cannot_be_taken_is_an_error() {
+        let tmp = crate::util::tempdir().unwrap();
+        let broot = tmp.path().join("backups");
+        let thing = tmp.path().join("thing.txt");
+        std::fs::write(&thing, "data").unwrap();
+        let reg = MemRegistry::new();
+        let mut w = BackupWriter::new(&broot, "test").unwrap();
+        w.add_file(&thing).unwrap();
+        let b = w.finish().unwrap();
+        // The file has since been replaced by a folder, so its current
+        // contents cannot be captured: the caller must not restore.
+        std::fs::remove_file(&thing).unwrap();
+        std::fs::create_dir(&thing).unwrap();
+        assert!(backup_before_restore(&broot, &b.id, &reg).is_err());
+        assert_eq!(list_backups(&broot).len(), 1);
     }
 }
