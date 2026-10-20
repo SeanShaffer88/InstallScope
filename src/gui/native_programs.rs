@@ -784,10 +784,9 @@ impl NativePrograms {
         let (tx, rx) = mpsc::channel();
         self.restore_point_receiver = Some(rx);
         std::thread::spawn(move || {
-            let result = installscope_core::restore::create_restore_point(
-                "Before InstallScope uninstall",
-            )
-            .map_err(|error| format!("{error:#}"));
+            let result =
+                installscope_core::restore::create_restore_point("Before InstallScope uninstall")
+                    .map_err(|error| format!("{error:#}"));
             let _ = tx.send(result);
             unsafe {
                 windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW(
@@ -811,10 +810,9 @@ impl NativePrograms {
                 &[("error", error)],
             )),
             Err(mpsc::TryRecvError::Empty) => self.restore_point_receiver = Some(receiver),
-            Err(mpsc::TryRecvError::Disconnected) => self
-                .cancel_after_failed_restore_point(&t(
-                    "Restore point not created; uninstall canceled.",
-                )),
+            Err(mpsc::TryRecvError::Disconnected) => self.cancel_after_failed_restore_point(&t(
+                "Restore point not created; uninstall canceled.",
+            )),
         }
     }
 
