@@ -6,6 +6,9 @@ use installscope_core::platform::{self, Registry};
 use installscope_core::refcount::{annotate_plan, RefLabel, ReferenceIndex};
 use installscope_core::revert::{build_plan, execute_plan, ExecOptions};
 use installscope_core::revert::{residue, residue_markdown};
+use installscope_core::rewind::{
+    build_rewind_plan, execute_rewind, list_states, CaptureKind, CaptureScope, ContentStore,
+};
 use installscope_core::snapshot::{
     detect_program, diff, filter_changes, load_snapshot, save_snapshot, take_snapshot, Progress,
 };
@@ -37,6 +40,21 @@ USAGE:
   installscope revert <log-id> [--dry-run] [--remove-unlogged] [--no-backup] [--recycle]
                           [--close-programs] [--restart-explorer] [--keep-log]
                                             Undo an installation precisely
+  installscope rewind <log-id> --list         App Rewind (early prototype): the
+                                            recorded states of one program
+  installscope rewind <log-id> --capture [--before]
+                                            Record the program's current file
+                                            contents as a state (--before records
+                                            them as the log's before-state)
+  installscope rewind <log-id> --to <state> [--dry-run]
+                                            Rewind one program to a recorded
+                                            state; --dry-run prints the plan,
+                                            including anything that cannot be
+                                            restored. Without --dry-run the
+                                            rewind runs after --yes, takes a
+                                            backup of the current state first,
+                                            and exits 2 when the state is only
+                                            partly restorable
   installscope export <log-id> <html|json|reg|ps1|xml> <output-file>
   installscope repackage <log-id> <folder> [--no-setup]
                                             A silent installer for the recorded
@@ -1694,6 +1712,164 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 st.delete_log(id)?;
             }
             return Ok(if failed > 0 { 2 } else { 0 });
+        }
+        "rewind" => {
+            let id = args
+                .get(1)
+                .ok_or_else(|| anyhow::anyhow!("missing log id"))?;
+            let st = store()?;
+            let budget = load_settings(&st).rewind_budget_bytes;
+            let log = st.load_log(id)?;
+            let mut cstore = ContentStore::open(&st.root)?;
+            if has(&args, "--list") {
+                println!("Recorded states of \u{201c}{}\u{201d}:", log.name);
+                for s in list_states(&cstore, &log) {
+                    println!(
+                        "  {:<20} {}{}",
+                        s.id,
+                        s.label,
+                        if s.files_without_content > 0 {
+                            format!(
+                                "  [{} file(s) have recorded contents; {} without]",
+                                s.files_with_content, s.files_without_content
+                            )
+                        } else {
+                            format!(
+                                "  [{} file(s) have recorded contents]",
+                                s.files_with_content
+                            )
+                        }
+                    );
+                }
+                println!(
+                    "Content store: {} used of {} budget",
+                    human_size(cstore.referenced_bytes()),
+                    human_size(budget)
+                );
+                for e in cstore
+                    .index()
+                    .evictions
+                    .iter()
+                    .filter(|e| e.log_id == log.id)
+                {
+                    println!(
+                        "  [evicted] {} ({} file(s), {}) to stay within the budget",
+                        e.set_id,
+                        e.files,
+                        human_size(e.bytes)
+                    );
+                }
+                if cstore.referenced_bytes() > budget {
+                    eprintln!(
+                        "warning: the content store is over budget; only before-states and \
+                         newest states remain, which are protected from eviction."
+                    );
+                }
+                return Ok(0);
+            }
+            if has(&args, "--capture") {
+                // Explicit capture entry point until the monitoring pipeline
+                // captures before-contents automatically (see src/rewind.rs).
+                let kind = if has(&args, "--before") {
+                    CaptureKind::Before
+                } else {
+                    CaptureKind::Snapshot
+                };
+                if kind == CaptureKind::Before {
+                    eprintln!(
+                        "warning: this records the current file contents as the log's \
+                         before-state; it is only correct if the files have not \
+                         changed since the installation was recorded."
+                    );
+                }
+                let report = if kind == CaptureKind::Before {
+                    cstore.capture_before_images(&log, budget)?
+                } else {
+                    cstore.capture(&log, kind, CaptureScope::WholeLog, budget)?
+                };
+                let set = report.set.expect("capture always returns a set");
+                println!(
+                    "Recorded state {} for \u{201c}{}\u{201d}: {} file(s), {}",
+                    set.id,
+                    log.name,
+                    set.files.len(),
+                    human_size(set.bytes())
+                );
+                for s in &report.skipped {
+                    println!("  [skipped] {s}");
+                }
+                for e in &report.evicted {
+                    println!(
+                        "  [evicted] {} ({} file(s)) to stay within the budget",
+                        e.set_id, e.files
+                    );
+                }
+                return Ok(0);
+            }
+            let Some(state) = arg_value(&args, "--to") else {
+                anyhow::bail!(
+                    "usage: installscope rewind <log-id> --list | --capture [--before] | --to <state> [--dry-run] [--yes]"
+                );
+            };
+            let dry = has(&args, "--dry-run");
+            let plan = build_rewind_plan(&cstore, &log, &state, reg.as_ref())?;
+            for line in plan.describe_lines() {
+                println!("{line}");
+            }
+            if dry {
+                return Ok(if plan.complete() { 0 } else { 2 });
+            }
+            if !has(&args, "--yes") {
+                anyhow::bail!(
+                    "a rewind changes files and registry settings; review the plan above \
+                     and add --yes to run it. A backup of the current state is taken \
+                     first, so the rewind is undoable."
+                );
+            }
+            // Always backed up: a rewind is itself undoable, never destructive.
+            let outcome = execute_rewind(
+                &mut cstore,
+                &plan,
+                &log,
+                reg.as_ref(),
+                &st.backups_dir(),
+                budget,
+                &ExecOptions::default(),
+            )?;
+            for r in &outcome.results {
+                println!(
+                    "[{}] {} \u{2014} {}",
+                    if r.ok { " OK " } else { "FAIL" },
+                    r.description,
+                    r.message
+                );
+            }
+            for e in &outcome.evicted {
+                println!(
+                    "  [evicted] {} ({} file(s)) to stay within the budget",
+                    e.set_id, e.files
+                );
+            }
+            if let Some(set) = &outcome.pre_rewind_set {
+                println!(
+                    "Pre-rewind state recorded as {} (rewind to it to go back).",
+                    set.id
+                );
+            }
+            if let Some(b) = &outcome.backup_id {
+                println!(
+                    "Backup: {} (undo the rewind with: installscope restore {})",
+                    b, b
+                );
+            }
+            if !plan.complete() {
+                println!(
+                    "This rewind was partial: {} item(s) had no recorded before-state.",
+                    plan.gaps.len()
+                );
+            }
+            let failed = outcome.failed();
+            return Ok(if failed > 0 || !plan.complete() { 2 } else { 0 });
         }
         "export" => {
             let (Some(id), Some(fmt), Some(out)) = (args.get(1), args.get(2), args.get(3)) else {
