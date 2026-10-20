@@ -931,6 +931,9 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                     .collect(),
             };
             let elevated = platform::is_elevated();
+            // The Cleaner page's protected list applies here too, so a
+            // protected path survives manual and scheduled cleans alike.
+            let protect = load_settings(&store()?).cleaner_protect;
             let mut total = 0u64;
             for id in &wanted {
                 let Some(c) = cats.iter().find(|c| c.id == id) else {
@@ -941,10 +944,20 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                     eprintln!("{id}: skipped (needs administrator rights)");
                     continue;
                 }
+                let scan = installscope_core::cleaner::scan_detailed(c, &protect);
+                let kept = scan.kept_totals();
+                if kept.files > 0 && !has(&args, "--scheduled") {
+                    println!(
+                        "{:<20} {:>10}  {} protected file(s) kept",
+                        id,
+                        human_size(kept.bytes),
+                        kept.files
+                    );
+                }
                 let r = if has(&args, "--dry-run") {
-                    installscope_core::cleaner::scan(c)
+                    scan.totals
                 } else {
-                    installscope_core::cleaner::clean(c)
+                    installscope_core::cleaner::clean_files(c, &scan.files)
                 };
                 total += r.bytes;
                 if !has(&args, "--scheduled") {
