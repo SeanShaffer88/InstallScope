@@ -70,8 +70,9 @@ jobs:
       - name: Get the PortableApps.com Launcher (official source, pinned)
         shell: pwsh
         run: |
-          $commit = (Select-String -Path src/patools.rs -Pattern 'LAUNCHER_COMMIT: &str = "([0-9a-f]+)"').Matches[0].Groups[1].Value
-          $sha = (Select-String -Path src/patools.rs -Pattern 'MAKENSIS_SHA256: &str = "([0-9a-f]+)"').Matches[0].Groups[1].Value
+          $patools = Get-Content -Raw src/patools.rs
+          $commit = [regex]::Match($patools, 'LAUNCHER_COMMIT: &str =\s*"([0-9a-f]+)"').Groups[1].Value
+          $sha = [regex]::Match($patools, 'MAKENSIS_SHA256: &str =\s*"([0-9a-f]+)"').Groups[1].Value
           Invoke-WebRequest "https://codeload.github.com/PortableApps/Launcher/zip/$commit" -OutFile launcher.zip
           Expand-Archive launcher.zip -DestinationPath launcher-src
           $src = Get-ChildItem launcher-src -Directory | Select-Object -First 1
