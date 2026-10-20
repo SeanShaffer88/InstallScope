@@ -82,8 +82,15 @@ pub struct Settings {
     pub profiles: Vec<ScanProfile>,
     /// The profile the current scope came from ("" = none).
     pub active_profile: String,
+    /// App Rewind (time travel per program): how many bytes of recorded
+    /// before-content the content store may hold. Oldest file states are
+    /// evicted first; before-states and the newest state of each program
+    /// are never evicted. 2 GiB holds the before-images of dozens of
+    /// programs' changed files while staying a small fraction of a modern
+    /// drive.
+    pub rewind_budget_bytes: u64,
 }
-crate::json_struct!(Settings, default, { language, zoom, registry_roots, file_roots, registry_exclusions, file_exclusions, auto_exclusions, backup_before_removal, create_restore_point, remove_unlogged_files, confirm_actions, use_recycle_bin, restart_explorer, close_programs, local_model_url, local_model_name, show_system_components, show_store_apps, advanced_mode, gatekeeper_enabled, high_contrast, first_run_done, portableapps_dir, packager_name, portable_out_dir, profiles, active_profile });
+crate::json_struct!(Settings, default, { language, zoom, registry_roots, file_roots, registry_exclusions, file_exclusions, auto_exclusions, backup_before_removal, create_restore_point, remove_unlogged_files, confirm_actions, use_recycle_bin, restart_explorer, close_programs, local_model_url, local_model_name, show_system_components, show_store_apps, advanced_mode, gatekeeper_enabled, high_contrast, first_run_done, portableapps_dir, packager_name, portable_out_dir, profiles, active_profile, rewind_budget_bytes });
 
 /// A named monitoring scope: what snapshots capture and ignore.
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -210,9 +217,19 @@ impl Default for Settings {
             portable_out_dir: String::new(),
             profiles: Vec::new(),
             active_profile: String::new(),
+            rewind_budget_bytes: DEFAULT_REWIND_BUDGET_BYTES,
         }
     }
 }
+
+/// Default App Rewind storage budget: 2 GiB. A program's recorded
+/// before-images are the changed files of one install or update — typically
+/// tens to a few hundred megabytes — so this holds the states of dozens of
+/// programs while staying a small fraction of a modern drive (about 0.4%
+/// of a 512 GB SSD). The budget is user-visible and configurable; eviction
+/// is oldest-first and never touches a program's newest state or its
+/// before-state.
+pub const DEFAULT_REWIND_BUDGET_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 
 pub fn default_registry_roots() -> Vec<String> {
     [
