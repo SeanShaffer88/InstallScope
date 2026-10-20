@@ -29,8 +29,18 @@ pub struct RemovalFlow {
     pub hidden_for_safety: Option<usize>,
     /// Undoing a trial install: the exact log, never trimmed for Simple mode.
     pub trial: bool,
-    pub job: Option<Job<(Vec<ActionResult>, Option<String>)>>,
-    pub results: Option<(Vec<ActionResult>, Option<String>)>,
+    /// Whether backups were on for the current/last run, captured when the
+    /// job starts. Progress text is chosen from this (and
+    /// `restore_point_created`), never from a static string: with backups
+    /// off there is no backup, and the user must not be told there is.
+    pub backup_on: bool,
+    /// A restore point was created immediately before this removal (the
+    /// uninstall wizard creates one, then hands leftover removal to this
+    /// flow). Summary text names it as the rollback that exists — and
+    /// what it cannot do — when no backup does.
+    pub restore_point_created: bool,
+    pub job: Option<Job<(Vec<ActionResult>, BackupOutcome)>>,
+    pub results: Option<(Vec<ActionResult>, BackupOutcome)>,
     pub open: bool,
     /// Confidence per plan item, computed once.
     pub scores: Vec<installscope_core::revert::Confidence>,
@@ -61,6 +71,8 @@ impl RemovalFlow {
             names: Vec::new(),
             hidden_for_safety: None,
             trial: false,
+            backup_on: true,
+            restore_point_created: false,
             job: None,
             results: None,
             open: true,
@@ -70,6 +82,81 @@ impl RemovalFlow {
             ref_log_ids: Vec::new(),
             ref_index: None,
         }
+    }
+}
+
+/// What backup protection a removal run actually ended up with, as the
+/// run itself determined it. Progress and summary text is selected from
+/// this plus the settings in force — the UI must never claim a backup
+/// exists when none was taken (audit P1-4).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum BackupOutcome {
+    /// Backups were off for this run (Advanced mode setting): nothing
+    /// was backed up, so the Backups page cannot undo the removal.
+    Off,
+    /// A backup was written and finalized; carries its id.
+    Written(String),
+    /// Backups were on, but nothing removed needed a backup entry, so
+    /// the (empty) backup was discarded instead of kept.
+    NotNeeded,
+    /// The backup could not be created or could not be finalized, so
+    /// no usable backup exists for this run.
+    Failed,
+}
+
+/// Review-stage header line: states this run's real safety net before
+/// anything is removed, in both configurations.
+fn review_text(backup_on: bool, restore_point: bool) -> String {
+    match (backup_on, restore_point) {
+        (true, true) => t("Everything you remove here is backed up first, so it can be undone from the Backups page. A restore point was also created before the uninstall."),
+        (true, false) => t("Everything you remove here is backed up first, so it can be undone from the Backups page."),
+        (false, true) => t("Backups are off in Settings: what you remove here will not be backed up, and cannot be undone from the Backups page. A restore point was created before the uninstall — it can roll back system changes, but it cannot bring back deleted files."),
+        (false, false) => t("Backups are off in Settings: what you remove here will not be backed up, and cannot be undone."),
+    }
+}
+
+/// Progress line while the removal job runs. Driven by the run's own
+/// captured state, so a backups-off run never claims otherwise.
+fn progress_text(backup_on: bool, restore_point: bool) -> String {
+    match (backup_on, restore_point) {
+        (true, _) => t("Removing… everything is backed up first."),
+        (false, true) => t("Removing… backups are off, so this cannot be undone from the Backups page. A restore point was created before the uninstall."),
+        (false, false) => t("Removing… backups are off in Settings, so this cannot be undone."),
+    }
+}
+
+/// Undo summary lines shown under "Done", from what the run actually
+/// produced. The first line is the primary one (the renderer shows it
+/// as a warning when the outcome means there is no backup to undo
+/// from); a restore point, when one was created, is named after it.
+fn summary_lines(outcome: &BackupOutcome, restore_point: bool) -> Vec<String> {
+    let mut lines = vec![match outcome {
+        BackupOutcome::Written(id) => tf(
+            "Backup {name} can undo all of this from the Backups tab.",
+            &[("name", id.clone())],
+        ),
+        BackupOutcome::Off => t("No backup was taken, because backups are off in Settings, so this removal cannot be undone from the Backups tab."),
+        BackupOutcome::Failed => t("The backup could not be completed, so this removal cannot be undone from the Backups tab. The problem is listed in the results."),
+        BackupOutcome::NotNeeded => t("Nothing removed needed a backup, so no backup was kept."),
+    }];
+    if restore_point {
+        lines.push(if matches!(outcome, BackupOutcome::Written(_)) {
+            t("A restore point was also created before the uninstall; you can roll back system changes with it on the System Restore page.")
+        } else {
+            t("A restore point was created before the uninstall, so Windows can roll back system changes on the System Restore page. It cannot bring back deleted files.")
+        });
+    }
+    lines
+}
+
+/// Hover text for the "also remove files the program created after
+/// installation" checkbox: the unlogged files are backed up exactly
+/// when backups are on, and the text says which.
+fn unlogged_hint(backup_on: bool) -> String {
+    if backup_on {
+        t("Settings, caches and logs it wrote into its own folders. They are still backed up.")
+    } else {
+        t("Settings, caches and logs it wrote into its own folders. Backups are off in Settings, so removing them cannot be undone.")
     }
 }
 
@@ -314,6 +401,10 @@ impl App {
 
     pub fn ui_removal(&mut self, ctx: &egui::Context) {
         let simple = !self.settings.advanced_mode;
+        // The configuration the review stage discloses. The run itself
+        // captures its own copy when it starts (see below), so progress
+        // and summary text describe the run, not later setting changes.
+        let backup_on = self.settings.backup_enabled();
         let installed: Vec<String> = self
             .programs
             .list
@@ -346,13 +437,29 @@ impl App {
             .open(&mut open)
             .show(ctx, |ui| {
                 if let Some(job) = &flow.job {
-                    job_progress(ui, &t("Removing… everything is backed up first."), job.progress.count());
+                    job_progress(
+                        ui,
+                        &progress_text(flow.backup_on, flow.restore_point_created),
+                        job.progress.count(),
+                    );
                     return;
                 }
-                if let Some((results, backup)) = &flow.results {
+                if let Some((results, outcome)) = &flow.results {
                     ui.heading(t("Done"));
-                    if let Some(id) = backup {
-                        small_muted(ui, tf("Backup {name} can undo all of this from the Backups tab.", &[("name", id.clone())]));
+                    for (i, line) in
+                        summary_lines(outcome, flow.restore_point_created)
+                            .into_iter()
+                            .enumerate()
+                    {
+                        // With no backup to undo from, the undo summary
+                        // is a warning, not a footnote.
+                        if i == 0
+                            && matches!(outcome, BackupOutcome::Off | BackupOutcome::Failed)
+                        {
+                            theme::warning_banner(ui, line);
+                        } else {
+                            small_muted(ui, line);
+                        }
                     }
                     ui.add_space(6.0);
                     results_ui(ui, results);
@@ -365,6 +472,11 @@ impl App {
                     return;
                 }
                 plan_ui(ui, flow);
+                if backup_on {
+                    small_muted(ui, review_text(true, flow.restore_point_created));
+                } else {
+                    theme::warning_banner(ui, review_text(false, flow.restore_point_created));
+                }
                 if let Some(n) = flow.hidden_for_safety.filter(|n| *n > 0) {
                     small_muted(
                         ui,
@@ -378,7 +490,7 @@ impl App {
                 ui.horizontal_wrapped(|ui| {
                     if flow.offer_unlogged {
                         ui.checkbox(&mut flow.remove_unlogged, t("Also remove files the program created after installation"))
-                            .on_hover_text(t("Settings, caches and logs it wrote into its own folders. They are still backed up."));
+                            .on_hover_text(unlogged_hint(backup_on));
                     }
                     if !flow.logs_to_delete.is_empty() {
                         ui.checkbox(&mut flow.delete_logs, t("Delete the install log afterwards"));
@@ -415,6 +527,10 @@ impl App {
                 restart_explorer: self.settings.restart_explorer,
                 close_programs: self.settings.close_programs,
             };
+            // The run's own record of its configuration: progress and
+            // summary text are chosen from this, so a setting changed
+            // mid-run can't rewrite what the run actually did.
+            flow.backup_on = backup_on;
             flow.job = Some(Job::spawn(ctx, move |_| {
                 let mut writer = if backup_on {
                     match BackupWriter::new(&backup_root, &title) {
@@ -428,7 +544,7 @@ impl App {
                                         &[("error", format!("{error:#}"))],
                                     ),
                                 )],
-                                None,
+                                BackupOutcome::Failed,
                             );
                         }
                     }
@@ -436,13 +552,13 @@ impl App {
                     None
                 };
                 let mut results = execute_plan(&plan, reg.as_ref(), writer.as_mut(), &opts);
-                let id = match writer {
+                let outcome = match writer {
                     Some(w) if w.is_empty() => {
                         w.discard();
-                        None
+                        BackupOutcome::NotNeeded
                     }
                     Some(w) => match w.finish() {
-                        Ok(backup) => Some(backup.id),
+                        Ok(backup) => BackupOutcome::Written(backup.id),
                         Err(error) => {
                             results.push(ActionResult::err(
                                 "Backup",
@@ -450,10 +566,10 @@ impl App {
                                     "Changes may have completed, but the backup could not be finalized: {error:#}"
                                 ),
                             ));
-                            None
+                            BackupOutcome::Failed
                         }
                     },
-                    None => None,
+                    None => BackupOutcome::Off,
                 };
                 // Canary: post-operation health verification (read-only).
                 // Appends its verdict rows to this same results surface; the
@@ -475,7 +591,7 @@ impl App {
                     );
                     results.extend(verdict.to_action_results());
                 }
-                (results, id)
+                (results, outcome)
             }));
         }
         if close {
@@ -509,5 +625,118 @@ impl App {
         } else {
             tf("Finished with {n} problems.", &[("n", failed.to_string())])
         };
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{progress_text, review_text, summary_lines, unlogged_hint, BackupOutcome};
+
+    // Audit P1-4: removal text must describe the run's actual safety
+    // net. These pin the selection logic for every combination of
+    // backups on/off and restore point created/not.
+
+    #[test]
+    fn progress_line_only_claims_a_backup_when_backups_are_on() {
+        assert_eq!(
+            progress_text(true, false),
+            "Removing… everything is backed up first."
+        );
+        assert_eq!(
+            progress_text(true, true),
+            "Removing… everything is backed up first."
+        );
+        let off = progress_text(false, false);
+        assert!(off.contains("backups are off"), "{off}");
+        assert!(off.contains("cannot be undone"), "{off}");
+        assert!(!off.contains("backed up first"), "{off}");
+        let off_rp = progress_text(false, true);
+        assert!(off_rp.contains("cannot be undone"), "{off_rp}");
+        assert!(off_rp.contains("restore point was created"), "{off_rp}");
+        assert!(!off_rp.contains("backed up first"), "{off_rp}");
+    }
+
+    #[test]
+    fn review_line_discloses_the_safety_net_before_removal() {
+        let on = review_text(true, false);
+        assert!(on.contains("backed up first"), "{on}");
+        assert!(on.contains("Backups page"), "{on}");
+        let on_rp = review_text(true, true);
+        assert!(on_rp.contains("restore point was also created"), "{on_rp}");
+        let off = review_text(false, false);
+        assert!(off.contains("Backups are off"), "{off}");
+        assert!(off.contains("will not be backed up"), "{off}");
+        assert!(off.contains("cannot be undone"), "{off}");
+        let off_rp = review_text(false, true);
+        assert!(off_rp.contains("will not be backed up"), "{off_rp}");
+        // A restore point is not a file backup; the line must say so.
+        assert!(
+            off_rp.contains("cannot bring back deleted files"),
+            "{off_rp}"
+        );
+    }
+
+    #[test]
+    fn summary_names_the_backup_that_can_undo() {
+        let lines = summary_lines(&BackupOutcome::Written("2026-10-20 Foo".into()), false);
+        assert_eq!(lines.len(), 1);
+        assert!(lines[0].contains("2026-10-20 Foo"), "{}", lines[0]);
+        assert!(lines[0].contains("Backups tab"), "{}", lines[0]);
+        let lines = summary_lines(&BackupOutcome::Written("b".into()), true);
+        assert_eq!(lines.len(), 2);
+        assert!(
+            lines[1].contains("restore point was also created"),
+            "{}",
+            lines[1]
+        );
+    }
+
+    #[test]
+    fn summary_without_a_backup_says_so_and_what_remains() {
+        let off = summary_lines(&BackupOutcome::Off, false);
+        assert_eq!(off.len(), 1);
+        assert!(off[0].contains("No backup was taken"), "{}", off[0]);
+        assert!(off[0].contains("cannot be undone"), "{}", off[0]);
+        // With a restore point, it is named — with its limit.
+        let off_rp = summary_lines(&BackupOutcome::Off, true);
+        assert_eq!(off_rp.len(), 2);
+        assert!(
+            off_rp[1].contains("restore point was created"),
+            "{}",
+            off_rp[1]
+        );
+        assert!(
+            off_rp[1].contains("cannot bring back deleted files"),
+            "{}",
+            off_rp[1]
+        );
+
+        let failed = summary_lines(&BackupOutcome::Failed, false);
+        assert!(
+            failed[0].contains("could not be completed"),
+            "{}",
+            failed[0]
+        );
+        assert!(failed[0].contains("cannot be undone"), "{}", failed[0]);
+
+        let not_needed = summary_lines(&BackupOutcome::NotNeeded, false);
+        assert!(
+            not_needed[0].contains("no backup was kept"),
+            "{}",
+            not_needed[0]
+        );
+        // …and a kept-backup claim appears in none of them.
+        for lines in [off, failed, not_needed] {
+            assert!(!lines[0].contains("can undo all of this"), "{}", lines[0]);
+        }
+    }
+
+    #[test]
+    fn unlogged_hint_follows_the_backup_setting() {
+        assert!(unlogged_hint(true).contains("They are still backed up."));
+        let off = unlogged_hint(false);
+        assert!(off.contains("Backups are off"), "{off}");
+        assert!(off.contains("cannot be undone"), "{off}");
+        assert!(!off.contains("still backed up"), "{off}");
     }
 }
