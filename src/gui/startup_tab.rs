@@ -1,5 +1,6 @@
 //! Startup page: Run entries, Startup folders, services, scheduled tasks.
 
+use super::a11y;
 use super::app::{App, Confirm};
 use super::theme;
 use super::widgets::*;
@@ -151,23 +152,52 @@ impl App {
                 if !self.settings.advanced_mode {
                     self.startup.sub = Sub::Entries;
                 }
+                // The focused control's explanation line, for keyboard
+                // and touch users (see a11y::explain).
+                a11y::focus_hint(ui, theme::MUTED);
                 ui.horizontal(|ui| {
                     if self.settings.advanced_mode {
-                        for (s, label) in [
-                            (Sub::Entries, t("Startup programs")),
-                            (Sub::Services, t("Services")),
-                            (Sub::Tasks, t("Scheduled tasks")),
-                            (Sub::Other, t("Other autostarts")),
+                        for (s, label, why) in [
+                            (
+                                Sub::Entries,
+                                t("Startup programs"),
+                                t("Programs that start with Windows, in the Run registry keys and the Startup folders."),
+                            ),
+                            (
+                                Sub::Services,
+                                t("Services"),
+                                t("Background services and when each one starts."),
+                            ),
+                            (
+                                Sub::Tasks,
+                                t("Scheduled tasks"),
+                                t("Tasks Windows runs on a schedule or at sign-in."),
+                            ),
+                            (
+                                Sub::Other,
+                                t("Other autostarts"),
+                                t("Other places programs use to start or load automatically, such as Winlogon and Explorer extensions."),
+                            ),
                         ] {
-                            if ui.selectable_label(self.startup.sub == s, label).clicked() {
+                            if a11y::explain(ui.selectable_label(self.startup.sub == s, label), &why)
+                                .clicked()
+                            {
                                 self.startup.sub = s;
                             }
                         }
                         ui.separator();
                     }
-                    search_box(ui, &mut self.startup.filter, "Filter", 200.0);
+                    a11y::explain(
+                        search_box(ui, &mut self.startup.filter, "Filter", 200.0),
+                        &t("Filter the list below by name or command. The list updates as you type."),
+                    );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button(format!("⟳ {}", t("Refresh"))).clicked() {
+                        if a11y::explain(
+                            ui.button(format!("⟳ {}", t("Refresh"))),
+                            &t("Reload the startup lists from Windows."),
+                        )
+                        .clicked()
+                        {
                             self.refresh_startup(ctx);
                             self.startup.other = None;
                         }
@@ -213,15 +243,21 @@ impl App {
             return;
         };
         ui.horizontal(|ui| {
-            ui.checkbox(
-                &mut self.startup.show_windows_other,
-                t("Show Windows' own entries"),
+            a11y::explain(
+                ui.checkbox(
+                    &mut self.startup.show_windows_other,
+                    t("Show Windows' own entries"),
+                ),
+                &t("Also list the autostart entries that are part of Windows itself, not just ones added by programs."),
             );
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let n = self.startup.other_checked.len();
                 if n > 0
-                    && theme::primary_button(ui, tf("Remove {n} selected", &[("n", n.to_string())]))
-                        .clicked()
+                    && a11y::explain(
+                        theme::primary_button(ui, tf("Remove {n} selected", &[("n", n.to_string())])),
+                        &t("Open a review of the ticked entries. Nothing is removed until you confirm there; removals are backed up first unless backups are off in Settings."),
+                    )
+                    .clicked()
                 {
                     let items: Vec<installscope_core::revert::PlanItem> = self
                         .startup
@@ -310,6 +346,13 @@ impl App {
                                     &name,
                                 )
                             });
+                            let r = a11y::explain(
+                                r,
+                                &tf(
+                                    "Tick to mark {name} for removal. Remove selected above opens a review before anything is removed.",
+                                    &[("name", name)],
+                                ),
+                            );
                             if r.changed() {
                                 if c {
                                     self.startup.other_checked.insert(i);
@@ -324,19 +367,23 @@ impl App {
                     });
                     row.col(|ui| {
                         if *missing {
-                            ui.label(RichText::new("⚠").color(theme::WARN))
-                                .on_hover_text(t("The file it runs no longer exists"));
+                            a11y::explain(
+                                ui.label(RichText::new("⚠").color(theme::WARN)),
+                                &t("The file it runs no longer exists"),
+                            );
                         }
                         ui.add(egui::Label::new(&e.name).truncate());
                     });
                     row.col(|ui| {
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(&e.target).monospace().color(theme::MUTED),
-                            )
-                            .truncate(),
-                        )
-                        .on_hover_text(format!("{}\n{}", e.target, e.location));
+                        a11y::explain(
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(&e.target).monospace().color(theme::MUTED),
+                                )
+                                .truncate(),
+                            ),
+                            &format!("{}\n{}", e.target, e.location),
+                        );
                     });
                 });
             });
@@ -405,21 +452,37 @@ impl App {
                     let locked = !advanced && startup::is_essential(e);
                     row.col(|ui| {
                         let mut on = e.enabled;
-                        let resp = ui
-                            .add_enabled(e.approved.is_some() && !locked, egui::Checkbox::new(&mut on, ""))
-                            .on_disabled_hover_text(if locked {
-                                t("Needed by Windows, your security software or your hardware. Advanced mode can change it.")
-                            } else {
-                                String::new()
-                            });
+                        let why = if locked {
+                            t("Needed by Windows, your security software or your hardware. Advanced mode can change it.")
+                        } else if e.approved.is_none() {
+                            t("This entry can only be deleted, not disabled: Windows keeps no on/off switch for it.")
+                        } else {
+                            tf(
+                                "Start {name} with Windows. Unticking stops it starting but keeps the entry, like Task Manager, so you can tick it again to undo.",
+                                &[("name", e.name.clone())],
+                            )
+                        };
+                        let resp = a11y::explain(
+                            ui.add_enabled(
+                                e.approved.is_some() && !locked,
+                                egui::Checkbox::new(&mut on, ""),
+                            ),
+                            &why,
+                        );
+                        let name = e.name.clone();
+                        resp.widget_info(|| {
+                            egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, on, &name)
+                        });
                         if resp.changed() {
                             toggle = Some((i, on));
                         }
                     });
                     row.col(|ui| {
                         if e.missing {
-                            ui.label(RichText::new("⚠").color(theme::WARN))
-                                .on_hover_text(t("The program this entry starts no longer exists"));
+                            a11y::explain(
+                                ui.label(RichText::new("⚠").color(theme::WARN)),
+                                &t("The program this entry starts no longer exists"),
+                            );
                         }
                         ui.add(egui::Label::new(&e.name).truncate());
                         if delayed.iter().any(|d| d == &e.name) {
@@ -427,13 +490,15 @@ impl App {
                         }
                     });
                     row.col(|ui| {
-                        ui.add(
-                            egui::Label::new(
-                                RichText::new(&e.command).color(theme::MUTED).monospace(),
-                            )
-                            .truncate(),
-                        )
-                        .on_hover_text(&e.location);
+                        a11y::explain(
+                            ui.add(
+                                egui::Label::new(
+                                    RichText::new(&e.command).color(theme::MUTED).monospace(),
+                                )
+                                .truncate(),
+                            ),
+                            &e.location,
+                        );
                     });
                     row.col(|ui| match boot.as_ref().and_then(|b| b.impact_of(&e.command)) {
                         Some(imp) => {
@@ -442,15 +507,19 @@ impl App {
                                 installscope_core::boot::Level::Medium => theme::WARN,
                                 installscope_core::boot::Level::Low => theme::MUTED,
                             };
-                            ui.label(RichText::new(t(imp.level().label())).color(color))
-                                .on_hover_text(tf(
+                            a11y::explain(
+                                ui.label(RichText::new(t(imp.level().label())).color(color)),
+                                &tf(
                                     "Slowed startup by {ms} ms on average ({n} recorded startups).",
                                     &[("ms", imp.avg_ms.to_string()), ("n", imp.boots.to_string())],
-                                ));
+                                ),
+                            );
                         }
                         None => {
-                            ui.label(RichText::new("—").color(theme::MUTED))
-                                .on_hover_text(t("Windows hasn't recorded this program slowing down startup."));
+                            a11y::explain(
+                                ui.label(RichText::new("—").color(theme::MUTED)),
+                                &t("Windows hasn't recorded this program slowing down startup."),
+                            );
                         }
                     });
                     row.col(|ui| {
@@ -463,19 +532,31 @@ impl App {
                     row.col(|ui| {
                         let is_delayed = delayed.iter().any(|d| d == &e.name);
                         if is_delayed {
-                            if ui.small_button(t("Start normally")).clicked() {
+                            if a11y::explain(
+                                ui.small_button(t("Start normally")),
+                                &t("Undo the delayed start: remove the delayed task and start this program with Windows again."),
+                            )
+                            .clicked()
+                            {
                                 delay_op = Some((i, false));
                             }
                         } else if e.enabled && !e.all_users && e.approved.is_some() && !locked && !e.missing
-                            && ui
-                                .small_button(t("Delay"))
-                                .on_hover_text(t("Start this program 2 minutes after you sign in, so Windows is ready sooner."))
-                                .clicked()
+                            && a11y::explain(
+                                ui.small_button(t("Delay")),
+                                &t("Start this program 2 minutes after you sign in, so Windows is ready sooner."),
+                            )
+                            .clicked()
                         {
                             delay_op = Some((i, true));
                         }
                         // Simple mode only deletes broken entries; others can be disabled instead.
-                        if (advanced || (e.missing && !locked)) && ui.small_button(t("Delete")).clicked() {
+                        if (advanced || (e.missing && !locked))
+                            && a11y::explain(
+                                ui.small_button(t("Delete")),
+                                &t("Ask to delete this entry so the program no longer starts with Windows. You confirm first, and a backup is kept unless backups are off in Settings."),
+                            )
+                            .clicked()
+                        {
                             delete = Some(i);
                         }
                     });
@@ -518,9 +599,12 @@ impl App {
 
     fn ui_services(&mut self, ui: &mut egui::Ui) {
         ui.horizontal(|ui| {
-            ui.checkbox(
-                &mut self.startup.show_windows_services,
-                t("Show Windows services"),
+            a11y::explain(
+                ui.checkbox(
+                    &mut self.startup.show_windows_services,
+                    t("Show Windows services"),
+                ),
+                &t("Also list the services that are part of Windows itself, not just ones added by programs."),
             );
             small_muted(ui, t("Start type changes apply at the next restart."));
         });
@@ -560,8 +644,10 @@ impl App {
                     let i = rows[row.index()];
                     let s = &self.startup.services[i];
                     row.col(|ui| {
-                        ui.add(egui::Label::new(&s.display_name).truncate())
-                            .on_hover_text(&s.name);
+                        a11y::explain(
+                            ui.add(egui::Label::new(&s.display_name).truncate()),
+                            &s.name,
+                        );
                     });
                     row.col(|ui| {
                         let label = |k: &str| {
@@ -575,24 +661,30 @@ impl App {
                                 _ => "Unknown",
                             })
                         };
-                        egui::ComboBox::from_id_salt(("svc", i))
+                        let combo = egui::ComboBox::from_id_salt(("svc", i))
                             .width(150.0)
                             .selected_text(label(s.start_label()))
                             .show_ui(ui, |ui| {
-                                for (start, delayed, key) in [
-                                    (2, false, "automatic"),
-                                    (2, true, "auto_delayed"),
-                                    (3, false, "manual"),
-                                    (4, false, "disabled"),
+                                for (start, delayed, key, why) in [
+                                    (2, false, "automatic", t("Start automatically when Windows starts.")),
+                                    (2, true, "auto_delayed", t("Start automatically, shortly after Windows has finished starting.")),
+                                    (3, false, "manual", t("Start only when Windows or a program asks for it.")),
+                                    (4, false, "disabled", t("Never start until the start type is changed back.")),
                                 ] {
-                                    if ui
-                                        .selectable_label(s.start_label() == key, label(key))
-                                        .clicked()
+                                    if a11y::explain(
+                                        ui.selectable_label(s.start_label() == key, label(key)),
+                                        &why,
+                                    )
+                                    .clicked()
                                     {
                                         change = Some((i, start, delayed));
                                     }
                                 }
                             });
+                        a11y::explain(
+                            combo.response,
+                            &t("When this service starts. The change is backed up first and applies at the next restart."),
+                        );
                     });
                     row.col(|ui| {
                         ui.add(
@@ -614,9 +706,12 @@ impl App {
     }
 
     fn ui_tasks(&mut self, ui: &mut egui::Ui) {
-        ui.checkbox(
-            &mut self.startup.show_microsoft_tasks,
-            t("Show Microsoft tasks"),
+        a11y::explain(
+            ui.checkbox(
+                &mut self.startup.show_microsoft_tasks,
+                t("Show Microsoft tasks"),
+            ),
+            &t("Also list the scheduled tasks that are part of Windows itself, not just ones added by programs."),
         );
         ui.add_space(4.0);
         let f = self.startup.filter.to_lowercase();
@@ -662,13 +757,26 @@ impl App {
                     let tk = &self.startup.tasks[i];
                     row.col(|ui| {
                         let mut on = tk.enabled;
-                        if ui.checkbox(&mut on, "").changed() {
+                        let resp = a11y::explain(
+                            ui.checkbox(&mut on, ""),
+                            &tf(
+                                "Let {name} run on its schedule. Unticking turns the task off without deleting it, so you can tick it again to undo.",
+                                &[("name", tk.name.clone())],
+                            ),
+                        );
+                        let name = tk.name.clone();
+                        resp.widget_info(|| {
+                            egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, on, &name)
+                        });
+                        if resp.changed() {
                             toggle = Some((i, on));
                         }
                     });
                     row.col(|ui| {
-                        ui.add(egui::Label::new(&tk.name).truncate())
-                            .on_hover_text(&tk.author);
+                        a11y::explain(
+                            ui.add(egui::Label::new(&tk.name).truncate()),
+                            &tk.author,
+                        );
                     });
                     row.col(|ui| {
                         ui.add(
@@ -679,7 +787,12 @@ impl App {
                         );
                     });
                     row.col(|ui| {
-                        if ui.small_button(t("Delete")).clicked() {
+                        if a11y::explain(
+                            ui.small_button(t("Delete")),
+                            &t("Ask to delete this scheduled task. You confirm first, and a backup is kept unless backups are off in Settings."),
+                        )
+                        .clicked()
+                        {
                             delete = Some(i);
                         }
                     });
