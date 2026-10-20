@@ -317,7 +317,7 @@ impl App {
         let mut flow =
             super::plan::RemovalFlow::new(t("Leftovers of removed programs"), plan, false, false);
         flow.plan.info.push(t(
-            "Uninstall entries are included only when both their declared install folder and uninstaller are missing. MSI, hidden, protected, and Windows-owned entries are excluded. Review every item before removal; selected registry data is backed up.",
+            "Uninstall entries are included only when both their declared install folder and uninstaller are missing. MSI, hidden, protected, and Windows-owned entries are excluded. Review every item before removal; selected registry data is backed up first, unless you have turned backups off in Settings.",
         ));
         self.open_removal(flow);
     }
@@ -1167,7 +1167,7 @@ fn page_help(tab: Tab) -> &'static [&'static str] {
             "This is the list of programs installed on this PC. Select one to see its details, or double-click it to uninstall.",
             "Uninstall first runs the program's own uninstaller, then InstallScope looks for anything left behind (leftovers) and shows you before removing it.",
             "Tick several programs to uninstall them one after another. \"Broken\" lists entries whose files are already gone.",
-            "Everything InstallScope removes is backed up first, so you can undo it on the Backups page.",
+            "Everything InstallScope removes is backed up first, so you can undo it on the Backups page, unless you have turned backups off in Settings.",
         ],
         Tab::Monitor => &[
             "Monitoring means InstallScope takes a \"before\" picture of your system, you install a program, and InstallScope takes an \"after\" picture.",
@@ -1180,7 +1180,7 @@ fn page_help(tab: Tab) -> &'static [&'static str] {
             "You can export a log as a readable report, or as scripts that undo the installation on another PC.",
         ],
         Tab::Backups => &[
-            "Before InstallScope deletes or changes anything, it copies it here.",
+            "When backups are on (the default), InstallScope copies what a removal is about to delete or change here first. If you turn backups off in Settings, removals are not backed up — and the Junk Cleaner never backs up what it deletes.",
             "If something stops working after a removal, click Restore to put everything back exactly as it was.",
         ],
         Tab::Startup => &[
@@ -1203,12 +1203,12 @@ fn page_help(tab: Tab) -> &'static [&'static str] {
         ],
         Tab::Shell => &[
             "Programs add commands and shell extensions to the right-click menu of files, folders, drives and the desktop. Many stay behind after the program is gone, which clutters the menu and can slow down File Explorer.",
-            "Untick an entry to turn it off; nothing is deleted and you can turn it back on. Broken entries belong to programs that are no longer installed and can be removed with the usual review and backup.",
+            "Untick an entry to turn it off; nothing is deleted and you can turn it back on. Broken entries belong to programs that are no longer installed and can be removed with the usual review, backed up first unless you have turned backups off in Settings.",
             "Deep clean looks further: COM classes, \"Open with\" entries, and PATH or environment entries left by removed programs anywhere in Windows.",
         ],
         Tab::Debloat => &[
             "New PCs come with antivirus trials, sponsored games, promotions and maker apps. The Bloatware Shield finds them, including the Store apps that ordinary uninstallers skip.",
-            "Recommended items are ticked; optional maker tools are not. Drivers, audio and hotkey tools and Windows' own parts are never listed. Removal goes through the usual review, and everything is backed up.",
+            "Recommended items are ticked; optional maker tools are not. Drivers, audio and hotkey tools and Windows' own parts are never listed. Removal goes through the usual review, and everything is backed up first, unless you have turned backups off in Settings.",
         ],
         Tab::ExtInv => &[
             "This page lists every extension installed in the supported Chromium-based and Firefox-based browsers, grouped by browser and profile.",
@@ -1290,7 +1290,7 @@ impl App {
                 (
                     "💾",
                     "Undo anything",
-                    "Everything removed is backed up first and can be restored.",
+                    "Everything removed is backed up first and can be restored, unless you turn backups off in Settings.",
                 ),
             ] {
                 ui.horizontal(|ui| {
