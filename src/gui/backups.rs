@@ -151,7 +151,7 @@ impl App {
             }
             if self.backups.list.is_empty() {
                 theme::card(ui, |ui| {
-                    muted(ui, t("No backups yet. Every removal InstallScope makes is backed up here first."));
+                    muted(ui, t("No backups yet. Every removal InstallScope makes is backed up here first, unless you have turned backups off in Settings."));
                 });
                 return;
             }

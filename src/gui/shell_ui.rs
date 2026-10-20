@@ -258,7 +258,7 @@ impl App {
                 self.toggle_shell(e, on);
             }
             ui.add_space(6.0);
-            small_muted(ui, t("Changes apply to new File Explorer windows. Turning entries off is reversible and backed up."));
+            small_muted(ui, t("Changes apply to new File Explorer windows. Turning entries off is reversible and backed up first, unless you have turned backups off in Settings."));
         });
     }
 }

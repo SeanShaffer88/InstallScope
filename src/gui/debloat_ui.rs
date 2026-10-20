@@ -170,7 +170,7 @@ impl App {
                         let enabled = chosen > 0 && self.wizard.is_none();
                         if ui
                             .add_enabled(enabled, egui::Button::new(RichText::new(tf("🛡 Remove {n} selected", &[("n", chosen.to_string())])).strong()).fill(theme::ACCENT))
-                            .on_hover_text(t("Uninstalls them one after another, then removes what they left behind. You review every step, and everything is backed up."))
+                            .on_hover_text(t("Uninstalls them one after another, then removes what they left behind. You review every step, and everything is backed up first, unless you have turned backups off in Settings."))
                             .clicked()
                         {
                             self.remove_bloat();

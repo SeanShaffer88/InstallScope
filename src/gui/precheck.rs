@@ -213,7 +213,7 @@ impl App {
                 if !sandbox
                     && ui
                         .button(format!("🧪 {}", t("Try it, then undo")))
-                        .on_hover_text(t("Installs it on this PC while recording every change, shows you what it did, then removes all of it. A restore point is made first."))
+                        .on_hover_text(t("Installs it on this PC while recording every change, shows you what it did, then removes all of it. InstallScope tries to make a restore point first, as an extra safety net."))
                         .clicked()
                 {
                     trial = true;

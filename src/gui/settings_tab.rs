@@ -427,7 +427,7 @@ impl App {
                         small_muted(ui, t("When off, InstallScope deletes without asking first. Restoring your PC to a restore point, deleting a backup and deep cleaning always ask, because they can't be undone."));
                         changed |= ui
                             .checkbox(&mut self.settings.use_recycle_bin, t("Also send removed files to the Recycle Bin"))
-                            .on_hover_text(t("Everything is backed up either way. This additionally keeps removed files in the Recycle Bin, using extra disk space."))
+                            .on_hover_text(t("Removed files are also kept in the Recycle Bin, using extra disk space. This is separate from InstallScope's own backups."))
                             .changed();
                         changed |= ui
                             .checkbox(&mut self.settings.close_programs, t("Close the program if it is running"))

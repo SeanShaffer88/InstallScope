@@ -343,7 +343,7 @@ impl App {
     }
 
     fn ui_startup_entries(&mut self, ui: &mut egui::Ui) {
-        small_muted(ui, t("Disabling works like Task Manager: the entry stays but doesn't run. Deleting removes it (backed up)."));
+        small_muted(ui, t("Disabling works like Task Manager: the entry stays but doesn't run. Deleting removes it (backed up first, unless backups are off in Settings)."));
         ui.add_space(4.0);
         let f = self.startup.filter.to_lowercase();
         let rows: Vec<usize> = (0..self.startup.entries.len())
