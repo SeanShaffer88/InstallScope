@@ -10,6 +10,7 @@ mod cleaner;
 mod dashboard;
 mod debloat_ui;
 mod difftree_ui;
+mod extinv_ui;
 #[cfg(windows)]
 mod filedialog;
 mod lab;
