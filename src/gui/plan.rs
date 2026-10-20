@@ -205,12 +205,11 @@ pub fn plan_ui(ui: &mut egui::Ui, flow: &mut RemovalFlow) {
             theme::WARN,
         );
         theme::badge(ui, tf("{n} careful", &[("n", red.to_string())]), theme::BAD);
-        if ui
-            .small_button(t("Select only green"))
-            .on_hover_text(t(
-                "Tick only the items InstallScope is confident are safe to remove.",
-            ))
-            .clicked()
+        if super::a11y::explain(
+            ui.small_button(t("Select only green")),
+            &t("Tick only the items InstallScope is confident are safe to remove."),
+        )
+        .clicked()
         {
             let allow: Vec<bool> = (0..flow.plan.items.len())
                 .map(|n| ref_auto_select(flow, n))
@@ -227,21 +226,37 @@ pub fn plan_ui(ui: &mut egui::Ui, flow: &mut RemovalFlow) {
     ui.add_space(4.0);
     let missing = flow.plan.items.iter().filter(|i| !i.exists).count();
     ui.horizontal(|ui| {
-        search_box(ui, &mut flow.filter, "Filter items", 240.0);
+        super::a11y::explain(
+            search_box(ui, &mut flow.filter, "Filter items", 240.0),
+            &t("Filter the review items by text. Items that don't contain it are hidden until the filter is cleared."),
+        );
         if missing > 0 {
-            ui.checkbox(
-                &mut flow.hide_missing,
-                tf(
-                    "Hide {n} items already removed",
-                    &[("n", missing.to_string())],
+            super::a11y::explain(
+                ui.checkbox(
+                    &mut flow.hide_missing,
+                    tf(
+                        "Hide {n} items already removed",
+                        &[("n", missing.to_string())],
+                    ),
                 ),
+                &t("These items no longer exist, so they can't be removed. Hiding them just shortens the list."),
             );
         }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            if ui.small_button(t("Select none")).clicked() {
+            if super::a11y::explain(
+                ui.small_button(t("Select none")),
+                &t("Untick every item in this review."),
+            )
+            .clicked()
+            {
                 flow.plan.items.iter_mut().for_each(|i| i.selected = false);
             }
-            if ui.small_button(t("Select all")).clicked() {
+            if super::a11y::explain(
+                ui.small_button(t("Select all")),
+                &t("Tick every item shown. Items shared with other programs, or not in any install log, are never ticked automatically."),
+            )
+            .clicked()
+            {
                 let allow: Vec<bool> = (0..flow.plan.items.len())
                     .map(|n| ref_auto_select(flow, n))
                     .collect();
@@ -292,7 +307,7 @@ pub fn plan_ui(ui: &mut egui::Ui, flow: &mut RemovalFlow) {
                     continue;
                 }
                 let sel = idx.iter().filter(|&&n| flow.plan.items[n].selected).count();
-                egui::CollapsingHeader::new(
+                let ch = egui::CollapsingHeader::new(
                     RichText::new(format!("{}  ({sel}/{})", category_label(cat), idx.len()))
                         .strong(),
                 )
@@ -302,8 +317,16 @@ pub fn plan_ui(ui: &mut egui::Ui, flow: &mut RemovalFlow) {
                     for n in idx {
                         let item = &mut flow.plan.items[n];
                         ui.horizontal(|ui| {
+                            let item_why = if item.exists {
+                                t("Tick to remove this item. The removal is backed up first, unless backups are off in Settings.")
+                            } else {
+                                t("This item no longer exists, so there is nothing to remove.")
+                            };
                             ui.add_enabled_ui(item.exists, |ui| {
-                                ui.checkbox(&mut item.selected, "")
+                                super::a11y::explain(
+                                    ui.checkbox(&mut item.selected, ""),
+                                    &item_why,
+                                );
                             });
                             let text = item.action.describe();
                             let rt = if item.exists {
@@ -322,7 +345,7 @@ pub fn plan_ui(ui: &mut egui::Ui, flow: &mut RemovalFlow) {
                                 .chain(conf.reasons.iter().map(|r| format!("• {}", t(r))))
                                 .collect::<Vec<_>>()
                                 .join("\n");
-                            egui::Frame::new()
+                            let chip = egui::Frame::new()
                                 .fill(rc.gamma_multiply(0.18))
                                 .corner_radius(8.0)
                                 .inner_margin(egui::Margin::symmetric(6, 0))
@@ -338,8 +361,8 @@ pub fn plan_ui(ui: &mut egui::Ui, flow: &mut RemovalFlow) {
                                         .color(rc),
                                     );
                                 })
-                                .response
-                                .on_hover_text(tip);
+                                .response;
+                            super::a11y::explain(chip, &tip);
                             ui.add(egui::Label::new(rt).truncate())
                                 .on_hover_text(item.action.describe());
                             if !item.note.is_empty() {
@@ -356,9 +379,16 @@ pub fn plan_ui(ui: &mut egui::Ui, flow: &mut RemovalFlow) {
                         });
                     }
                 });
+                super::a11y::explain(
+                    ch.header_response,
+                    &tf(
+                        "Show or hide the {category} items in this review.",
+                        &[("category", category_label(cat))],
+                    ),
+                );
             }
             if !flow.plan.info.is_empty() {
-                egui::CollapsingHeader::new(
+                let ch = egui::CollapsingHeader::new(
                     RichText::new(tf("{n} notes", &[("n", flow.plan.info.len().to_string())]))
                         .color(theme::MUTED),
                 )
@@ -368,6 +398,10 @@ pub fn plan_ui(ui: &mut egui::Ui, flow: &mut RemovalFlow) {
                         small_muted(ui, i);
                     }
                 });
+                super::a11y::explain(
+                    ch.header_response,
+                    &t("Show or hide the notes for this review."),
+                );
             }
         });
 }
@@ -466,7 +500,13 @@ impl App {
                     ui.add_space(8.0);
                     super::alt_ui::alternatives_widget(ui, alt, &installed, &flow.names);
                     ui.add_space(8.0);
-                    if theme::primary_button(ui, t("Close")).clicked() {
+                    super::a11y::focus_hint(ui, theme::MUTED);
+                    if super::a11y::explain(
+                        theme::primary_button(ui, t("Close")),
+                        &t("Close this window."),
+                    )
+                    .clicked()
+                    {
                         close = true;
                     }
                     return;
@@ -489,24 +529,49 @@ impl App {
                 ui.separator();
                 ui.horizontal_wrapped(|ui| {
                     if flow.offer_unlogged {
-                        ui.checkbox(&mut flow.remove_unlogged, t("Also remove files the program created after installation"))
-                            .on_hover_text(unlogged_hint(backup_on));
+                        super::a11y::explain(
+                            ui.checkbox(&mut flow.remove_unlogged, t("Also remove files the program created after installation")),
+                            &unlogged_hint(backup_on),
+                        );
                     }
                     if !flow.logs_to_delete.is_empty() {
-                        ui.checkbox(&mut flow.delete_logs, t("Delete the install log afterwards"));
+                        super::a11y::explain(
+                            ui.checkbox(&mut flow.delete_logs, t("Delete the install log afterwards")),
+                            &t("Delete this install log once the removal succeeds. The log is the record of what the installation changed; without it, this install can't be removed precisely later."),
+                        );
                     }
                 });
                 ui.horizontal(|ui| {
                     let n = flow.plan.selected();
+                    let remove_why = if n == 0 {
+                        t("Nothing is ticked, so there is nothing to remove. Tick at least one item first.")
+                    } else if backup_on {
+                        t("Remove the ticked items now. Everything removed is backed up first, so it can be undone from the Backups page.")
+                    } else {
+                        t("Remove the ticked items now. Backups are off in Settings, so this cannot be undone.")
+                    };
                     ui.add_enabled_ui(n > 0, |ui| {
-                        if theme::primary_button(ui, tf("Remove {n} selected items", &[("n", n.to_string())])).clicked() {
+                        if super::a11y::explain(
+                            theme::primary_button(ui, tf("Remove {n} selected items", &[("n", n.to_string())])),
+                            &remove_why,
+                        )
+                        .clicked()
+                        {
                             start = true;
                         }
                     });
-                    if ui.button(t("Cancel")).clicked() {
+                    if super::a11y::explain(
+                        ui.button(t("Cancel")),
+                        &t("Close this review without removing anything."),
+                    )
+                    .clicked()
+                    {
                         close = true;
                     }
                 });
+                // The focused control's explanation line, at the foot
+                // of the review (see a11y::explain).
+                super::a11y::focus_hint(ui, theme::MUTED);
             });
         if !open {
             close = true;
