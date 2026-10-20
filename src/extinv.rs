@@ -59,8 +59,10 @@ pub struct InstalledExtension {
     pub profile_dir: PathBuf,
     /// The extension's stable id.
     pub id: String,
-    /// Display name. For Chromium this is the manifest `name`, which may be
-    /// an unresolved `__MSG_…__` placeholder when the manifest localizes it.
+    /// Display name. For Chromium this is the manifest `name`, with
+    /// `__MSG_…__` localization references resolved from the extension's
+    /// `_locales` folder where possible; when resolution is impossible the
+    /// name is `"<id> (name unavailable)"` rather than the raw token.
     pub name: String,
     /// Version string, empty when it could not be determined.
     pub version: String,
@@ -328,6 +330,7 @@ fn scan_chromium_profile(
         return Vec::new();
     }
     let prefs = std::fs::read(profile_dir.join("Preferences")).ok();
+    let app_locale = prefs.as_deref().and_then(chromium_app_locale);
     let mut out = Vec::new();
     for (id, id_dir) in subdirs(&ext_root) {
         // An extension folder holds one subfolder per installed version;
@@ -344,6 +347,7 @@ fn scan_chromium_profile(
                     } else {
                         version
                     };
+                    let name = resolve_chromium_name(vdir, &name, &id, app_locale.as_deref());
                     found = Some((name, version));
                     break;
                 }
@@ -382,6 +386,95 @@ pub fn parse_chromium_manifest(bytes: &[u8]) -> Option<(String, String)> {
             .to_string()
     };
     Some((get("name"), get("version")))
+}
+
+/// The extension's message key when a Chromium manifest name is a
+/// `__MSG_key__` localization reference; `None` for ordinary names (and for
+/// a malformed, empty-key token).
+pub fn msg_key(name: &str) -> Option<&str> {
+    let inner = name.strip_prefix("__MSG_")?.strip_suffix("__")?;
+    if inner.is_empty() {
+        None
+    } else {
+        Some(inner)
+    }
+}
+
+/// The profile's preferred locale, cheaply: `intl.app_locale` in the
+/// profile's `Preferences` file (e.g. "en_US" or "en-US"). `None` when
+/// missing, empty, or unparseable.
+pub fn chromium_app_locale(prefs: &[u8]) -> Option<String> {
+    let v = json::parse_bytes(prefs).ok()?;
+    let s = v.get("intl")?.get("app_locale")?.as_str()?.trim();
+    if s.is_empty() {
+        None
+    } else {
+        Some(s.to_string())
+    }
+}
+
+/// The `message` text for `key` in one `_locales/<locale>/messages.json`.
+/// `None` when the file is unreadable or malformed, the key is missing, or
+/// the message is empty. Key lookup ignores case, as Chromium's does.
+fn locale_message(messages_json: &Path, key: &str) -> Option<String> {
+    let bytes = std::fs::read(messages_json).ok()?;
+    let v = json::parse_bytes(&bytes).ok()?;
+    let obj = v.as_object()?;
+    let entry = obj.iter().find(|(k, _)| k.eq_ignore_ascii_case(key))?;
+    let msg = entry.1.get("message")?.as_str()?;
+    if msg.is_empty() {
+        None
+    } else {
+        Some(msg.to_string())
+    }
+}
+
+/// Resolve a Chromium manifest name for display. Ordinary names pass
+/// through unchanged. A `__MSG_key__` reference is looked up in the
+/// extension's `_locales/<locale>/messages.json`, in this deterministic
+/// order: the profile's preferred locale, then `en`, then every available
+/// locale folder in sorted order (each skipped when it does not resolve
+/// the key). When nothing resolves, the readable placeholder
+/// `"<id> (name unavailable)"` is returned — the raw `__MSG_…__` token is
+/// never shown to a user.
+pub fn resolve_chromium_name(
+    version_dir: &Path,
+    raw_name: &str,
+    id: &str,
+    app_locale: Option<&str>,
+) -> String {
+    let Some(key) = msg_key(raw_name) else {
+        return raw_name.to_string();
+    };
+    let locales_dir = version_dir.join("_locales");
+    let mut candidates: Vec<String> = Vec::new();
+    if let Some(loc) = app_locale {
+        let loc = loc.trim().replace('-', "_");
+        if !loc.is_empty() {
+            candidates.push(loc);
+        }
+    }
+    candidates.push("en".to_string());
+    if let Ok(rd) = std::fs::read_dir(&locales_dir) {
+        let mut extra: Vec<String> = rd
+            .filter_map(|e| e.ok())
+            .filter(|e| e.file_type().map(|t| t.is_dir()).unwrap_or(false))
+            .map(|e| e.file_name().to_string_lossy().into_owned())
+            .collect();
+        extra.sort();
+        for name in extra {
+            if !candidates.iter().any(|c| c.eq_ignore_ascii_case(&name)) {
+                candidates.push(name);
+            }
+        }
+    }
+    for cand in &candidates {
+        let messages = locales_dir.join(cand).join("messages.json");
+        if let Some(text) = locale_message(&messages, key) {
+            return text;
+        }
+    }
+    format!("{id} (name unavailable)")
 }
 
 /// Whether Chromium has extension `id` enabled, from the profile's
@@ -781,11 +874,163 @@ mod tests {
     }
 
     #[test]
-    fn chromium_manifest_localized_name_kept_verbatim() {
+    fn chromium_manifest_parser_returns_raw_localized_token() {
+        // The pure parser returns the manifest name as-is, including a
+        // `__MSG_…__` localization token; resolving it for display happens
+        // at scan time (`chromium localized name` tests below), where the
+        // `_locales` folder is known.
         let (n, v) =
             parse_chromium_manifest(br#"{"name":"__MSG_appName__","version":"2.0"}"#).unwrap();
         assert_eq!(n, "__MSG_appName__");
         assert_eq!(v, "2.0");
+    }
+
+    #[test]
+    fn msg_key_detection() {
+        assert_eq!(msg_key("__MSG_appName__"), Some("appName"));
+        assert_eq!(msg_key("Plain Name"), None);
+        assert_eq!(msg_key("__MSG___"), None);
+        assert_eq!(msg_key("__MSG_no_suffix"), None);
+        assert_eq!(msg_key(""), None);
+    }
+
+    #[test]
+    fn chromium_app_locale_from_preferences() {
+        assert_eq!(
+            chromium_app_locale(br#"{"intl":{"app_locale":"fr"}}"#).as_deref(),
+            Some("fr")
+        );
+        assert_eq!(chromium_app_locale(br#"{"intl":{}}"#), None);
+        assert_eq!(
+            chromium_app_locale(br#"{"intl":{"app_locale":"  "}}"#),
+            None
+        );
+        assert_eq!(chromium_app_locale(b"junk"), None);
+    }
+
+    fn def_chrome() -> BrowserDef {
+        BrowserDef {
+            name: "Chrome",
+            family: Family::Chromium,
+            base_var: "LOCALAPPDATA",
+            rel: "Google\\Chrome\\User Data",
+            root_is_profile: false,
+        }
+    }
+
+    /// Fixture: one extension whose manifest name is `__MSG_appName__`,
+    /// with `_locales/en/messages.json` present only when `en_messages` is
+    /// `Some`. Returns (profile dir, extension version dir).
+    fn fixture_chrome_msg(td: &TestDir, en_messages: Option<&str>) -> (PathBuf, PathBuf) {
+        let profile = td.path().join("User Data").join("Default");
+        let vdir = profile.join("Extensions").join("mnopqrs").join("3.0_0");
+        std::fs::create_dir_all(&vdir).unwrap();
+        std::fs::write(
+            vdir.join("manifest.json"),
+            br#"{"manifest_version":3,"name":"__MSG_appName__","version":"3.0"}"#,
+        )
+        .unwrap();
+        if let Some(m) = en_messages {
+            let en = vdir.join("_locales").join("en");
+            std::fs::create_dir_all(&en).unwrap();
+            std::fs::write(en.join("messages.json"), m).unwrap();
+        }
+        (profile, vdir)
+    }
+
+    fn write_locale(vdir: &Path, locale: &str, messages: &str) {
+        let dir = vdir.join("_locales").join(locale);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("messages.json"), messages).unwrap();
+    }
+
+    fn scanned_name(profile: &Path) -> String {
+        let exts = scan_chromium_profile(&def_chrome(), "Default", profile);
+        assert_eq!(exts.len(), 1);
+        exts[0].name.clone()
+    }
+
+    #[test]
+    fn chromium_localized_name_resolves_from_messages_json() {
+        let td = crate::util::tempdir().unwrap();
+        let (profile, _) = fixture_chrome_msg(
+            &td,
+            Some(
+                r#"{"appName":{"message":"My Cool Extension","description":"Shown in the toolbar"}}"#,
+            ),
+        );
+        assert_eq!(scanned_name(&profile), "My Cool Extension");
+    }
+
+    #[test]
+    fn chromium_localized_name_key_lookup_ignores_case() {
+        let td = crate::util::tempdir().unwrap();
+        let (profile, _) =
+            fixture_chrome_msg(&td, Some(r#"{"APPNAME":{"message":"Case Insensitive"}}"#));
+        assert_eq!(scanned_name(&profile), "Case Insensitive");
+    }
+
+    #[test]
+    fn chromium_locale_fallback_order() {
+        // Preferred locale (from Preferences) wins when it resolves.
+        let td = crate::util::tempdir().unwrap();
+        let (profile, vdir) =
+            fixture_chrome_msg(&td, Some(r#"{"appName":{"message":"English Name"}}"#));
+        write_locale(&vdir, "fr", r#"{"appName":{"message":"Nom Français"}}"#);
+        std::fs::write(
+            profile.join("Preferences"),
+            br#"{"intl":{"app_locale":"fr"}}"#,
+        )
+        .unwrap();
+        assert_eq!(scanned_name(&profile), "Nom Français");
+
+        // Preferred locale absent: `en` is next (ahead of sorted folders).
+        let td2 = crate::util::tempdir().unwrap();
+        let (profile2, vdir2) =
+            fixture_chrome_msg(&td2, Some(r#"{"appName":{"message":"English Name"}}"#));
+        write_locale(&vdir2, "de", r#"{"appName":{"message":"Deutscher Name"}}"#);
+        write_locale(&vdir2, "fr", r#"{"appName":{"message":"Nom Français"}}"#);
+        std::fs::write(
+            profile2.join("Preferences"),
+            br#"{"intl":{"app_locale":"es"}}"#,
+        )
+        .unwrap();
+        assert_eq!(scanned_name(&profile2), "English Name");
+
+        // No `en`, no prefs: the first locale folder in sorted order is
+        // used, deterministically.
+        let td3 = crate::util::tempdir().unwrap();
+        let (profile3, vdir3) = fixture_chrome_msg(&td3, None);
+        write_locale(&vdir3, "fr", r#"{"appName":{"message":"Nom Français"}}"#);
+        write_locale(&vdir3, "de", r#"{"appName":{"message":"Deutscher Name"}}"#);
+        assert_eq!(scanned_name(&profile3), "Deutscher Name");
+    }
+
+    #[test]
+    fn chromium_localized_name_missing_key_falls_back_to_id() {
+        let td = crate::util::tempdir().unwrap();
+        let (profile, _) =
+            fixture_chrome_msg(&td, Some(r#"{"otherKey":{"message":"Something Else"}}"#));
+        assert_eq!(scanned_name(&profile), "mnopqrs (name unavailable)");
+    }
+
+    #[test]
+    fn chromium_localized_name_malformed_messages_falls_back_to_id() {
+        let td = crate::util::tempdir().unwrap();
+        let (profile, _) = fixture_chrome_msg(&td, Some("not json {"));
+        assert_eq!(scanned_name(&profile), "mnopqrs (name unavailable)");
+
+        // An empty message counts as unresolved too.
+        let td2 = crate::util::tempdir().unwrap();
+        let (profile2, _) = fixture_chrome_msg(&td2, Some(r#"{"appName":{"message":""}}"#));
+        assert_eq!(scanned_name(&profile2), "mnopqrs (name unavailable)");
+    }
+
+    #[test]
+    fn chromium_localized_name_without_locales_falls_back_to_id() {
+        let td = crate::util::tempdir().unwrap();
+        let (profile, _) = fixture_chrome_msg(&td, None);
+        assert_eq!(scanned_name(&profile), "mnopqrs (name unavailable)");
     }
 
     #[test]
