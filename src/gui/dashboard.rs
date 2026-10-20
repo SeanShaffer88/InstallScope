@@ -9,14 +9,21 @@ use installscope_core::model::human_size;
 
 /// One Command Deck metric tile: a big tabular numeral, a label, and — only
 /// when the tile needs attention — a 3px red top rule and a coloured numeral.
+///
+/// The whole card is one button. It is registered with `Ui::interact` under
+/// a stable id (not just sensed on the frame's own response), which is what
+/// puts it in the keyboard focus order: Tab reaches it, the app-wide focus
+/// ring outlines it, and Enter/Space — or a screen reader's activate
+/// command — clicks it, exactly like a mouse click.
 fn stat_tile(
     ui: &mut egui::Ui,
+    key: &str,
     value: String,
     label: String,
     numeral_color: egui::Color32,
     attention: bool,
 ) -> egui::Response {
-    let resp = egui::Frame::new()
+    let frame = egui::Frame::new()
         .fill(theme::CARD)
         .stroke(egui::Stroke::new(1.0_f32, theme::LINE))
         .corner_radius(6)
@@ -36,16 +43,23 @@ fn stat_tile(
                     .color(numeral_color),
             );
             ui.label(RichText::new(&label).size(13.0).color(theme::MUTED));
-        })
-        .response
-        .interact(egui::Sense::click())
+        });
+    let resp = ui
+        .interact(
+            frame.response.rect,
+            ui.id().with("stat_tile").with(key),
+            egui::Sense::click(),
+        )
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     super::a11y::button(&resp, &format!("{value} {label}"));
     resp
 }
 
+/// One quick-action row: icon, title, description, chevron. Like `stat_tile`,
+/// registered as a real button under a stable id so keyboard and screen
+/// reader users can reach and activate it, not just the mouse.
 fn action_row(ui: &mut egui::Ui, icon: &str, title: &str, desc: &str) -> bool {
-    let resp = egui::Frame::new()
+    let frame = egui::Frame::new()
         .fill(theme::CARD)
         .stroke(egui::Stroke::new(1.0_f32, theme::LINE))
         .corner_radius(6)
@@ -63,9 +77,13 @@ fn action_row(ui: &mut egui::Ui, icon: &str, title: &str, desc: &str) -> bool {
                     ui.label(RichText::new("›").size(20.0).color(theme::FAINT));
                 });
             });
-        })
-        .response
-        .interact(egui::Sense::click())
+        });
+    let resp = ui
+        .interact(
+            frame.response.rect,
+            ui.id().with("action_row").with(title),
+            egui::Sense::click(),
+        )
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     super::a11y::button(&resp, &format!("{}. {}", t(title), t(desc)));
     resp.clicked()
@@ -138,17 +156,17 @@ impl App {
 
                 let mut go: Option<(Tab, Option<super::programs::View>)> = None;
                 ui.columns(4, |cols| {
-                    if stat_tile(&mut cols[0], programs.to_string(), t("Programs installed"), theme::TEXT, false).clicked() {
+                    if stat_tile(&mut cols[0], "programs", programs.to_string(), t("Programs installed"), theme::TEXT, false).clicked() {
                         go = Some((Tab::Programs, Some(super::programs::View::All)));
                     }
-                    if stat_tile(&mut cols[1], monitored.to_string(), t("Monitored"), theme::TEXT, false).clicked() {
+                    if stat_tile(&mut cols[1], "monitored", monitored.to_string(), t("Monitored"), theme::TEXT, false).clicked() {
                         go = Some((Tab::Programs, Some(super::programs::View::Monitored)));
                     }
                     let nc = if broken > 0 { theme::WARN } else { theme::TEXT };
-                    if stat_tile(&mut cols[2], broken.to_string(), t("Broken entries"), nc, broken > 0).clicked() {
+                    if stat_tile(&mut cols[2], "broken", broken.to_string(), t("Broken entries"), nc, broken > 0).clicked() {
                         go = Some((Tab::Programs, Some(super::programs::View::Broken)));
                     }
-                    if stat_tile(&mut cols[3], backups.to_string(), tf("Backups ({size})", &[("size", human_size(backup_bytes))]), theme::TEXT, false).clicked() {
+                    if stat_tile(&mut cols[3], "backups", backups.to_string(), tf("Backups ({size})", &[("size", human_size(backup_bytes))]), theme::TEXT, false).clicked() {
                         go = Some((Tab::Backups, None));
                     }
                 });
@@ -277,5 +295,130 @@ impl App {
                 }
             });
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui::{Context, Event, Id, Key, Modifiers, PointerButton, Pos2, RawInput, Rect, Vec2};
+
+    /// What one rendered pass produced: the tile's id and rect, and whether
+    /// the tile and the action row reported a click in that pass.
+    #[derive(Default)]
+    struct Pass {
+        tile_id: Option<Id>,
+        tile_rect: Option<Rect>,
+        tile_clicked: bool,
+        row_clicked: bool,
+    }
+
+    fn input(events: Vec<Event>) -> RawInput {
+        RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(900.0, 700.0))),
+            events,
+            ..Default::default()
+        }
+    }
+
+    fn key_press(key: Key) -> Vec<Event> {
+        vec![Event::Key {
+            key,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        }]
+    }
+
+    /// Render one frame holding a stat tile above an action row, the same
+    /// helpers the Dashboard itself uses.
+    fn render(ctx: &Context, events: Vec<Event>, value: &str) -> Pass {
+        let mut pass = Pass::default();
+        let _ = ctx.run(input(events), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let tile = stat_tile(
+                    ui,
+                    "programs",
+                    value.to_string(),
+                    "Programs installed".to_string(),
+                    theme::TEXT,
+                    false,
+                );
+                pass.tile_id = Some(tile.id);
+                pass.tile_rect = Some(tile.rect);
+                pass.tile_clicked = tile.clicked();
+                pass.row_clicked = action_row(
+                    ui,
+                    "🗑",
+                    "Uninstall programs",
+                    "Remove programs and everything they leave behind",
+                );
+            });
+        });
+        pass
+    }
+
+    #[test]
+    fn tiles_and_rows_are_keyboard_operable() {
+        let ctx = Context::default();
+        let first = render(&ctx, Vec::new(), "42");
+        let tile = first.tile_id.expect("tile has an id");
+        assert_eq!(ctx.memory(|m| m.focused()), None);
+
+        // Tab reaches the tile first (layout order), then the action row.
+        render(&ctx, key_press(Key::Tab), "42");
+        assert_eq!(ctx.memory(|m| m.focused()), Some(tile));
+
+        // Enter activates the focused tile, not the row below it.
+        let pass = render(&ctx, key_press(Key::Enter), "42");
+        assert!(pass.tile_clicked);
+        assert!(!pass.row_clicked);
+
+        render(&ctx, key_press(Key::Tab), "42");
+        let focused = ctx.memory(|m| m.focused());
+        assert!(
+            focused.is_some() && focused != Some(tile),
+            "focus moved to the row"
+        );
+
+        // Space activates the focused row, not the tile above it.
+        let pass = render(&ctx, key_press(Key::Space), "42");
+        assert!(pass.row_clicked);
+        assert!(!pass.tile_clicked);
+    }
+
+    #[test]
+    fn tile_keeps_its_id_and_focus_when_its_numbers_change() {
+        // The tile's id comes from its stable key, not from the numbers it
+        // shows, so focus survives the counts changing underneath it.
+        let ctx = Context::default();
+        let first = render(&ctx, Vec::new(), "42");
+        let tile = first.tile_id.expect("tile has an id");
+        render(&ctx, key_press(Key::Tab), "42");
+        assert_eq!(ctx.memory(|m| m.focused()), Some(tile));
+
+        let changed = render(&ctx, Vec::new(), "43");
+        assert_eq!(changed.tile_id, Some(tile));
+        assert_eq!(ctx.memory(|m| m.focused()), Some(tile));
+    }
+
+    #[test]
+    fn tiles_still_click_with_the_mouse() {
+        let ctx = Context::default();
+        let first = render(&ctx, Vec::new(), "42");
+        let center = first.tile_rect.expect("tile has a rect").center();
+        let button = |pressed: bool| {
+            vec![Event::PointerButton {
+                pos: center,
+                button: PointerButton::Primary,
+                pressed,
+                modifiers: Modifiers::NONE,
+            }]
+        };
+        render(&ctx, button(true), "42");
+        let pass = render(&ctx, button(false), "42");
+        assert!(pass.tile_clicked);
+        assert!(!pass.row_clicked);
     }
 }
