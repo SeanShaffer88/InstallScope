@@ -6,6 +6,9 @@ planning, implementation, verification, and release work.
 
 ## Confirmed InstallScope decisions
 
+- Project documentation must not mention competitor software, except software
+  that is actually included in InstallScope (bundled components); the license
+  attributions for bundled components must always be kept.
 - Keep the product in Rust on `windows-sys`; do not substitute another
   language, framework family, or runtime without the user's approval.
 - Serve everyday Windows users, power users, and developers: make ordinary

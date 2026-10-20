@@ -86,7 +86,7 @@ All notable changes to InstallScope are documented here. The format follows
 - CLI: `installscope verify <file>` and `installscope programs --trust`.
 
 ### Removed
-- InstallScope now focuses on being a complete, free replacement for Total Uninstall. Tools outside that scope were removed: the Anti-Telemetry page, the disk space map, the duplicate file finder, the Windows Updates remover, winget updates, the system health panel, the online reputation check, installer lint and the uninstaller test, repackaging and MSIX output, uninstall scripts, the Windows features and app aliases views, and Find by window.
+- InstallScope now focuses on being a complete, free install monitor and uninstaller. Tools outside that scope were removed: the Anti-Telemetry page, the disk space map, the duplicate file finder, the Windows Updates remover, winget updates, the system health panel, the online reputation check, installer lint and the uninstaller test, repackaging and MSIX output, uninstall scripts, the Windows features and app aliases views, and Find by window.
 
 ### Changed
 - The project moved to **github.com/SeanShaffer88/InstallScope** (formerly InstallScopeUninstaller); old links redirect.
