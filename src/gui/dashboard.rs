@@ -7,27 +7,35 @@ use egui::RichText;
 use installscope_core::i18n::{t, tf};
 use installscope_core::model::human_size;
 
+/// One Command Deck metric tile: a big tabular numeral, a label, and — only
+/// when the tile needs attention — a 3px red top rule and a coloured numeral.
 fn stat_tile(
     ui: &mut egui::Ui,
-    icon: &str,
     value: String,
     label: String,
-    color: egui::Color32,
+    numeral_color: egui::Color32,
+    attention: bool,
 ) -> egui::Response {
     let resp = egui::Frame::new()
         .fill(theme::CARD)
-        .corner_radius(12)
+        .stroke(egui::Stroke::new(1.0_f32, theme::LINE))
+        .corner_radius(6)
         .inner_margin(egui::Margin::symmetric(16, 14))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.horizontal(|ui| {
-                ui.label(RichText::new(icon).size(26.0).color(color));
-                ui.add_space(6.0);
-                ui.vertical(|ui| {
-                    ui.label(RichText::new(&value).size(22.0).strong());
-                    small_muted(ui, &label);
-                });
-            });
+            if attention {
+                let (_, rule) = ui.allocate_space(egui::vec2(ui.available_width(), 3.0));
+                ui.painter().rect_filled(rule, 0.0, theme::ACCENT);
+                ui.add_space(8.0);
+            }
+            ui.label(
+                RichText::new(&value)
+                    .monospace()
+                    .size(32.0)
+                    .strong()
+                    .color(numeral_color),
+            );
+            ui.label(RichText::new(&label).size(13.0).color(theme::MUTED));
         })
         .response
         .interact(egui::Sense::click())
@@ -39,19 +47,20 @@ fn stat_tile(
 fn action_row(ui: &mut egui::Ui, icon: &str, title: &str, desc: &str) -> bool {
     let resp = egui::Frame::new()
         .fill(theme::CARD)
-        .corner_radius(12)
+        .stroke(egui::Stroke::new(1.0_f32, theme::LINE))
+        .corner_radius(6)
         .inner_margin(egui::Margin::symmetric(16, 12))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             ui.horizontal(|ui| {
-                ui.label(RichText::new(icon).size(20.0).color(theme::ACCENT_TEXT));
+                ui.label(RichText::new(icon).size(20.0).color(theme::MUTED));
                 ui.add_space(8.0);
                 ui.vertical(|ui| {
                     ui.label(RichText::new(t(title)).strong());
                     small_muted(ui, t(desc));
                 });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    ui.label(RichText::new("›").size(20.0).color(theme::MUTED));
+                    ui.label(RichText::new("›").size(20.0).color(theme::FAINT));
                 });
             });
         })
@@ -72,7 +81,7 @@ impl App {
                 }
                 self.interrupted_ui(ui);
                 if self.monitor.is_active() {
-                    theme::card(ui, |ui| {
+                    theme::deck_panel(ui, |ui| {
                         ui.horizontal(|ui| {
                             ui.label(RichText::new("⏺").size(22.0).color(theme::ACCENT_TEXT));
                             ui.vertical(|ui| {
@@ -92,20 +101,54 @@ impl App {
                 let programs = self.programs.list.len();
                 let monitored = self.monitored_keys().len();
                 let broken = self.programs.broken.len();
+                let backups = self.backups.list.len();
                 let backup_bytes: u64 = self.backups.list.iter().map(|b| b.bytes()).sum();
+
+                // Slim status strip: the same facts the tiles below show,
+                // summarised in one line.
+                let (dot, status) = if broken > 0 {
+                    (
+                        theme::WARN,
+                        tf("{n} broken entries", &[("n", broken.to_string())]),
+                    )
+                } else {
+                    (theme::OK, t("All systems healthy"))
+                };
+                egui::Frame::new()
+                    .fill(theme::CARD)
+                    .stroke(egui::Stroke::new(1.0_f32, theme::LINE))
+                    .corner_radius(6)
+                    .inner_margin(egui::Margin::symmetric(16, 10))
+                    .show(ui, |ui| {
+                        ui.set_width(ui.available_width());
+                        ui.horizontal(|ui| {
+                            ui.label(RichText::new("●").size(13.0).color(dot));
+                            ui.label(
+                                RichText::new(format!(
+                                    "{} · {}",
+                                    status,
+                                    tf("{n} backups ready", &[("n", backups.to_string())])
+                                ))
+                                .size(13.0)
+                                .color(theme::MUTED),
+                            );
+                        });
+                    });
+                ui.add_space(12.0);
+
                 let mut go: Option<(Tab, Option<super::programs::View>)> = None;
                 ui.columns(4, |cols| {
-                    if stat_tile(&mut cols[0], "📦", programs.to_string(), t("Programs installed"), theme::ACCENT_TEXT).clicked() {
+                    if stat_tile(&mut cols[0], programs.to_string(), t("Programs installed"), theme::TEXT, false).clicked() {
                         go = Some((Tab::Programs, Some(super::programs::View::All)));
                     }
-                    if stat_tile(&mut cols[1], "⏺", monitored.to_string(), t("Monitored"), theme::OK).clicked() {
+                    if stat_tile(&mut cols[1], monitored.to_string(), t("Monitored"), theme::TEXT, false).clicked() {
                         go = Some((Tab::Programs, Some(super::programs::View::Monitored)));
                     }
-                    let bc = if broken > 0 { theme::WARN } else { theme::MUTED };
-                    if stat_tile(&mut cols[2], "⚠", broken.to_string(), t("Broken entries"), bc).clicked() {
+                    let nc = if broken > 0 { theme::WARN } else { theme::TEXT };
+                    if stat_tile(&mut cols[2], broken.to_string(), t("Broken entries"), nc, broken > 0).clicked() {
                         go = Some((Tab::Programs, Some(super::programs::View::Broken)));
                     }
-                    if stat_tile(&mut cols[3], "💾", self.backups.list.len().to_string(), tf("Backups ({size})", &[("size", human_size(backup_bytes))]), theme::MUTED).clicked() {
+                    if stat_tile(&mut cols[3], backups.to_string(), tf("Backups ({size})", &[("size", human_size(backup_bytes))]), theme::TEXT, false).clicked() {
                         go = Some((Tab::Backups, None));
                     }
                 });
@@ -117,7 +160,7 @@ impl App {
                 }
 
                 ui.add_space(16.0);
-                ui.label(RichText::new(t("Quick actions")).heading().strong());
+                theme::section_label(ui, t("Quick actions"));
                 ui.add_space(6.0);
                 if action_row(ui, "📡", "Install a program with monitoring", "Record everything it changes so it can be removed precisely later") {
                     self.tab = Tab::Monitor;
@@ -176,28 +219,29 @@ impl App {
                     wasters.truncate(5);
                     if !wasters.is_empty() {
                         ui.add_space(16.0);
-                        ui.label(RichText::new(t("Space-wasters you don't use")).heading().strong());
+                        theme::section_label(ui, t("Space-wasters you don't use"));
                         small_muted(ui, t("The biggest programs not opened in the last 6 months."));
                         ui.add_space(6.0);
                         let total: u64 = wasters.iter().map(|w| w.1).sum();
-                        theme::card(ui, |ui| {
-                            let max = wasters.first().map(|w| w.1).unwrap_or(1).max(1) as f32;
+                        theme::deck_panel(ui, |ui| {
                             for (p, size, days) in &wasters {
                                 ui.horizontal(|ui| {
-                                    let (rect, _) = ui.allocate_exact_size(egui::vec2(90.0, 8.0), egui::Sense::hover());
-                                    ui.painter().rect_filled(rect, 4.0, theme::LINE);
-                                    let mut fill = rect;
-                                    fill.set_width(rect.width() * (*size as f32 / max).max(0.05));
-                                    ui.painter().rect_filled(fill, 4.0, theme::ACCENT_TEXT);
                                     if ui.link(RichText::new(&p.name).strong()).clicked() {
                                         self.programs.selected = Some(p.key.clone());
                                         self.programs.filter.clear();
                                         self.tab = Tab::Programs;
                                     }
-                                    small_muted(ui, format!("{} · {}", installscope_core::model::human_size(*size), tf("not opened for {n} months", &[("n", (days / 30).to_string())])));
+                                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                        small_muted(ui, tf("not opened for {n} months", &[("n", (days / 30).to_string())]));
+                                        ui.add_space(8.0);
+                                        ui.label(
+                                            RichText::new(installscope_core::model::human_size(*size))
+                                                .monospace(),
+                                        );
+                                    });
                                 });
+                                ui.separator();
                             }
-                            ui.add_space(4.0);
                             ui.horizontal(|ui| {
                                 small_muted(ui, tf("{size} in total", &[("size", installscope_core::model::human_size(total))]));
                                 if ui.button(t("Review and uninstall…")).clicked() {
@@ -211,19 +255,23 @@ impl App {
 
                 if !self.logs.logs.is_empty() {
                     ui.add_space(16.0);
-                    ui.label(RichText::new(t("Recently monitored")).heading().strong());
+                    theme::section_label(ui, t("Recently monitored"));
                     ui.add_space(6.0);
                     let recent: Vec<(String, String, String)> =
                         self.logs.logs.iter().take(5).map(|l| (l.id.clone(), l.name.clone(), l.created.clone())).collect();
-                    theme::card(ui, |ui| {
-                        for (id, name, created) in recent {
+                    theme::deck_panel(ui, |ui| {
+                        let last = recent.len().saturating_sub(1);
+                        for (i, (id, name, created)) in recent.iter().enumerate() {
                             ui.horizontal(|ui| {
                                 if ui.link(RichText::new(name).strong()).clicked() {
-                                    self.logs.selected = Some(id);
+                                    self.logs.selected = Some(id.clone());
                                     self.tab = Tab::Logs;
                                 }
-                                small_muted(ui, created);
+                                small_muted(ui, created.clone());
                             });
+                            if i < last {
+                                ui.separator();
+                            }
                         }
                     });
                 }
