@@ -175,7 +175,7 @@
     ],
     "auto_exclusions": true,
     "backup_before_removal": true,
-    "create_restore_point": false,
+    "create_restore_point": true,
     "remove_unlogged_files": false,
     "confirm_actions": true,
     "use_recycle_bin": false,
