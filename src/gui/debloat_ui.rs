@@ -131,6 +131,9 @@ impl App {
             self.scan_bloat(ctx);
         }
         egui::CentralPanel::default().frame(theme::content_frame()).show(ctx, |ui| {
+            // The focused control's explanation line, for keyboard
+            // and touch users (see a11y::explain).
+            super::a11y::focus_hint(ui, theme::MUTED);
             if let Some(j) = &self.debloat.job {
                 ui.add_space(30.0);
                 ui.vertical_centered(|ui| job_progress(ui, &t(&j.progress.phase()), 0));
@@ -153,7 +156,12 @@ impl App {
                     ui.heading(t("No bloatware found"));
                     muted(ui, t("Nothing from the list of known trials, promotions and pre-installed apps is on this PC."));
                     ui.add_space(8.0);
-                    if ui.button(format!("⟳ {}", t("Scan again"))).clicked() {
+                    if super::a11y::explain(
+                        ui.button(format!("⟳ {}", t("Scan again"))),
+                        &t("Look again for known trials, promotions and pre-installed apps on this PC."),
+                    )
+                    .clicked()
+                    {
                         self.scan_bloat(ctx);
                     }
                 });
@@ -164,14 +172,27 @@ impl App {
                 ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new(tf("{n} pre-installed apps and trials found", &[("n", items.len().to_string())])).strong());
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button(format!("⟳ {}", t("Scan again"))).clicked() {
+                        if super::a11y::explain(
+                            ui.button(format!("⟳ {}", t("Scan again"))),
+                            &t("Look again for known trials, promotions and pre-installed apps on this PC."),
+                        )
+                        .clicked()
+                        {
                             self.scan_bloat(ctx);
                         }
                         let enabled = chosen > 0 && self.wizard.is_none();
-                        if ui
-                            .add_enabled(enabled, egui::Button::new(RichText::new(tf("🛡 Remove {n} selected", &[("n", chosen.to_string())])).strong()).fill(theme::ACCENT))
-                            .on_hover_text(t("Uninstalls them one after another, then removes what they left behind. You review every step, and everything is backed up first, unless you have turned backups off in Settings."))
-                            .clicked()
+                        let rm_why = if self.wizard.is_some() {
+                            t("Unavailable while a removal is being reviewed. Finish or cancel that review first.")
+                        } else if chosen == 0 {
+                            t("Tick the apps to remove first. Removing uninstalls them one after another, then removes what they left behind; you review every step, and everything is backed up first, unless you have turned backups off in Settings.")
+                        } else {
+                            t("Uninstalls them one after another, then removes what they left behind. You review every step, and everything is backed up first, unless you have turned backups off in Settings.")
+                        };
+                        if super::a11y::explain(
+                            ui.add_enabled(enabled, egui::Button::new(RichText::new(tf("🛡 Remove {n} selected", &[("n", chosen.to_string())])).strong()).fill(theme::ACCENT)),
+                            &rm_why,
+                        )
+                        .clicked()
                         {
                             self.remove_bloat();
                         }
@@ -206,7 +227,12 @@ impl App {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(t(class.label())).heading());
                         let all = group.iter().all(|i| self.debloat.checked.contains(&i.program.key));
-                        if ui.small_button(if all { t("Untick all") } else { t("Tick all") }).clicked() {
+                        let tick_why = if all {
+                            tf("Untick every app in the {group} group, so none of them is removed.", &[("group", t(class.label()))])
+                        } else {
+                            tf("Tick every app in the {group} group, to include them all in the removal.", &[("group", t(class.label()))])
+                        };
+                        if super::a11y::explain(ui.small_button(if all { t("Untick all") } else { t("Tick all") }), &tick_why).clicked() {
                             for i in &group {
                                 if all {
                                     self.debloat.checked.remove(&i.program.key);
@@ -227,7 +253,22 @@ impl App {
                             .show(ui, |ui| {
                                 ui.set_min_width(ui.available_width());
                                 ui.horizontal(|ui| {
-                                    if ui.checkbox(&mut on, "").changed() {
+                                    let box_resp = super::a11y::explain(
+                                        ui.checkbox(&mut on, ""),
+                                        &tf(
+                                            "Tick to remove {name} with the other ticked apps. Removal is reviewed step by step and backed up first, unless backups are off in Settings.",
+                                            &[("name", i.title())],
+                                        ),
+                                    );
+                                    box_resp.widget_info(|| {
+                                        egui::WidgetInfo::selected(
+                                            egui::WidgetType::Checkbox,
+                                            true,
+                                            on,
+                                            &i.title(),
+                                        )
+                                    });
+                                    if box_resp.changed() {
                                         if on {
                                             self.debloat.checked.insert(key.clone());
                                         } else {
