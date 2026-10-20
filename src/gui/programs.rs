@@ -258,8 +258,7 @@ fn trust_glyph(ui: &mut egui::Ui, t_: Option<&Trust>) {
         }
         _ => return,
     };
-    ui.label(RichText::new(sym).color(color).small())
-        .on_hover_text(tip);
+    super::a11y::explain(ui.label(RichText::new(sym).color(color).small()), &tip);
 }
 
 /// Merge plan items, dropping duplicates.
@@ -679,20 +678,32 @@ impl App {
         egui::CentralPanel::default()
             .frame(theme::content_frame())
             .show(ctx, |ui| {
+                // The focused control's explanation line, for keyboard
+                // and touch users (see a11y::explain).
+                super::a11y::focus_hint(ui, theme::MUTED);
                 ui.horizontal(|ui| {
-                    let r = search_box(ui, &mut self.programs.filter, "Search programs", 260.0);
+                    let r = super::a11y::explain(
+                        search_box(ui, &mut self.programs.filter, "Search programs", 260.0),
+                        &t("Search by program name or publisher. The list below filters as you type."),
+                    );
                     if self.focus_search {
                         r.request_focus();
                         self.focus_search = false;
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button(format!("⟳ {}", t("Refresh"))).clicked() {
+                        if super::a11y::explain(
+                            ui.button(format!("⟳ {}", t("Refresh"))),
+                            &t("Reload the list of installed programs from Windows."),
+                        )
+                        .clicked()
+                        {
                             self.refresh_programs(ctx);
                         }
-                        if ui
-                            .button(format!("➕ {}", t("Add program…")))
-                            .on_hover_text(t("Add a program Windows doesn't list (for example a portable program) by choosing its folder, so InstallScope can analyze and remove it with everything it left behind."))
-                            .clicked()
+                        if super::a11y::explain(
+                            ui.button(format!("➕ {}", t("Add program…"))),
+                            &t("Add a program Windows doesn't list (for example a portable program) by choosing its folder, so InstallScope can analyze and remove it with everything it left behind."),
+                        )
+                        .clicked()
                         {
                             if let Some(dir) = pick_folder(&t("Choose the program's folder")) {
                                 match programs::add_manual(&self.store.root, &dir.to_string_lossy(), "") {
@@ -707,9 +718,12 @@ impl App {
                         }
                         let n = self.programs.checked.len();
                         if n > 0 {
-                            if theme::primary_button(
-                                ui,
-                                tf("Uninstall {n} selected", &[("n", n.to_string())]),
+                            if super::a11y::explain(
+                                theme::primary_button(
+                                    ui,
+                                    tf("Uninstall {n} selected", &[("n", n.to_string())]),
+                                ),
+                                &t("Uninstall the ticked programs. Each one goes through the uninstall wizard, where you review before anything is removed."),
                             )
                             .clicked()
                             {
@@ -721,15 +735,19 @@ impl App {
                                     .collect();
                                 self.start_uninstall(chosen, false);
                             }
-                            if ui.small_button(t("Clear")).clicked() {
+                            if super::a11y::explain(
+                                ui.small_button(t("Clear")),
+                                &t("Untick every program. Nothing is removed."),
+                            )
+                            .clicked()
+                            {
                                 self.programs.checked.clear();
                             }
-                            if ui
-                                .button(tf("Transfer {n}…", &[("n", n.to_string())]))
-                                .on_hover_text(t(
-                                    "Pack the selected programs to move them to another PC.",
-                                ))
-                                .clicked()
+                            if super::a11y::explain(
+                                ui.button(tf("Transfer {n}…", &[("n", n.to_string())])),
+                                &t("Pack the selected programs to move them to another PC."),
+                            )
+                            .clicked()
                             {
                                 let mut all = self.programs.list.clone();
                                 all.extend(self.programs.store_apps.clone());
@@ -744,14 +762,19 @@ impl App {
                 });
                 ui.horizontal_wrapped(|ui| {
                     let views = [
-                        (View::All, t("All")),
-                        (View::Monitored, t("Monitored")),
+                        (View::All, t("All"), t("Show every installed program.")),
+                        (
+                            View::Monitored,
+                            t("Monitored"),
+                            t("Show only programs InstallScope recorded being installed. Those can be removed precisely, from their install log."),
+                        ),
                         (
                             View::Broken,
                             tf(
                                 "Broken ({n})",
                                 &[("n", self.programs.broken.len().to_string())],
                             ),
+                            t("Show entries whose program files or uninstaller are missing — usually leftovers of programs removed another way."),
                         ),
                         (
                             View::Unsigned,
@@ -769,15 +792,26 @@ impl App {
                                         .to_string(),
                                 )],
                             ),
+                            t("Show programs that are not digitally signed, or whose signature has a problem."),
                         ),
-                        (View::Unused, t("Not used for 6 months")),
-                        (View::Store, t("Store apps")),
+                        (
+                            View::Unused,
+                            t("Not used for 6 months"),
+                            t("Show programs with no record of being opened in six months. Where Windows has no last-opened record, programs installed at least six months ago are shown."),
+                        ),
+                        (
+                            View::Store,
+                            t("Store apps"),
+                            t("Show apps installed from the Microsoft Store."),
+                        ),
                     ];
                     let views = views.to_vec();
-                    for (v, label) in views {
-                        if ui
-                            .selectable_label(self.programs.view == v, label)
-                            .clicked()
+                    for (v, label, why) in views {
+                        if super::a11y::explain(
+                            ui.selectable_label(self.programs.view == v, label),
+                            &why,
+                        )
+                        .clicked()
                         {
                             self.programs.view = v;
                             if v == View::Store
@@ -851,9 +885,29 @@ impl App {
                 } else {
                     ""
                 };
-                ui.add(
-                    egui::Button::new(RichText::new(format!("{}{arrow}", t(label))).strong())
-                        .frame(false),
+                let why = match col {
+                    SortCol::Name => {
+                        t("Sort the list by program name. Activate again to reverse the order.")
+                    }
+                    SortCol::Publisher => {
+                        t("Sort the list by publisher. Activate again to reverse the order.")
+                    }
+                    SortCol::Version => {
+                        t("Sort the list by version. Activate again to reverse the order.")
+                    }
+                    SortCol::Date => {
+                        t("Sort the list by install date. Activate again to reverse the order.")
+                    }
+                    SortCol::Size => {
+                        t("Sort the list by size. Activate again to reverse the order.")
+                    }
+                };
+                super::a11y::explain(
+                    ui.add(
+                        egui::Button::new(RichText::new(format!("{}{arrow}", t(label))).strong())
+                            .frame(false),
+                    ),
+                    &why,
                 )
                 .clicked()
             };
@@ -919,7 +973,13 @@ impl App {
                     row.set_selected(is_sel);
                     row.col(|ui| {
                         let mut c = st.checked.contains(&p.key);
-                        let r = ui.checkbox(&mut c, "");
+                        let r = super::a11y::explain(
+                            ui.checkbox(&mut c, ""),
+                            &tf(
+                                "Select {name} for a batch action: ticked programs can be uninstalled or transferred together.",
+                                &[("name", p.name.clone())],
+                            ),
+                        );
                         let name = p.name.clone();
                         r.widget_info(|| {
                             egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, c, &name)
@@ -934,12 +994,16 @@ impl App {
                     });
                     row.col(|ui| {
                         if monitored.contains(&p.key) {
-                            ui.label(RichText::new("⏺").color(theme::ACCENT_TEXT))
-                                .on_hover_text(t("Monitored: precise uninstall available"));
+                            super::a11y::explain(
+                                ui.label(RichText::new("⏺").color(theme::ACCENT_TEXT)),
+                                &t("Monitored: precise uninstall available"),
+                            );
                         }
                         if st.broken.contains(&p.key) {
-                            ui.label(RichText::new("⚠").color(theme::WARN))
-                                .on_hover_text(t("Broken entry: uninstaller or folder is missing"));
+                            super::a11y::explain(
+                                ui.label(RichText::new("⚠").color(theme::WARN)),
+                                &t("Broken entry: uninstaller or folder is missing"),
+                            );
                         }
                         match st.icons.get(&p.key) {
                             Some(tex) => {
@@ -1127,17 +1191,21 @@ impl App {
         }
         ui.add_space(12.0);
         ui.horizontal_wrapped(|ui| {
-            if theme::primary_button(ui, format!("🗑 {}", t("Uninstall"))).clicked() {
+            if super::a11y::explain(
+                theme::primary_button(ui, format!("🗑 {}", t("Uninstall"))),
+                &t("Start the uninstall wizard for this program. You review everything before anything is removed."),
+            )
+            .clicked()
+            {
                 self.start_uninstall(vec![p.clone()], false);
             }
             if p.source != Source::Store
                 && silent::quick_engine(p).is_silent()
-                && ui
-                    .button(t("Uninstall silently"))
-                    .on_hover_text(t(
-                        "No windows or prompts; InstallScope runs the uninstaller in its silent mode.",
-                    ))
-                    .clicked()
+                && super::a11y::explain(
+                    ui.button(t("Uninstall silently")),
+                    &t("No windows or prompts; InstallScope runs the uninstaller in its silent mode."),
+                )
+                .clicked()
             {
                 let mut w = Wizard::new(vec![p.clone()], false, self.settings.create_restore_point);
                 w.quiet = true;
@@ -1147,40 +1215,69 @@ impl App {
         ui.horizontal_wrapped(|ui| {
             if p.source != Source::Store
                 && self.settings.advanced_mode
-                && ui
-                    .button(t("Forced removal"))
-                    .on_hover_text(t("Skip the program's own uninstaller and remove everything InstallScope can find."))
-                    .clicked()
+                && super::a11y::explain(
+                    ui.button(t("Forced removal")),
+                    &t("Skip the program's own uninstaller and remove everything InstallScope can find."),
+                )
+                .clicked()
             {
                 self.start_uninstall(vec![p.clone()], true);
             }
             if p.source != Source::Store
-                && ui
-                    .button(t("Transfer to another PC…"))
-                    .on_hover_text(t("Pack this program with its files and settings to move it to another PC."))
-                    .clicked()
+                && super::a11y::explain(
+                    ui.button(t("Transfer to another PC…")),
+                    &t("Pack this program with its files and settings to move it to another PC."),
+                )
+                .clicked()
             {
                 self.start_transfer_export(vec![p.clone()]);
             }
-            if !p.install_location.is_empty() && ui.button(t("Open folder")).clicked() {
+            if !p.install_location.is_empty()
+                && super::a11y::explain(
+                    ui.button(t("Open folder")),
+                    &t("Open the folder this program is installed in, in File Explorer."),
+                )
+                .clicked()
+            {
                 platform::shell_open(&p.install_location);
             }
             if p.source != Source::Store
                 && self.settings.advanced_mode
-                && ui.button(t("Open in Registry Editor")).clicked()
+                && super::a11y::explain(
+                    ui.button(t("Open in Registry Editor")),
+                    &t("Open this program's uninstall entry in Registry Editor. Changes there apply immediately, outside InstallScope."),
+                )
+                .clicked()
             {
                 if let Err(e) = platform::open_in_regedit(&p.key) {
                     self.set_status(e.to_string());
                 }
             }
-            if ui.button(t("Search online")).clicked() {
+            if super::a11y::explain(
+                ui.button(t("Search online")),
+                &t("Search the web for this program in your browser."),
+            )
+            .clicked()
+            {
                 let q: String = p.name.chars().map(|c| if c.is_alphanumeric() { c.to_string() } else { "+".into() }).collect();
                 platform::shell_open(&format!("https://www.bing.com/search?q={q}"));
             }
-            if !p.url.is_empty() && ui.button(t("Website")).clicked() {
+            if !p.url.is_empty()
+                && super::a11y::explain(
+                    ui.button(t("Website")),
+                    &t("Open the publisher's website for this program in your browser."),
+                )
+                .clicked()
+            {
                 platform::shell_open(&p.url);
             }
-            if p.source == Source::Manual && ui.button(t("Remove from list")).on_hover_text(t("Only removes it from this list; nothing is deleted.")).clicked() {
+            if p.source == Source::Manual
+                && super::a11y::explain(
+                    ui.button(t("Remove from list")),
+                    &t("Only removes it from this list; nothing is deleted."),
+                )
+                .clicked()
+            {
                 let _ = programs::remove_manual(&self.store.root, &p.key);
                 self.programs.selected = None;
                 self.programs.needs_refresh = true;
@@ -1196,7 +1293,12 @@ impl App {
             egui::Frame::group(ui.style()).show(ui, |ui| {
                 ui.label(RichText::new(format!("⏺ {}", t("Monitored installation"))).color(theme::ACCENT_TEXT).strong());
                 small_muted(ui, t("InstallScope recorded this installation, so it can remove exactly what was added."));
-                if ui.link(t("View install log")).clicked() {
+                if super::a11y::explain(
+                    ui.link(t("View install log")),
+                    &t("Open the Install Logs page with this installation selected, to see everything it changed."),
+                )
+                .clicked()
+                {
                     self.logs.selected = Some(id);
                     self.tab = super::app::Tab::Logs;
                 }
@@ -1519,30 +1621,50 @@ impl App {
                                 t("Afterwards, InstallScope removes any leftovers it finds. Backups are off in Settings, so that removal will not be backed up and cannot be undone.")
                             });
                             ui.add_space(6.0);
-                            ui.checkbox(&mut w.quiet, t("Unattended: no windows, prompts or restarts"))
-                                .on_hover_text(t("InstallScope uses each uninstaller's silent mode, runs them one at a time, holds back restarts until the end, and moves on if one gets stuck. You can walk away."));
+                            super::a11y::explain(
+                                ui.checkbox(&mut w.quiet, t("Unattended: no windows, prompts or restarts")),
+                                &t("InstallScope uses each uninstaller's silent mode, runs them one at a time, holds back restarts until the end, and moves on if one gets stuck. You can walk away."),
+                            );
                             if w.quiet {
                                 let manual = w.engines.iter().filter(|e| **e == Engine::Manual).count();
                                 if manual > 0 {
                                     ui.indent("skip_manual", |ui| {
-                                        ui.checkbox(
-                                            &mut w.skip_manual,
-                                            tf("Skip programs that need their own window ({n}); uninstall them later", &[("n", manual.to_string())]),
+                                        super::a11y::explain(
+                                            ui.checkbox(
+                                                &mut w.skip_manual,
+                                                tf("Skip programs that need their own window ({n}); uninstall them later", &[("n", manual.to_string())]),
+                                            ),
+                                            &t("Leave the programs that can't run silently installed instead of stopping at each one. You can uninstall them later with their windows shown."),
                                         );
                                     });
                                 }
                             }
                         }
+                        let rp_why = if elevated {
+                            t("Create a Windows restore point before uninstalling, so you can roll the PC back if an uninstall causes problems. It holds system files and settings, not the programs themselves.")
+                        } else {
+                            t("Unavailable: creating a restore point needs administrator rights. Run InstallScope as administrator to use this.")
+                        };
                         ui.add_enabled_ui(elevated, |ui| {
-                            ui.checkbox(&mut w.restore_point, t("Create a System Restore point first"));
+                            super::a11y::explain(
+                                ui.checkbox(&mut w.restore_point, t("Create a System Restore point first")),
+                                &rp_why,
+                            );
                         });
                         small_muted(ui, t("A restore point lets Windows roll your PC back to how it is now, if an uninstall causes problems."));
                         if !elevated {
                             small_muted(ui, t("Needs administrator rights, so no restore point will be created. Run InstallScope as administrator to turn this on."));
                         }
                         ui.add_space(8.0);
+                        let start_why = if w.force {
+                            t("Start the forced removal. InstallScope scans for everything these programs left behind, and you review the list before anything is removed.")
+                        } else {
+                            t("Start uninstalling. Each program's own uninstaller runs first — InstallScope cannot undo what that does — then you review the leftovers before they are removed.")
+                        };
                         ui.horizontal(|ui| {
-                            if theme::primary_button(ui, t("Start")).clicked() {
+                            if super::a11y::explain(theme::primary_button(ui, t("Start")), &start_why)
+                                .clicked()
+                            {
                                 if w.restore_point && elevated {
                                     w.stage = Stage::RestorePoint;
                                     w.rp_job = Some(Job::spawn(ui.ctx(), move |_| {
@@ -1559,7 +1681,12 @@ impl App {
                                     w.stage = Stage::Running;
                                 }
                             }
-                            if ui.button(t("Cancel")).clicked() {
+                            if super::a11y::explain(
+                                ui.button(t("Cancel")),
+                                &t("Close the wizard without uninstalling anything."),
+                            )
+                            .clicked()
+                            {
                                 close = true;
                             }
                         });
@@ -1612,10 +1739,21 @@ impl App {
                         );
                         ui.add_space(8.0);
                         ui.horizontal(|ui| {
-                            if !unattended_now && ui.button(t("It's finished, continue")).clicked() {
+                            if !unattended_now
+                                && super::a11y::explain(
+                                    ui.button(t("It's finished, continue")),
+                                    &t("Tell InstallScope this program's uninstaller has finished, so it moves on to scanning for leftovers."),
+                                )
+                                .clicked()
+                            {
                                 w.advance();
                             }
-                            if ui.button(t("Skip this program")).clicked() {
+                            if super::a11y::explain(
+                                ui.button(t("Skip this program")),
+                                &t("Skip this program and leave it installed. InstallScope moves on to the next one."),
+                            )
+                            .clicked()
+                            {
                                 w.notes.push(tf("Skipped {name}", &[("name", p.name.clone())]));
                                 w.advance_with(ItemStatus::Skipped(t("skipped by you")));
                             }
@@ -1626,6 +1764,9 @@ impl App {
                         job_progress(ui, &tf("Scanning for leftovers… {name}", &[("name", phase)]), 0);
                     }
                 }
+                // The focused control's explanation line, at the foot
+                // of the wizard (see a11y::explain).
+                super::a11y::focus_hint(ui, theme::MUTED);
             });
         let at_start = self
             .wizard
