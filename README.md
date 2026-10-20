@@ -275,7 +275,9 @@ Download the latest version from the [Releases page](https://github.com/SeanShaf
 
 **System requirements:** 64-bit Windows 11 (build 22000 or later), on x64 or Arm64. InstallScope is designed exclusively for Windows 11 and will not start on earlier versions of Windows. Administrator rights are required for full functionality; InstallScope offers to relaunch itself with elevated rights. PortableApps Forge's sandbox needs the *Windows Sandbox* feature, which is part of Windows 11 Pro, Enterprise, and Education.
 
-To preserve data created by earlier Expunge builds, installed logs, backups, settings, and snapshots remain in `%LOCALAPPDATA%\Expunge`; portable builds continue to use `ExpungeData` beside the executable. Existing Task Scheduler identifiers and the uninstall registry key also retain their `Expunge` names for compatibility. Program-transfer packages keep the `.expunge` extension and remain supported.
+Install logs, backups, settings, and snapshots live in `%LOCALAPPDATA%\InstallScope`; portable builds use `InstallScopeData` beside the executable. Task Scheduler identifiers, the uninstall registry key, and the right-click menu verb also use the `InstallScope` name, and program-transfer packages use the `.installscope` extension.
+
+**Breaking change:** earlier Expunge-branded builds stored data under the old name (`%LOCALAPPDATA%\Expunge`, `ExpungeData`, Expunge task names, a different uninstall key, `.expunge` packages). None of it is carried over: InstallScope starts fresh and cannot open Expunge-era transfer packages. The old data is left on disk untouched — delete it by hand if you no longer need it.
 
 **"Windows protected your PC":** InstallScope's downloads are not yet code-signed, and new programs have no download history with Microsoft, so Windows SmartScreen may show this warning the first time you run it. Click **More info**, check that the file name is right, then **Run anyway**. To be sure the file is the one GitHub Actions built from the public source, compare its SHA-256 checksum with the one published next to the download (in PowerShell: `Get-FileHash .\InstallScope-Setup-x.y.z.exe`). Some antivirus programs are wary of any tool that watches system files and stops programs; if yours flags InstallScope, please [open an issue](https://github.com/SeanShaffer88/InstallScope/issues) so it can be reported as a false positive.
 
@@ -313,8 +315,8 @@ installscope orphans
 installscope clean --dry-run
 installscope schedule-clean weekly
 installscope startup disable Spotify
-installscope transfer export moved.expunge "Photo Editor"
-installscope transfer import moved.expunge
+installscope transfer export moved.installscope "Photo Editor"
+installscope transfer import moved.installscope
 installscope portable-build C:\Downloads\setup.exe --name "Photo Editor" --silent --out D:\PortableApps
 installscope --help
 ```
