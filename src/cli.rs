@@ -88,6 +88,11 @@ USAGE:
                                             Clean junk automatically
   installscope startup [--json]                  List startup programs
   installscope startup enable|disable <name>     Turn a startup program on or off
+  installscope gatekeeper [--json]               Review new autostart entries
+  installscope gatekeeper scan                   Run one detection pass
+  installscope gatekeeper allow <id>             Keep an entry, mark it reviewed
+  installscope gatekeeper remove <id>            Back up and remove an entry
+  installscope gatekeeper enable|disable         Turn the Gatekeeper on or off
   installscope watch                             Background auto-monitoring (started
                                             at sign-in when turned on in Settings)
   installscope check-clean <log-id>              Check that nothing recorded in a log
@@ -978,6 +983,154 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                             );
                         }
                     }
+                }
+            }
+        }
+        "gatekeeper" => {
+            // Autostart Gatekeeper: opt-in review queue for new autostart
+            // entries. Nothing here can block an installer or remove an
+            // entry the user has not explicitly decided on.
+            use installscope_core::gatekeeper::{self as gk, Attribution, ItemState, Queue};
+            let st = store()?;
+            let mut settings = load_settings(&st);
+            let sub = args.get(1).map(|s| s.as_str());
+            match sub {
+                None | Some("show") | Some("--json") => {
+                    let q = Queue::load(&st)?;
+                    if has(&args, "--json") {
+                        println!(
+                            "{}",
+                            installscope_core::json::compat::to_string_pretty(&q.items)?
+                        );
+                        return Ok(0);
+                    }
+                    println!(
+                        "Autostart Gatekeeper is {}.",
+                        if settings.gatekeeper_enabled {
+                            "on"
+                        } else {
+                            "off"
+                        }
+                    );
+                    if q.items.is_empty() {
+                        println!("The review queue is empty.");
+                    } else {
+                        for i in &q.items {
+                            let verdict = i
+                                .verdict
+                                .map(|v| format!(" — {}", v.label()))
+                                .unwrap_or_default();
+                            println!(
+                                "[{}] {} ({}) — {}{}",
+                                match i.state {
+                                    ItemState::Pending => " ? ",
+                                    ItemState::Allowed => " ok",
+                                    ItemState::Removed => "gone",
+                                },
+                                i.entry.name,
+                                i.entry.command,
+                                i.attribution.label(),
+                                verdict
+                            );
+                            println!(
+                                "      id {} · first seen {} · {}",
+                                i.id,
+                                i.first_seen,
+                                i.state.label()
+                            );
+                            for r in &i.verdict_reasons {
+                                println!("      {r}");
+                            }
+                            if let Attribution::Log { evidence, .. } = &i.attribution {
+                                println!("      evidence: {evidence}");
+                            }
+                            if !i.note.is_empty() {
+                                println!("      note: {}", i.note);
+                            }
+                        }
+                    }
+                    let n = q.pending().len();
+                    if n > 0 {
+                        println!(
+                            "{n} entr{} waiting for your decision: \
+                             `installscope gatekeeper allow <id>` keeps one, \
+                             `installscope gatekeeper remove <id>` removes it (backed up first).",
+                            if n == 1 { "y" } else { "ies" }
+                        );
+                    }
+                }
+                Some("scan") => {
+                    if !settings.gatekeeper_enabled {
+                        println!(
+                            "Autostart Gatekeeper is off, so nothing was scanned. \
+                             Turn it on with `installscope gatekeeper enable` or in Settings."
+                        );
+                        return Ok(0);
+                    }
+                    let mut q = Queue::load(&st)?;
+                    let current: Vec<gk::WatchedEntry> =
+                        installscope_core::startup::list_startup(reg.as_ref())
+                            .iter()
+                            .map(gk::WatchedEntry::from)
+                            .collect();
+                    let logs = st.list_logs();
+                    let summary = gk::run_scan(&mut q, &current, &logs);
+                    q.save(&st)?;
+                    println!(
+                        "Scan complete: {} new, {} changed, {} waiting for your decision.",
+                        summary.added.len(),
+                        summary.changed.len(),
+                        q.pending().len()
+                    );
+                }
+                Some("allow") => {
+                    let id = args.get(2).ok_or_else(|| {
+                        anyhow::anyhow!("usage: installscope gatekeeper allow <id>")
+                    })?;
+                    let mut q = Queue::load(&st)?;
+                    let item = q.allow(id)?;
+                    q.save(&st)?;
+                    println!(
+                        "Kept \"{}\": it stays as it is, and future scans will not ask about it again.",
+                        item.entry.name
+                    );
+                }
+                Some("remove") => {
+                    let id = args.get(2).ok_or_else(|| {
+                        anyhow::anyhow!("usage: installscope gatekeeper remove <id>")
+                    })?;
+                    let mut q = Queue::load(&st)?;
+                    let (item, backup_id) =
+                        gk::remove_entry(&mut q, id, reg.as_ref(), &st.backups_dir())?;
+                    q.save(&st)?;
+                    println!(
+                        "Removed \"{}\". Backup: {} (undo with: installscope restore {})",
+                        item.entry.name, backup_id, backup_id
+                    );
+                }
+                Some("enable") => {
+                    settings.gatekeeper_enabled = true;
+                    st.save_settings(&settings)?;
+                    println!(
+                        "Autostart Gatekeeper is on. New autostart entries will be \
+                         held in the review queue (`installscope gatekeeper`) instead \
+                         of going unnoticed. Nothing is blocked or removed without \
+                         your decision."
+                    );
+                }
+                Some("disable") => {
+                    settings.gatekeeper_enabled = false;
+                    st.save_settings(&settings)?;
+                    println!(
+                        "Autostart Gatekeeper is off. The queue and baseline were kept; \
+                         turn it back on any time to resume reviewing."
+                    );
+                }
+                Some(other) => {
+                    anyhow::bail!(
+                        "unknown gatekeeper command \"{other}\"; use: \
+                         gatekeeper [show|--json] | scan | allow <id> | remove <id> | enable | disable"
+                    );
                 }
             }
         }
