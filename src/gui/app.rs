@@ -717,40 +717,6 @@ impl App {
                         {
                             self.tab = Tab::Builder;
                         }
-                        for (icon, label, hint) in [
-                            (
-                                "📦",
-                                "Setup Package Creator",
-                                "Planned: Build a guided installer from a reviewed project, with complete dependency checks.",
-                            ),
-                            (
-                                "🧪",
-                                "Developer Sandbox",
-                                "Planned: Run development apps in a disposable, restricted environment.",
-                            ),
-                            (
-                                "💿",
-                                "Temporary Scratch Disk",
-                                "Planned: Create a size-limited temporary workspace for testing and builds.",
-                            ),
-                            (
-                                "🗂",
-                                "VSS Viewer",
-                                "Planned: Browse VSS snapshots read-only and copy selected files.",
-                            ),
-                        ] {
-                            ui.add_enabled_ui(false, |ui| {
-                                theme::nav_item_with_hint(
-                                    ui,
-                                    icon,
-                                    &t(label),
-                                    false,
-                                    Some(t("Planned")),
-                                    Some(&t(hint)),
-                                )
-                                .on_disabled_hover_text(t(hint));
-                            });
-                        }
                         if theme::nav_item_with_hint(
                             ui,
                             "🛡",
