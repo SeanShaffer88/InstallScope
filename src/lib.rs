@@ -40,6 +40,7 @@ pub mod portability;
 pub mod portable;
 pub mod prescreen;
 pub mod programs;
+pub mod refcount;
 pub mod repackage;
 pub mod report;
 pub mod restore;
