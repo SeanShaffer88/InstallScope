@@ -14,6 +14,7 @@ pub mod autowatch;
 pub mod backup;
 pub mod boot;
 pub mod cache;
+pub mod canary;
 pub mod cleaner;
 pub mod debloat;
 pub mod decrap;

@@ -386,6 +386,26 @@ impl App {
                     },
                     None => None,
                 };
+                // Canary: post-operation health verification (read-only).
+                // Appends its verdict rows to this same results surface; the
+                // backup above (or its absence) remains the Undo.
+                {
+                    use installscope_core::canary;
+                    use installscope_core::leftovers::DeepIndex;
+                    use installscope_core::platform::expand_env;
+                    use installscope_core::util::protected_dirs;
+                    let ix = DeepIndex::build(reg.as_ref(), None);
+                    let exists: &dyn Fn(&str) -> bool = &|p| std::path::Path::new(p).exists();
+                    let verdict = canary::run_from_plan(
+                        reg.as_ref(),
+                        &ix,
+                        &plan,
+                        exists,
+                        &expand_env("%SystemRoot%"),
+                        &protected_dirs(),
+                    );
+                    results.extend(verdict.to_action_results());
+                }
                 (results, id)
             }));
         }
