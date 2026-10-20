@@ -186,6 +186,7 @@
     "show_system_components": false,
     "show_store_apps": false,
     "advanced_mode": false,
+    "gatekeeper_enabled": false,
     "high_contrast": false,
     "first_run_done": false,
     "portableapps_dir": "",
