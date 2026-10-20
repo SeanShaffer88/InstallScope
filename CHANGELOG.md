@@ -105,6 +105,7 @@ All notable changes to InstallScope are documented here. The format follows
 
 ### Fixed
 - Cleaner wildcard paths that mix `/` and `\` on Windows.
+- **Dashboard tiles and quick actions are keyboard-operable**: the stat tiles and quick-action rows are now real focusable buttons (they were mouse-only click frames), so Tab reaches them in a logical order, the focus ring outlines them, and Enter or Space — or a screen reader's activate command — clicks them. Nothing about their Command Deck look or behavior changed.
 
 ## [0.1.0] - 2026-10-14
 
