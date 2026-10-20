@@ -1,5 +1,6 @@
 //! Cleaner page: temporary files, caches, crash dumps, Recycle Bin.
 
+use super::a11y;
 use super::app::Confirm as DeepConfirm;
 use super::app::{App, Confirm};
 use super::theme;
@@ -244,18 +245,28 @@ impl App {
             }
             let analyzing = self.cleaner.deep_job.is_some();
             ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(
+                let analyze_why = if analyzing {
+                    t("An analysis is already running; the results appear beside each cleanup below.")
+                } else {
+                    t("Check what each cleanup below could remove, using Windows' own tools. Analyzing changes nothing on this PC.")
+                };
+                if a11y::explain(
+                    ui.add_enabled(
                         !analyzing,
                         egui::Button::new(format!("🔍 {}", t("Analyze"))),
-                    )
-                    .clicked()
+                    ),
+                    &analyze_why,
+                )
+                .clicked()
                 {
                     self.analyze_deep();
                 }
-                ui.checkbox(
-                    &mut self.cleaner.deep_restore_point,
-                    t("Create a restore point first"),
+                a11y::explain(
+                    ui.checkbox(
+                        &mut self.cleaner.deep_restore_point,
+                        t("Create a restore point first"),
+                    ),
+                    &t("Ask Windows for a restore point before each cleanup below; if it cannot be created, the cleanup is canceled. It does not apply to Old restore points, which deletes restore points."),
                 );
             });
             if let Some(job) = &self.cleaner.deep_job {
@@ -278,7 +289,15 @@ impl App {
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         match &self.cleaner.deep[i] {
                             Some(Ok(a)) if a.applicable => {
-                                if ui.button(t("Clean up")).clicked() {
+                                if a11y::explain(
+                                    ui.button(t("Clean up")),
+                                    &tf(
+                                        "Clean up {name}. InstallScope asks for confirmation first; the cleanup uses Windows' own tools and can't be undone.",
+                                        &[("name", t(item.title()))],
+                                    ),
+                                )
+                                .clicked()
+                                {
                                     run = Some(*item);
                                 }
                                 let size = a.bytes.map(human_size);
@@ -296,8 +315,15 @@ impl App {
                                 );
                             }
                             Some(Err(e)) => {
-                                ui.label(RichText::new("⚠").color(theme::WARN))
-                                    .on_hover_text(e);
+                                // P1-10: the failure reason is shown
+                                // inline, not only as a hover tooltip, so
+                                // keyboard, touch and screen-reader users
+                                // can reach it too.
+                                ui.label(
+                                    RichText::new(format!("⚠ {e}"))
+                                        .small()
+                                        .color(theme::BAD),
+                                );
                             }
                             None => {}
                         }
@@ -312,7 +338,12 @@ impl App {
                     small_muted(ui, t("Pre-installed Store apps you don't use can be removed from the Programs page."));
                 });
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(t("Show Store apps")).clicked() {
+                    if a11y::explain(
+                        ui.button(t("Show Store apps")),
+                        &t("Open the Programs page showing Microsoft Store apps, where pre-installed apps you don't use can be removed."),
+                    )
+                    .clicked()
+                    {
                         self.tab = super::app::Tab::Programs;
                         self.programs.view = super::programs::View::Store;
                         if self.programs.store_apps.is_empty() && self.programs.store_job.is_none() {
@@ -427,6 +458,9 @@ impl App {
 
     pub fn ui_cleaner(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().frame(theme::content_frame()).show(ctx, |ui| {
+            // The focused control's explanation line, for keyboard
+            // and touch users (see a11y::explain).
+            a11y::focus_hint(ui, theme::MUTED);
             if let Some(f) = self.cleaner.freed {
                 theme::card(ui, |ui| {
                     ui.label(RichText::new(tf("✔ Freed {size}", &[("size", human_size(f))])).color(theme::OK).strong());
@@ -449,7 +483,30 @@ impl App {
                     egui::Frame::new().fill(theme::CARD).corner_radius(12).inner_margin(egui::Margin::symmetric(16, 10)).show(ui, |ui| {
                         ui.set_width(ui.available_width());
                         ui.horizontal(|ui| {
-                            ui.add_enabled_ui(!locked, |ui| ui.checkbox(on, ""));
+                            let box_resp =
+                                ui.add_enabled_ui(!locked, |ui| ui.checkbox(on, "")).inner;
+                            let why = if locked {
+                                tf(
+                                    "{name} can only be cleaned when InstallScope runs as Administrator, so it stays unticked.",
+                                    &[("name", t(title))],
+                                )
+                            } else if cat.id == "recycle_bin" {
+                                t("Include the Recycle Bin in cleaning. Cleaning empties the whole Recycle Bin permanently; its contents are not backed up.")
+                            } else {
+                                tf(
+                                    "Include {name} in cleaning. Cleaning deletes the files listed in its review permanently; they are not backed up.",
+                                    &[("name", t(title))],
+                                )
+                            };
+                            let box_resp = a11y::explain(box_resp, &why);
+                            box_resp.widget_info(|| {
+                                egui::WidgetInfo::selected(
+                                    egui::WidgetType::Checkbox,
+                                    true,
+                                    *on,
+                                    &t(title),
+                                )
+                            });
                             ui.vertical(|ui| {
                                 ui.label(RichText::new(t(title)).strong());
                                 small_muted(ui, t(desc));
@@ -473,7 +530,7 @@ impl App {
                                     small_muted(ui, t("The Recycle Bin's items can't be listed one by one; cleaning empties the whole Bin."));
                                 }
                             } else if !s.files.is_empty() || !s.kept.is_empty() {
-                                egui::CollapsingHeader::new(tf("Review files ({n})", &[("n", s.files.len().to_string())]))
+                                let review = egui::CollapsingHeader::new(tf("Review files ({n})", &[("n", s.files.len().to_string())]))
                                     .id_salt(cat.id)
                                     .show(ui, |ui| {
                                         for f in s.files.iter().take(300) {
@@ -493,6 +550,10 @@ impl App {
                                             }
                                         }
                                     });
+                                a11y::explain(
+                                    review.header_response,
+                                    &t("Show or hide the exact files found in this category. Cleaning deletes exactly the files in this list, so check it before you clean."),
+                                );
                             }
                         }
                     });
@@ -518,12 +579,29 @@ impl App {
             let selected: u64 = self.cleaner.cats.iter().filter(|(_, on, _)| *on).filter(|(c, _, _)| advanced || !cleaner::is_advanced(c.id)).filter_map(|(_, _, r)| r.as_ref()).map(|r| r.totals.bytes).sum();
             let scanned = self.cleaner.cats.iter().any(|(_, _, r)| r.is_some());
             ui.columns(2, |cols| {
-                if theme::wide_button(&mut cols[0], format!("🔍 {}", t("Scan")), true).clicked() {
+                if a11y::explain(
+                    theme::wide_button(&mut cols[0], format!("🔍 {}", t("Scan")), true),
+                    &t("Scan every category and list the exact files cleaning would delete. Scanning deletes nothing."),
+                )
+                .clicked()
+                {
                     self.start_scan();
                 }
                 let any = self.cleaner.cats.iter().any(|(_, on, _)| *on);
                 let label = if scanned { tf("Clean {size}", &[("size", human_size(selected))]) } else { t("Clean") };
-                if theme::wide_button(&mut cols[1], format!("🗑 {label}"), any).clicked() {
+                let clean_why = if !any {
+                    t("Tick a category above first. Cleaning deletes the reviewed files permanently; they are not backed up.")
+                } else if !scanned {
+                    t("Scan first: cleaning only deletes files you have reviewed. Cleaned files are deleted permanently and are not backed up.")
+                } else {
+                    t("Ask for confirmation, then delete exactly the files listed in the ticked categories' reviews. Cleaned files are deleted permanently and are not backed up.")
+                };
+                if a11y::explain(
+                    theme::wide_button(&mut cols[1], format!("🗑 {label}"), any),
+                    &clean_why,
+                )
+                .clicked()
+                {
                     match self.clean_confirm_body() {
                         Some(body) => self.ask(
                             "Clean selected items?",
@@ -552,11 +630,14 @@ impl App {
             ui.label(RichText::new(t("Protected paths")).strong());
             small_muted(ui, t("Files and folders listed here are never cleaned, even inside a ticked category. One per line. A folder protects everything inside it. You can use %VARIABLES% and * wildcards, in the same style as the monitoring scope lists in Settings. To stay signed in to websites, protect a browser's Cookies file — for example %LOCALAPPDATA%\\Google\\Chrome\\User Data\\Default\\Network\\Cookies."));
             let text = self.cleaner.protect_text.as_mut().unwrap();
-            ui.add(
-                egui::TextEdit::multiline(text)
-                    .code_editor()
-                    .desired_rows(4)
-                    .desired_width(f32::INFINITY),
+            a11y::explain(
+                ui.add(
+                    egui::TextEdit::multiline(text)
+                        .code_editor()
+                        .desired_rows(4)
+                        .desired_width(f32::INFINITY),
+                ),
+                &t("One protected path or pattern per line. Files and folders that match are never cleaned. Changes apply when you choose Save protected list below."),
             );
             let parsed: Vec<String> = text
                 .lines()
@@ -565,9 +646,16 @@ impl App {
                 .collect();
             let changed = parsed != self.settings.cleaner_protect;
             ui.horizontal(|ui| {
-                if ui
-                    .add_enabled(changed, egui::Button::new(t("Save protected list")))
-                    .clicked()
+                let save_why = if changed {
+                    t("Save this list. The reviews above are cleared, because they were made with the old list, so scan again afterwards.")
+                } else {
+                    t("Nothing to save yet: this becomes available when you change the list above.")
+                };
+                if a11y::explain(
+                    ui.add_enabled(changed, egui::Button::new(t("Save protected list"))),
+                    &save_why,
+                )
+                .clicked()
                 {
                     save = true;
                 }
@@ -624,7 +712,7 @@ impl App {
                     .as_ref()
                     .map(|c| t(c.0.label()))
                     .unwrap_or_else(|| t("Off"));
-                egui::ComboBox::from_id_salt("clean_schedule")
+                let combo = egui::ComboBox::from_id_salt("clean_schedule")
                     .selected_text(label)
                     .show_ui(ui, |ui| {
                         if ui.selectable_label(current.is_none(), t("Off")).clicked() {
@@ -637,6 +725,10 @@ impl App {
                             }
                         }
                     });
+                a11y::explain(
+                    combo.response,
+                    &t("How often Windows Task Scheduler cleans the ticked categories automatically, even when InstallScope is closed. A new choice applies straight away; Off turns scheduled cleaning off."),
+                );
             });
             small_muted(ui, t("Cleans the kinds of junk ticked above through Windows Task Scheduler, even when InstallScope is closed."));
             if let Some((_, cats)) = &current {

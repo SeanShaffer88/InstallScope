@@ -6,6 +6,9 @@ All notable changes to InstallScope are documented here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+- **Cleaner explanations are reachable without a mouse, and deep-clean check failures are shown inline.** Every control on the Cleaner page — the category checkboxes (including why some stay unticked until InstallScope runs as Administrator), each category's *Review files* list, *Scan*, the *Clean* button in all its states, the protected-paths editor and its *Save protected list* button, the *Clean automatically* schedule, and, in Advanced mode, the deep cleanup card's *Analyze* button, restore-point checkbox, *Clean up* buttons and *Show Store apps* button — now carries an explanation the same three ways as the earlier pages: as a hover tooltip (including while disabled, with the reason), as a line at the top of the page that follows keyboard focus, and as the description screen readers announce. The explanations are explicit that cleaned files are deleted permanently and are not backed up. The category checkboxes also announce their category name to screen readers. When a deep-clean check fails, its reason now appears inline in red next to the item it belongs to, instead of only as a tooltip on a warning icon, so keyboard, touch and screen-reader users can read it too. No behavior, defaults or deletion logic changed; the only layout changes are the reserved explanation line and the inline failure text.
+
 ## [0.1.0] - 2026-10-20
 
 First public release on GitHub.
