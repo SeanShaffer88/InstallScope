@@ -19,8 +19,8 @@ bounded, tested workflow rather than a broad rewrite.
   Store-app uninstalls, reviewed leftover cleanup, analysis-only manual entries,
   and sequential batch uninstall with a separate cleanup review per program.
   Restore-point integration and full-flow parity remain.
-- **Window-targeted program identification** — a Revo Hunter Mode-inspired
-  picker is prototyped in the native preview. Validate it in the full
+- **Window-targeted program identification** — a picker is prototyped in the
+  native preview (point at a program's window to identify it). Validate it in the full
   production interface; match using a unique executable-path/install-location
   relationship, never a window title, and do not trigger actions automatically.
 - **Browser extension inventory** — group extensions by browser and profile,
@@ -71,6 +71,49 @@ bounded, tested workflow rather than a broad rewrite.
   unpredictable system memory; clearly disclose persistence, capacity,
   elevation, detach failures, and cleanup/recovery behavior. This is storage
   isolation, not application sandboxing.
+
+**Innovation track** — new capabilities vetted against the project's constraints
+(offline, local, least-privilege, no new product surfaces). Suggested build order:
+reference counting → Canary → Slowdown Detective → Autostart Gatekeeper →
+App Rewind.
+- **Shared-component reference counting** — build a cross-program reference map
+  from all install logs; label every removal review item from real data:
+  *Used only by this program* (safe), *Shared with N others — removing may
+  break them* (Careful), or *No install log mentions this* (unknown — today's
+  confidence rules). Shared and unknown items always default to keep; never
+  render "not in any log" as "unused". Invalidate the index on log
+  add/remove/merge, and state coverage honestly ("Reference data covers 23 of
+  your 41 programs").
+- **Canary — post-operation health verification** — after every uninstall,
+  removal, or cleaning, run a short read-only verification pass: default-app
+  associations still resolve, no autostart entry now points at a missing file,
+  registered shell extensions still have their files, protected locations
+  untouched. Green verdict or a specific finding with **Fix** or **Undo this
+  operation**. High precision only (a chatty canary is worse than none); never
+  load or execute removed programs' code; no network; scope is the
+  consequences of this operation, not a general health suite.
+- **Slowdown Detective** — answer "why is my PC slower than it was?": the user
+  picks a baseline date; diff installs, updates, autostarts, scheduled tasks,
+  and services since then; rank contributors by measured data (boot
+  diagnostics, usage-tracker's startup/CPU cost); offer one-click **Delay
+  start**, **Disable**, **Uninstall…**, or **Keep**. History accumulates locally
+  over time — ship the capture early, and show honest empty states on fresh
+  installs.
+- **Autostart Gatekeeper** — opt-in (Advanced) extension of background
+  monitoring: new autostart entries land in a review queue attributed to the
+  installer that added them, with Decrapifier verdicts attached. Calm digest
+  (default weekly), never modal popups, never live-blocking; auto-disable only
+  high-confidence bloat; everything reversible; attribution labeled with its
+  evidence level.
+- **App Rewind — per-program time travel** — for monitored or analyzed
+  programs, keep a recorded state history (at install and at updates); rewind
+  just that program to an earlier state from a plain-language History timeline,
+  with a full review and a backup first, and **Undo rewind** afterwards.
+  Requires a content store (today's logs record existence, not content):
+  delta-compressed, with a user-visible storage budget and oldest-first
+  eviction — Rewind does not ship without the budget. Registry-and-settings
+  v1 may come first; never present a partial rewind as complete; exclude
+  activation/DRM locations conservatively.
 
 **Product quality**
 - **Complete, production-ready tools** — do not ship placeholders as finished
@@ -144,19 +187,17 @@ bounded, tested workflow rather than a broad rewrite.
 
 ## Competitive fit
 
-- **Already covered; avoid duplication:** Total Uninstall and Revo emphasize
-  installed-program analysis, monitored installs, leftovers, forced removal,
-  and batch uninstall—workflows InstallScope already has. Keep investment on
-  reliability, review, and the native UI migration rather than parallel tools.
-- **Distinct Revo feature:** window-targeted identification is prototyped above.
+- **Already covered; avoid duplication:** installed-program analysis, monitored
+  installs, leftovers, forced removal, and batch uninstall are workflows
+  InstallScope already has. Keep investment on reliability, review, and the
+  native UI migration rather than parallel tools.
+- **Window-targeted identification** is prototyped above.
   Browser-extension inventory is a separate, reversible follow-on, not a
   browser-cleaning bundle.
-- **Auslogics Windows Slimmer:** its official
-  [feature page](https://www.auslogics.com/en/software/windows-slimmer/)
-  describes reviewed junk and update cleanup, Rescue Center restore, and
-  Compact OS. Prefer extending InstallScope's existing review/restore patterns for
-  relevant cleanup; defer Compact OS and secure deletion, which broaden scope
-  and carry substantially higher system/data risk.
+- **Reviewed junk and update cleanup:** extend InstallScope's existing
+  review/restore patterns for the relevant cleanup; defer Compact OS and
+  secure deletion, which broaden scope and carry substantially higher
+  system/data risk.
 
 ## Later
 
