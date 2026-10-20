@@ -35,6 +35,9 @@ All notable changes to InstallScope are documented here. The format follows
 - Live activity during monitoring waits on Windows' change notifications (`ReadDirectoryChangesW`, registry notifications) and wakes the moment monitoring ends, instead of checking a flag several times a second.
 - A System Restore point is now created before uninstalling by default (Settings > Safety; it was off before). Settings files that already record the choice keep it — the new default only applies where the choice was never saved.
 
+### Removed
+- The sidebar no longer shows four disabled “Planned” entries (Setup Package Creator, Developer Sandbox, Temporary Scratch Disk and VSS Viewer). They advertised features that do not exist yet; those features stay on the roadmap and will appear in the sidebar when they are real and working.
+
 ### Fixed
 - **Bloatware Shield: deprovisioning no longer bypasses review.** Deprovisioning (removing the copies Windows keeps for new user accounts) used to start the moment removal was clicked, before the uninstall review even opened, so cancelling couldn't stop it — and nothing explained that it affects the whole PC and cannot be undone. Now the option states those risks on the page; choosing it always asks for a dedicated confirmation first (even when confirmations are turned off in Advanced mode); and the deprovisioning itself runs only after the app was actually removed — programs that were skipped or failed to uninstall keep their provisioned copies. The outcome of each run (what was deprovisioned, what failed) is saved and shown on the Bloatware Shield page until the next run.
 - Background monitoring no longer holds gigabytes of memory: its snapshots and comparisons run in a short-lived copy of InstallScope, so the process that stays running for days stays small. Found by the new soak test, where it had grown from 17 MB to over 2 GB.
