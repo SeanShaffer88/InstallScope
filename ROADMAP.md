@@ -72,6 +72,49 @@ bounded, tested workflow rather than a broad rewrite.
   elevation, detach failures, and cleanup/recovery behavior. This is storage
   isolation, not application sandboxing.
 
+**Innovation track** — new capabilities vetted against the project's constraints
+(offline, local, least-privilege, no new product surfaces). Suggested build order:
+reference counting → Canary → Slowdown Detective → Autostart Gatekeeper →
+App Rewind.
+- **Shared-component reference counting** — build a cross-program reference map
+  from all install logs; label every removal review item from real data:
+  *Used only by this program* (safe), *Shared with N others — removing may
+  break them* (Careful), or *No install log mentions this* (unknown — today's
+  confidence rules). Shared and unknown items always default to keep; never
+  render "not in any log" as "unused". Invalidate the index on log
+  add/remove/merge, and state coverage honestly ("Reference data covers 23 of
+  your 41 programs").
+- **Canary — post-operation health verification** — after every uninstall,
+  removal, or cleaning, run a short read-only verification pass: default-app
+  associations still resolve, no autostart entry now points at a missing file,
+  registered shell extensions still have their files, protected locations
+  untouched. Green verdict or a specific finding with **Fix** or **Undo this
+  operation**. High precision only (a chatty canary is worse than none); never
+  load or execute removed programs' code; no network; scope is the
+  consequences of this operation, not a general health suite.
+- **Slowdown Detective** — answer "why is my PC slower than it was?": the user
+  picks a baseline date; diff installs, updates, autostarts, scheduled tasks,
+  and services since then; rank contributors by measured data (boot
+  diagnostics, usage-tracker's startup/CPU cost); offer one-click **Delay
+  start**, **Disable**, **Uninstall…**, or **Keep**. History accumulates locally
+  over time — ship the capture early, and show honest empty states on fresh
+  installs.
+- **Autostart Gatekeeper** — opt-in (Advanced) extension of background
+  monitoring: new autostart entries land in a review queue attributed to the
+  installer that added them, with Decrapifier verdicts attached. Calm digest
+  (default weekly), never modal popups, never live-blocking; auto-disable only
+  high-confidence bloat; everything reversible; attribution labeled with its
+  evidence level.
+- **App Rewind — per-program time travel** — for monitored or analyzed
+  programs, keep a recorded state history (at install and at updates); rewind
+  just that program to an earlier state from a plain-language History timeline,
+  with a full review and a backup first, and **Undo rewind** afterwards.
+  Requires a content store (today's logs record existence, not content):
+  delta-compressed, with a user-visible storage budget and oldest-first
+  eviction — Rewind does not ship without the budget. Registry-and-settings
+  v1 may come first; never present a partial rewind as complete; exclude
+  activation/DRM locations conservatively.
+
 **Product quality**
 - **Complete, production-ready tools** — do not ship placeholders as finished
   features. Each tool must cover its end-to-end workflow, input and permission
