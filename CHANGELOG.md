@@ -23,6 +23,7 @@ All notable changes to InstallScope are documented here. The format follows
 - **Locked-file tests on Windows**: a file open in another program, a DLL loaded by another process, a running program inside the folder being removed, an add-in host that must not be closed, and a real service that holds its files until its process has exited.
 - **More installer types in the integration tests**: Squirrel (Atom) and a WiX Burn bundle (PowerToys), plus InstallShield and Wise once the `INSTALLSHIELD_URL` / `WISE_URL` repository variables point to a test installer.
 - **Soak test**: `scripts/soak.ps1` installs and removes real programs in a loop with background monitoring running, failing on leftovers, background-monitoring misfires and growing handle or memory use; it runs for five hours weekly in CI and can run for days on a test VM.
+- **Shared-component reference counting**: every removal review now cross-checks each item against all your install logs. Items are badged *Used only by this program*, *Shared with N other programs* (when another program's log also recorded the file, key, value, service or task) or *No install log mentions this*. Shared and unlogged items are never ticked automatically — including by *Select all* — and the review shows how many of your programs the reference data covers. The check is fully local; the CLI `revert` command prints the same labels.
 
 ### Changed
 - Rebranded the project from Expunge to InstallScope and renamed the executable and CLI command. **Breaking change:** the installed data folder is now `%LOCALAPPDATA%\InstallScope`, the portable data folder is `InstallScopeData`, Task Scheduler tasks live under `InstallScope\…`, the uninstall registry key is `Software\Microsoft\Windows\CurrentVersion\Uninstall\InstallScope`, the context-menu verb is `InstallScopeInstall`, and program-transfer packages use the `.installscope` extension. Data created by Expunge-branded builds is not carried over.
@@ -86,7 +87,7 @@ All notable changes to InstallScope are documented here. The format follows
 - CLI: `installscope verify <file>` and `installscope programs --trust`.
 
 ### Removed
-- InstallScope now focuses on being a complete, free install monitor and uninstaller. Tools outside that scope were removed: the Anti-Telemetry page, the disk space map, the duplicate file finder, the Windows Updates remover, winget updates, the system health panel, the online reputation check, installer lint and the uninstaller test, repackaging and MSIX output, uninstall scripts, the Windows features and app aliases views, and Find by window.
+- InstallScope now focuses on being a complete, free replacement for Total Uninstall. Tools outside that scope were removed: the Anti-Telemetry page, the disk space map, the duplicate file finder, the Windows Updates remover, winget updates, the system health panel, the online reputation check, installer lint and the uninstaller test, repackaging and MSIX output, uninstall scripts, the Windows features and app aliases views, and Find by window.
 
 ### Changed
 - The project moved to **github.com/SeanShaffer88/InstallScope** (formerly InstallScopeUninstaller); old links redirect.
