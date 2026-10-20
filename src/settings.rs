@@ -173,6 +173,14 @@ impl Settings {
     pub fn confirm_enabled(&self) -> bool {
         self.confirm_actions || !self.advanced_mode
     }
+    /// Whether an action must show its confirmation dialog. Actions flagged
+    /// `always_confirm` ask even when the user turned confirmations off in
+    /// Advanced mode (they are hard or impossible to undo, so the
+    /// confirmation setting must not silence them); every other action
+    /// follows `confirm_enabled()`.
+    pub fn must_confirm(&self, always_confirm: bool) -> bool {
+        always_confirm || self.confirm_enabled()
+    }
     pub fn remove_unlogged_enabled(&self) -> bool {
         self.remove_unlogged_files && self.advanced_mode
     }
@@ -356,6 +364,32 @@ pub fn default_file_exclusions() -> Vec<String> {
     .iter()
     .map(|s| s.to_string())
     .collect()
+}
+
+#[cfg(test)]
+mod confirm_tests {
+    use super::*;
+
+    #[test]
+    fn always_confirm_actions_ask_in_every_mode() {
+        // Simple mode (the default): everything asks.
+        let s = Settings::default();
+        assert!(s.must_confirm(false));
+        assert!(s.must_confirm(true));
+        // Advanced mode with confirmations on: everything asks.
+        let mut s = Settings {
+            advanced_mode: true,
+            ..Settings::default()
+        };
+        assert!(s.must_confirm(false));
+        assert!(s.must_confirm(true));
+        // Advanced mode with confirmations off: ordinary actions skip the
+        // dialog, always-confirm actions still ask.
+        s.confirm_actions = false;
+        assert!(!s.confirm_enabled());
+        assert!(!s.must_confirm(false));
+        assert!(s.must_confirm(true));
+    }
 }
 
 #[cfg(test)]

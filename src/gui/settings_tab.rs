@@ -424,6 +424,7 @@ impl App {
                             theme::warning_banner(ui, t("Backups are off. InstallScope cannot restore files or registry changes made by removal and cleanup workflows."));
                         }
                         changed |= ui.checkbox(&mut self.settings.confirm_actions, t("Ask before deleting things")).changed();
+                        small_muted(ui, t("When off, InstallScope deletes without asking first. Restoring your PC to a restore point, deleting a backup and deep cleaning always ask, because they can't be undone."));
                         changed |= ui
                             .checkbox(&mut self.settings.use_recycle_bin, t("Also send removed files to the Recycle Bin"))
                             .on_hover_text(t("Everything is backed up either way. This additionally keeps removed files in the Recycle Bin, using extra disk space."))
