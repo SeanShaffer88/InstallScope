@@ -33,7 +33,7 @@ jobs:
           "version=$v" >> $env:GITHUB_OUTPUT
 
       - name: Test
-        run: cargo test --lib --locked
+        run: cargo test --locked
 
       - name: Build
         run: cargo build --release --locked
