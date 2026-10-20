@@ -65,6 +65,7 @@ const ID_LIST_HEADING: u16 = 114;
 const ID_TABLE_HEADER: u16 = 115;
 const ID_FOOTER: u16 = 116;
 const ID_ADD_MANUAL: u16 = 117;
+const ID_RESTORE_POINT: u16 = 118;
 const ID_NAV_BASE: u16 = 120;
 const ID_NAV_TOOLS: u16 = ID_NAV_BASE + 6;
 const ID_MENU_EXIT: u16 = 200;
@@ -81,6 +82,7 @@ const WM_PROGRAMS_READY: u32 = 0x8001;
 const WM_PLAN_READY: u32 = 0x8002;
 const WM_REMOVE_READY: u32 = 0x8003;
 const WM_STORE_UNINSTALL_READY: u32 = 0x8004;
+const WM_RESTORE_POINT_READY: u32 = 0x8005;
 const TIMER_UNINSTALL: usize = 1;
 const SEARCH_CHANGED: u16 = 0x0300;
 const LIST_SELECTION_CHANGED: u16 = 1;
@@ -93,6 +95,9 @@ const ES_READONLY: u32 = 0x0800;
 const SS_LEFT: u32 = 0;
 const SS_NOPREFIX: u32 = 0x0080;
 const BS_OWNERDRAW: u32 = 0x000B;
+const BS_AUTOCHECKBOX: u32 = 0x0003;
+const BM_GETCHECK: u32 = 0x00F0;
+const BM_SETCHECK: u32 = 0x00F1;
 const COLOR_BG: (u8, u8, u8) = (20, 17, 19);
 const COLOR_PANEL: (u8, u8, u8) = (25, 21, 23);
 const COLOR_CARD: (u8, u8, u8) = (34, 29, 32);
@@ -101,6 +106,7 @@ const COLOR_MUTED: (u8, u8, u8) = (168, 158, 163);
 const COLOR_ACCENT: (u8, u8, u8) = (107, 7, 0);
 
 type ProgramResult = std::result::Result<Vec<InstalledProgram>, String>;
+type RestorePointResult = std::result::Result<(), String>;
 type PlanResult = std::result::Result<Plan, String>;
 type RemoveResult =
     std::result::Result<(Vec<ActionResult>, Option<String>, Option<String>), String>;
@@ -108,11 +114,23 @@ type RemoveResult =
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum View {
     Programs,
+    RestorePoint,
     Uninstalling,
     Scanning,
     Review,
     Removing,
     Results,
+}
+
+/// What to start once the pre-uninstall restore point finishes. A failed
+/// restore point cancels the pending uninstall, matching the main
+/// interface: the safety net was requested, so the operation needs it.
+enum PendingUninstall {
+    Single {
+        program: InstalledProgram,
+        command: Option<String>,
+    },
+    Batch,
 }
 
 struct NativePrograms {
@@ -135,6 +153,7 @@ struct NativePrograms {
     hunter: HWND,
     add_manual: HWND,
     uninstall_button: HWND,
+    restore_point_check: HWND,
     toggle_item: HWND,
     remove_selected: HWND,
     back: HWND,
@@ -150,6 +169,10 @@ struct NativePrograms {
     recycle_bin: bool,
     restart_explorer: bool,
     close_programs: bool,
+    /// From the "Create a System Restore point before uninstalling" setting.
+    create_restore_point: bool,
+    /// Restore points need administrator rights.
+    elevated: bool,
     programs: Vec<InstalledProgram>,
     visible: Vec<InstalledProgram>,
     labels: Vec<String>,
@@ -162,6 +185,8 @@ struct NativePrograms {
     uninstall_child: Option<platform::ChildProcess>,
     uninstall_exit: Option<(u32, Instant)>,
     store_uninstall_receiver: Option<mpsc::Receiver<std::result::Result<String, String>>>,
+    restore_point_receiver: Option<mpsc::Receiver<RestorePointResult>>,
+    pending_uninstall: Option<PendingUninstall>,
     plan_receiver: Option<mpsc::Receiver<PlanResult>>,
     system_orphan_scan: bool,
     remove_receiver: Option<mpsc::Receiver<RemoveResult>>,
@@ -466,6 +491,9 @@ impl NativePrograms {
     }
 
     fn start_batch_uninstall(&mut self, selected: Vec<InstalledProgram>) {
+        if self.restore_point_receiver.is_some() {
+            return;
+        }
         for program in &selected {
             if let Err(error) = self.uninstall_command(program) {
                 let message = format!("{}: {error}", program.name);
@@ -493,7 +521,11 @@ impl NativePrograms {
         self.batch_completed = 0;
         self.batch_queue = selected;
         self.batch_active = true;
-        self.launch_next_batch_program();
+        if self.create_restore_point && self.elevated {
+            self.begin_restore_point(PendingUninstall::Batch);
+        } else {
+            self.launch_next_batch_program();
+        }
     }
 
     fn launch_next_batch_program(&mut self) {
@@ -627,6 +659,9 @@ impl NativePrograms {
             self.remove_manual_program(program);
             return;
         }
+        if self.restore_point_receiver.is_some() {
+            return;
+        }
         let command = match self.uninstall_command(&program) {
             Ok(command) => command,
             Err(error) => {
@@ -655,6 +690,10 @@ impl NativePrograms {
             ) == 6
         };
         if !confirmed {
+            return;
+        }
+        if self.create_restore_point && self.elevated {
+            self.begin_restore_point(PendingUninstall::Single { program, command });
             return;
         }
         if let Err(error) = self.launch_uninstall(program, command) {
@@ -723,6 +762,93 @@ impl NativePrograms {
                 Ok(())
             }
             Err(error) => Err(error).context("Could not start the uninstaller"),
+        }
+    }
+
+    /// Keep the field in sync with the checkbox (BS_AUTOCHECKBOX toggles
+    /// itself; the field is the value the uninstall flow reads).
+    fn sync_restore_point_check(&mut self) {
+        let checked = unsafe { SendMessageW(self.restore_point_check, BM_GETCHECK, 0, 0) };
+        self.create_restore_point = checked != 0;
+    }
+
+    /// Create the pre-uninstall restore point on a background thread (the
+    /// same work the full interface's wizard does before it starts), then
+    /// continue with `pending`. Runs at most once per uninstall or batch.
+    fn begin_restore_point(&mut self, pending: PendingUninstall) {
+        self.pending_uninstall = Some(pending);
+        self.view = View::RestorePoint;
+        self.layout_controls();
+        self.set_status(&t("Creating a restore point…"));
+        let window = self.hwnd as isize;
+        let (tx, rx) = mpsc::channel();
+        self.restore_point_receiver = Some(rx);
+        std::thread::spawn(move || {
+            let result = installscope_core::restore::create_restore_point(
+                "Before InstallScope uninstall",
+            )
+            .map_err(|error| format!("{error:#}"));
+            let _ = tx.send(result);
+            unsafe {
+                windows_sys::Win32::UI::WindowsAndMessaging::PostMessageW(
+                    window as HWND,
+                    WM_RESTORE_POINT_READY,
+                    0,
+                    0,
+                )
+            };
+        });
+    }
+
+    fn finish_restore_point(&mut self) {
+        let Some(receiver) = self.restore_point_receiver.take() else {
+            return;
+        };
+        match receiver.try_recv() {
+            Ok(Ok(())) => self.resume_after_restore_point(),
+            Ok(Err(error)) => self.cancel_after_failed_restore_point(&tf(
+                "Restore point not created; uninstall canceled: {error}",
+                &[("error", error)],
+            )),
+            Err(mpsc::TryRecvError::Empty) => self.restore_point_receiver = Some(receiver),
+            Err(mpsc::TryRecvError::Disconnected) => self
+                .cancel_after_failed_restore_point(&t(
+                    "Restore point not created; uninstall canceled.",
+                )),
+        }
+    }
+
+    /// A failed restore point cancels the pending uninstall, matching the
+    /// main interface: the user asked for the safety net first, so the
+    /// operation does not run without it.
+    fn cancel_after_failed_restore_point(&mut self, note: &str) {
+        self.pending_uninstall.take();
+        if self.batch_active {
+            self.abort_batch(note);
+        } else {
+            self.view = View::Programs;
+            self.layout_controls();
+            self.set_status(note);
+            show_error(self.hwnd, note);
+        }
+    }
+
+    fn resume_after_restore_point(&mut self) {
+        match self.pending_uninstall.take() {
+            Some(PendingUninstall::Single { program, command }) => {
+                if let Err(error) = self.launch_uninstall(program, command) {
+                    let message = format!("{error:#}");
+                    self.view = View::Programs;
+                    self.layout_controls();
+                    self.set_status(&message);
+                    show_error(self.hwnd, &message);
+                }
+            }
+            Some(PendingUninstall::Batch) => self.launch_next_batch_program(),
+            None => {
+                self.view = View::Programs;
+                self.layout_controls();
+            }
         }
     }
 
@@ -1220,6 +1346,14 @@ impl NativePrograms {
                     SW_HIDE
                 },
             );
+            ShowWindow(
+                self.restore_point_check,
+                if self.view == View::Programs {
+                    SW_SHOW
+                } else {
+                    SW_HIDE
+                },
+            );
             let show_review = matches!(self.view, View::Review | View::Results);
             for control in [self.toggle_item, self.remove_selected, self.back] {
                 ShowWindow(control, if show_review { SW_SHOW } else { SW_HIDE });
@@ -1251,6 +1385,10 @@ impl NativePrograms {
             EnableWindow(
                 self.uninstall_button,
                 i32::from(self.view == View::Programs),
+            );
+            EnableWindow(
+                self.restore_point_check,
+                i32::from(self.view == View::Programs && self.elevated),
             );
         }
         unsafe { layout_controls(self) };
@@ -1433,6 +1571,7 @@ pub fn run(install_target: Option<String>, _launch_args: Vec<String>) -> Result<
         hunter: std::ptr::null_mut(),
         add_manual: std::ptr::null_mut(),
         uninstall_button: std::ptr::null_mut(),
+        restore_point_check: std::ptr::null_mut(),
         toggle_item: std::ptr::null_mut(),
         remove_selected: std::ptr::null_mut(),
         back: std::ptr::null_mut(),
@@ -1448,6 +1587,8 @@ pub fn run(install_target: Option<String>, _launch_args: Vec<String>) -> Result<
         recycle_bin: settings.use_recycle_bin && settings.advanced_mode,
         restart_explorer: settings.restart_explorer,
         close_programs: settings.close_programs,
+        create_restore_point: settings.create_restore_point,
+        elevated: platform::is_elevated(),
         programs: Vec::new(),
         visible: Vec::new(),
         labels: Vec::new(),
@@ -1460,6 +1601,8 @@ pub fn run(install_target: Option<String>, _launch_args: Vec<String>) -> Result<
         uninstall_child: None,
         uninstall_exit: None,
         store_uninstall_receiver: None,
+        restore_point_receiver: None,
+        pending_uninstall: None,
         plan_receiver: None,
         system_orphan_scan: false,
         remove_receiver: None,
@@ -1735,6 +1878,9 @@ unsafe extern "system" fn window_proc(
                 (ID_UNINSTALL, BUTTON_CLICKED) if state.view == View::Programs => {
                     state.start_selected_action();
                 }
+                (ID_RESTORE_POINT, BUTTON_CLICKED) if state.view == View::Programs => {
+                    state.sync_restore_point_check();
+                }
                 (ID_ADD_MANUAL, BUTTON_CLICKED) if state.view == View::Programs => {
                     state.add_manual_program();
                 }
@@ -1788,6 +1934,12 @@ unsafe extern "system" fn window_proc(
         WM_STORE_UNINSTALL_READY => {
             if let Some(state) = state {
                 state.finish_store_uninstall();
+            }
+            0
+        }
+        WM_RESTORE_POINT_READY => {
+            if let Some(state) = state {
+                state.finish_restore_point();
             }
             0
         }
@@ -1896,7 +2048,7 @@ unsafe extern "system" fn window_proc(
             }
             0
         }
-        0x0132 | 0x0133 | 0x0134 | 0x0138 => {
+        0x0132 | 0x0133 | 0x0134 | 0x0135 | 0x0138 => {
             if let Some(state) = state {
                 let dc = wparam as HDC;
                 let control = lparam as HWND;
@@ -2056,6 +2208,20 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
         0,
         ID_UNINSTALL,
     );
+    state.restore_point_check = create(
+        "BUTTON",
+        &t("Create a System Restore point first"),
+        BS_AUTOCHECKBOX | WS_TABSTOP,
+        0,
+        ID_RESTORE_POINT,
+    );
+    SendMessageW(
+        state.restore_point_check,
+        BM_SETCHECK,
+        if state.create_restore_point { 1 } else { 0 },
+        0,
+    );
+    EnableWindow(state.restore_point_check, i32::from(state.elevated));
     state.toggle_item = create(
         "BUTTON",
         &t("Toggle selection"),
@@ -2130,6 +2296,7 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
         state.hunter,
         state.add_manual,
         state.uninstall_button,
+        state.restore_point_check,
         state.toggle_item,
         state.remove_selected,
         state.back,
@@ -2156,6 +2323,7 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
         state.hunter,
         state.add_manual,
         state.uninstall_button,
+        state.restore_point_check,
         state.toggle_item,
         state.remove_selected,
         state.back,
@@ -2167,7 +2335,12 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
     }
     SendMessageW(state.list, 0x01A0, 0, 28);
     let dark_controls = wide("DarkMode_Explorer");
-    for control in [state.search, state.list, state.details] {
+    for control in [
+        state.search,
+        state.list,
+        state.details,
+        state.restore_point_check,
+    ] {
         let _ = SetWindowTheme(control, dark_controls.as_ptr(), std::ptr::null());
     }
     Ok(())
@@ -2281,11 +2454,19 @@ unsafe fn layout_controls(state: &NativePrograms) {
         content_left + list_width + gutter,
         list_top,
         details_width,
-        (list_height - 88).max(40),
+        (list_height - 116).max(40),
         1,
     );
     let action_x = content_left + list_width + gutter;
     let action_y = list_top + list_height - 82;
+    MoveWindow(
+        state.restore_point_check,
+        action_x,
+        action_y - 28,
+        details_width,
+        24,
+        1,
+    );
     MoveWindow(
         state.uninstall_button,
         action_x,
