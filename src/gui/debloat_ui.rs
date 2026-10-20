@@ -2,12 +2,13 @@
 //! pre-installed apps that come with new PCs, including Store apps and the
 //! copies Windows keeps for new user accounts.
 
-use super::app::App;
+use super::app::{App, Confirm};
 use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use installscope_core::debloat::{self, BloatItem, Class};
+use installscope_core::backup::ActionResult;
+use installscope_core::debloat::{self, BloatItem, Class, DeprovisionReport};
 use installscope_core::i18n::{t, tf};
 use std::collections::HashSet;
 
@@ -15,9 +16,10 @@ use std::collections::HashSet;
 pub struct DebloatState {
     pub items: Option<Vec<BloatItem>>,
     pub job: Option<Job<Vec<BloatItem>>>,
-    pub deprovision_job: Option<Job<Vec<String>>>,
+    pub deprovision_job: Option<Job<Vec<ActionResult>>>,
     pub checked: HashSet<String>,
     pub keep_new_accounts_clean: bool,
+    pub last_report: Option<DeprovisionReport>,
 }
 
 impl App {
@@ -27,6 +29,7 @@ impl App {
         let hidden = self.settings.system_components_shown();
         self.debloat.items = None;
         self.debloat.keep_new_accounts_clean = true;
+        self.debloat.last_report = self.store.load_deprovision_report();
         self.debloat.job = Some(Job::spawn(ctx, move |pr| {
             pr.set_phase("Reading installed programs".to_string());
             let programs = if programs.is_empty() {
@@ -51,17 +54,38 @@ impl App {
                 .collect();
             self.debloat.items = Some(items);
         }
-        if let Some(errors) = self.debloat.deprovision_job.as_ref().and_then(|j| j.poll()) {
+        if let Some(rows) = self.debloat.deprovision_job.as_ref().and_then(|j| j.poll()) {
             self.debloat.deprovision_job = None;
-            if errors.is_empty() {
-                self.set_status(t("New user accounts won't get these apps."));
+            let failed = rows.iter().filter(|r| !r.ok).count();
+            let ok = rows.len() - failed;
+            let report = DeprovisionReport {
+                version: 1,
+                ran_at: installscope_core::util::now_string(),
+                rows,
+            };
+            if let Err(error) = self.store.save_deprovision_report(&report) {
+                self.set_status(tf(
+                    "Deprovisioning finished but its record could not be saved: {error}",
+                    &[("error", format!("{error:#}"))],
+                ));
             } else {
-                self.set_status(errors.join(" · "));
+                self.set_status(if failed == 0 {
+                    tf(
+                        "Deprovisioned {n} apps: new user accounts won't get them.",
+                        &[("n", ok.to_string())],
+                    )
+                } else {
+                    tf(
+                        "{ok} apps deprovisioned, {bad} failed — details on this page.",
+                        &[("ok", ok.to_string()), ("bad", failed.to_string())],
+                    )
+                });
             }
+            self.debloat.last_report = Some(report);
         }
     }
 
-    fn remove_bloat(&mut self, ctx: &egui::Context) {
+    fn remove_bloat(&mut self) {
         let Some(items) = self.debloat.items.clone() else {
             return;
         };
@@ -79,12 +103,22 @@ impl App {
                 .map(|i| i.program.name.clone())
                 .collect();
             if !names.is_empty() {
-                self.debloat.deprovision_job = Some(Job::spawn(ctx, move |_| {
-                    names
-                        .iter()
-                        .filter_map(|n| debloat::deprovision(n).err().map(|e| format!("{n}: {e}")))
-                        .collect()
-                }));
+                // Deprovisioning is machine-wide and irreversible, so it
+                // always gets its own confirmation (see Confirm::DeprovisionBloat).
+                // The names ride with the wizard and are deprovisioned only
+                // after those programs were actually removed.
+                let programs: Vec<installscope_core::programs::InstalledProgram> =
+                    chosen.into_iter().map(|i| i.program).collect();
+                self.ask(
+                    "Deprovision apps for new user accounts?",
+                    tf(
+                        "For each removed app, InstallScope also removes the copy Windows keeps for new user accounts, so the apps don't come back. This affects the whole PC, and InstallScope cannot undo it. {n} of the selected apps have such a copy; it is deprovisioned only after the app itself was removed.",
+                        &[("n", names.len().to_string())],
+                    ),
+                    "Deprovision and start removal",
+                    Confirm::DeprovisionBloat(names, programs),
+                );
+                return;
             }
         }
         let programs = chosen.into_iter().map(|i| i.program).collect();
@@ -101,6 +135,15 @@ impl App {
                 ui.add_space(30.0);
                 ui.vertical_centered(|ui| job_progress(ui, &t(&j.progress.phase()), 0));
                 return;
+            }
+            if let Some(report) = self.debloat.last_report.clone() {
+                theme::card(ui, |ui| {
+                    ui.label(RichText::new(t("Last deprovisioning")).strong());
+                    small_muted(ui, tf("Finished {at}.", &[("at", report.ran_at)]));
+                    ui.add_space(4.0);
+                    results_ui(ui, &report.rows);
+                });
+                ui.add_space(8.0);
             }
             let items = self.debloat.items.clone().unwrap_or_default();
             if items.is_empty() {
@@ -130,7 +173,7 @@ impl App {
                             .on_hover_text(t("Uninstalls them one after another, then removes what they left behind. You review every step, and everything is backed up."))
                             .clicked()
                         {
-                            self.remove_bloat(ctx);
+                            self.remove_bloat();
                         }
                     });
                 });
@@ -139,6 +182,10 @@ impl App {
                     ui.add_enabled_ui(self.elevated, |ui| {
                         ui.checkbox(&mut self.debloat.keep_new_accounts_clean, t("Also stop Windows installing the removed Store apps for new user accounts"));
                     });
+                    small_muted(ui, t("Removes the copy Windows keeps for new user accounts, so the app doesn't come back. It affects the whole PC, and InstallScope cannot undo it."));
+                    if !self.elevated {
+                        small_muted(ui, t("Needs administrator rights to change what new user accounts get."));
+                    }
                 }
             });
             ui.add_space(8.0);
