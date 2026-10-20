@@ -21,8 +21,19 @@ impl App {
         let reg = self.reg.clone();
         let root = self.store.backups_dir();
         let id = id.to_string();
+        // With backups on, restoring first backs up the current state of
+        // everything it will change, so the restore itself can be undone
+        // (audit P1-7) — the same rule as removals: if that backup cannot
+        // be taken, nothing is changed. With backups off in Settings, the
+        // restore goes ahead without one, as the confirmation states.
+        let safety = self.settings.backup_enabled();
         self.backups.results = None;
         self.backups.job = Some(Job::spawn(&self.ctx, move |_| {
+            if safety {
+                backup::backup_before_restore(&root, &id, reg.as_ref()).map_err(|e| {
+                    format!("Could not take a safety backup, so nothing was restored: {e:#}")
+                })?;
+            }
             backup::restore_backup(&root, &id, reg.as_ref()).map_err(|e| e.to_string())
         }));
     }
@@ -115,6 +126,9 @@ impl App {
 
     pub fn ui_backups(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().frame(theme::content_frame()).show(ctx, |ui| {
+            // The focused control's explanation line, for keyboard and
+            // touch users (see a11y::explain).
+            super::a11y::focus_hint(ui, theme::MUTED);
             if self.backups.job.is_some() {
                 job_progress(ui, &t("Restoring…"), 0);
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(200));
@@ -126,7 +140,7 @@ impl App {
                 theme::card(ui, |ui| {
                     ui.label(RichText::new(t("Restore finished")).strong());
                     results_ui(ui, results);
-                    if ui.button(t("Close")).clicked() {
+                    if super::a11y::explain(ui.button(t("Close")), &t("Close this report of what the restore did.")).clicked() {
                         close = true;
                     }
                 });
@@ -140,7 +154,7 @@ impl App {
                 muted(ui, tf("{n} backups", &[("n", self.backups.list.len().to_string())]));
                 muted(ui, format!("· {}", installscope_core::model::human_size(total)));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button(t("Open backup folder")).clicked() {
+                    if super::a11y::explain(ui.button(t("Open backup folder")), &t("Open the folder that holds all of InstallScope's backups.")).clicked() {
                         installscope_core::platform::shell_open(&self.store.backups_dir().to_string_lossy());
                     }
                 });
@@ -172,17 +186,18 @@ impl App {
                                 small_muted(ui, format!("{}  ·  {}", b.created, b.summary()));
                             });
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui
-                                    .button(t("Open folder"))
-                                    .on_hover_text(t("Backed-up files, plus a .reg file you can double-click to restore registry entries without InstallScope."))
-                                    .clicked()
+                                if super::a11y::explain(
+                                    ui.button(t("Open folder")),
+                                    &t("Backed-up files, plus a .reg file you can double-click to restore registry entries without InstallScope."),
+                                )
+                                .clicked()
                                 {
                                     installscope_core::platform::shell_open(&backups_dir.join(&b.id).to_string_lossy());
                                 }
-                                if ui.button(t("Delete")).clicked() {
+                                if super::a11y::explain(ui.button(t("Delete")), &t("Delete this backup permanently, after a confirmation. What it holds can then no longer be put back.")).clicked() {
                                     action = Some(Confirm::DeleteBackup(b.id.clone()));
                                 }
-                                if theme::primary_button(ui, format!("↺ {}", t("Restore"))).clicked() {
+                                if super::a11y::explain(theme::primary_button(ui, format!("↺ {}", t("Restore"))), &t("Put everything in this backup back where it was, replacing what is there now. You confirm first, and unless backups are off in Settings, the current state is backed up first so this restore can be undone too.")).clicked() {
                                     action = Some(Confirm::RestoreBackup(b.id.clone()));
                                 }
                             });
@@ -194,7 +209,11 @@ impl App {
             match action {
                 Some(Confirm::RestoreBackup(id)) => self.ask(
                     "Restore backup?",
-                    t("Everything in this backup will be put back where it was."),
+                    if self.settings.backup_enabled() {
+                        t("Everything in this backup will be put back where it was, replacing what is there now. First, a safety backup of the current state is saved on this page, so this restore can be undone.")
+                    } else {
+                        t("Everything in this backup will be put back where it was, replacing what is there now. Backups are off in Settings, so no safety backup is taken first, and this restore cannot be undone.")
+                    },
                     "Restore",
                     Confirm::RestoreBackup(id),
                 ),
