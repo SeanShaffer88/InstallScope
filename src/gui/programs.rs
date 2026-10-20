@@ -30,6 +30,19 @@ pub enum View {
     Store,
 }
 
+/// On what evidence a program counts as long-unused: a last-opened time
+/// Windows actually recorded, or — when it never recorded the program
+/// being opened — only the date it was installed. The two must not be
+/// presented to the user as the same fact: an install date says nothing
+/// about when the program was last opened.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum UnusedBasis {
+    /// Days since the program was last opened, from Windows' records.
+    LastOpened(i64),
+    /// Days since the program was installed; no last-opened record exists.
+    Installed(i64),
+}
+
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum SortCol {
     #[default]
@@ -292,12 +305,26 @@ impl App {
     /// Days since a program was last opened; for programs Windows has no
     /// record of opening, days since it was installed. None while unknown.
     pub fn unused_days(&self, p: &InstalledProgram) -> Option<i64> {
-        let now = installscope_core::time::unix_now();
+        match self.unused_basis(p) {
+            Some(UnusedBasis::LastOpened(days)) | Some(UnusedBasis::Installed(days)) => Some(days),
+            None => None,
+        }
+    }
+
+    /// The evidence behind `unused_days` for `p`, so callers that tell the
+    /// user a program "hasn't been opened" can distinguish a recorded
+    /// last-opened date from a mere install date. None while the program
+    /// has no usage record at all, or neither date is known.
+    pub fn unused_basis(&self, p: &InstalledProgram) -> Option<UnusedBasis> {
         let u = self.programs.usage.get(&p.key)?;
         match u.last_opened {
-            Some(ts) => Some((now - ts) / 86_400),
-            None => installscope_core::nlquery::parse_date(&p.install_date)
-                .map(|d| installscope_core::time::Date::today_local().days_since(d)),
+            Some(ts) => {
+                let now = installscope_core::time::unix_now();
+                Some(UnusedBasis::LastOpened((now - ts) / 86_400))
+            }
+            None => installscope_core::nlquery::parse_date(&p.install_date).map(|d| {
+                UnusedBasis::Installed(installscope_core::time::Date::today_local().days_since(d))
+            }),
         }
     }
 

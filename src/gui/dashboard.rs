@@ -89,6 +89,105 @@ fn action_row(ui: &mut egui::Ui, icon: &str, title: &str, desc: &str) -> bool {
     resp.clicked()
 }
 
+/// One installed program reduced to what the space-wasters panel needs:
+/// its resolved size in bytes (0 = unknown) and the evidence for calling
+/// it long-unused, if any.
+struct WasterCandidate {
+    program: installscope_core::programs::InstalledProgram,
+    size: u64,
+    basis: Option<super::programs::UnusedBasis>,
+}
+
+/// Which claim the space-wasters panel is making. The two kinds exist
+/// because a recorded last-opened date and a mere install date are
+/// different facts, and the heading must only ever claim the one the
+/// listed programs actually have.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+enum WasterKind {
+    /// Every entry has a recorded last-opened date at least 180 days ago.
+    NotOpened,
+    /// No entry has a recorded last-opened date; entries are ranked by
+    /// size among the programs installed at least 180 days ago.
+    InstalledLongAgo,
+}
+
+/// What the space-wasters panel shows, chosen so the heading is true of
+/// every listed program.
+struct WasterPanel {
+    kind: WasterKind,
+    /// (program, size in bytes, days) — largest first, at most 5.
+    entries: Vec<(installscope_core::programs::InstalledProgram, u64, i64)>,
+    /// Old, sizeable programs left out of a `NotOpened` panel because
+    /// Windows has no record of when they were last opened.
+    unknown_opened: usize,
+    /// Old programs left out because their size is unknown.
+    unknown_size: usize,
+}
+
+/// Days without use (or since install) before a program counts as old.
+const WASTER_MIN_DAYS: i64 = 180;
+/// How many entries the panel lists.
+const WASTER_LIMIT: usize = 5;
+
+/// Choose the space-wasters panel's contents from per-program size and
+/// usage evidence.
+///
+/// Ranking is always by known size. Programs with a recorded last-opened
+/// date form the panel whenever at least one qualifies; install-age-only
+/// programs are never mixed into it (they would make its "not opened"
+/// claim false) and are instead counted, or — when they are all there
+/// is — listed under an install-age heading of their own. Old programs
+/// whose size is unknown cannot be ranked and are counted, not dropped
+/// silently.
+fn space_wasters(candidates: &[WasterCandidate]) -> Option<WasterPanel> {
+    let mut measured: Vec<(installscope_core::programs::InstalledProgram, u64, i64)> = Vec::new();
+    let mut installed: Vec<(installscope_core::programs::InstalledProgram, u64, i64)> = Vec::new();
+    let mut unknown_size = 0usize;
+    for c in candidates {
+        let (days, is_measured) = match c.basis {
+            Some(super::programs::UnusedBasis::LastOpened(d)) => (d, true),
+            Some(super::programs::UnusedBasis::Installed(d)) => (d, false),
+            None => continue,
+        };
+        if days < WASTER_MIN_DAYS {
+            continue;
+        }
+        if c.size == 0 {
+            unknown_size += 1;
+            continue;
+        }
+        if is_measured {
+            measured.push((c.program.clone(), c.size, days));
+        } else {
+            installed.push((c.program.clone(), c.size, days));
+        }
+    }
+    let largest_first =
+        |a: &(installscope_core::programs::InstalledProgram, u64, i64),
+         b: &(installscope_core::programs::InstalledProgram, u64, i64)| b.1.cmp(&a.1);
+    if !measured.is_empty() {
+        measured.sort_by(largest_first);
+        measured.truncate(WASTER_LIMIT);
+        Some(WasterPanel {
+            kind: WasterKind::NotOpened,
+            entries: measured,
+            unknown_opened: installed.len(),
+            unknown_size,
+        })
+    } else if !installed.is_empty() {
+        installed.sort_by(largest_first);
+        installed.truncate(WASTER_LIMIT);
+        Some(WasterPanel {
+            kind: WasterKind::InstalledLongAgo,
+            entries: installed,
+            unknown_opened: 0,
+            unknown_size,
+        })
+    } else {
+        None
+    }
+}
+
 impl App {
     pub fn ui_dashboard(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().frame(theme::content_frame()).show(ctx, |ui| {
@@ -222,27 +321,44 @@ impl App {
                 }
 
                 // "What are the top 5 space-wasters I haven't opened in 6 months?"
+                // Only programs with a recorded last-opened date may be
+                // called "not opened"; when the evidence is only an install
+                // date, the panel says so instead (see `space_wasters`).
                 if !self.programs.usage.is_empty() {
-                    let mut wasters: Vec<(installscope_core::programs::InstalledProgram, u64, i64)> = self
+                    let candidates: Vec<WasterCandidate> = self
                         .programs
                         .list
                         .iter()
-                        .filter_map(|p| {
-                            let days = self.unused_days(p)?;
+                        .map(|p| {
                             let size = if p.size_kb > 0 { p.size_kb * 1024 } else { self.programs.sizes.get(&p.key).copied().unwrap_or(0) };
-                            (days >= 180 && size > 0).then(|| (p.clone(), size, days))
+                            WasterCandidate {
+                                program: p.clone(),
+                                size,
+                                basis: self.unused_basis(p),
+                            }
                         })
                         .collect();
-                    wasters.sort_by_key(|w| std::cmp::Reverse(w.1));
-                    wasters.truncate(5);
-                    if !wasters.is_empty() {
+                    if let Some(panel) = space_wasters(&candidates) {
+                        let wasters = &panel.entries;
                         ui.add_space(16.0);
-                        theme::section_label(ui, t("Space-wasters you don't use"));
-                        small_muted(ui, t("The biggest programs not opened in the last 6 months."));
+                        let (title, subtitle, row_note) = match panel.kind {
+                            WasterKind::NotOpened => (
+                                t("Space-wasters you don't use"),
+                                t("The biggest programs not opened in the last 6 months."),
+                                "not opened for {n} months",
+                            ),
+                            WasterKind::InstalledLongAgo => (
+                                t("Big programs installed long ago"),
+                                t("Installed over 6 months ago. Windows has no record of when they were last opened, so they may still be in use."),
+                                "installed {n} months ago",
+                            ),
+                        };
+                        theme::section_label(ui, title);
+                        small_muted(ui, subtitle);
                         ui.add_space(6.0);
                         let total: u64 = wasters.iter().map(|w| w.1).sum();
                         theme::deck_panel(ui, |ui| {
-                            for (p, size, days) in &wasters {
+                            for (p, size, days) in wasters {
                                 ui.horizontal(|ui| {
                                     if ui.link(RichText::new(&p.name).strong()).clicked() {
                                         self.programs.selected = Some(p.key.clone());
@@ -250,7 +366,7 @@ impl App {
                                         self.tab = Tab::Programs;
                                     }
                                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                        small_muted(ui, tf("not opened for {n} months", &[("n", (days / 30).to_string())]));
+                                        small_muted(ui, tf(row_note, &[("n", (days / 30).to_string())]));
                                         ui.add_space(8.0);
                                         ui.label(
                                             RichText::new(installscope_core::model::human_size(*size))
@@ -268,6 +384,12 @@ impl App {
                                 }
                             });
                         });
+                        if panel.unknown_opened > 0 {
+                            small_muted(ui, tf("{n} more aren't listed: Windows has no record of when they were last opened. Find them on the Programs page.", &[("n", panel.unknown_opened.to_string())]));
+                        }
+                        if panel.unknown_size > 0 {
+                            small_muted(ui, tf("{n} more aren't listed because their size isn't known.", &[("n", panel.unknown_size.to_string())]));
+                        }
                     }
                 }
 
@@ -420,5 +542,113 @@ mod tests {
         let pass = render(&ctx, button(false), "42");
         assert!(pass.tile_clicked);
         assert!(!pass.row_clicked);
+    }
+
+    use super::super::programs::UnusedBasis;
+
+    fn candidate(name: &str, size: u64, basis: Option<UnusedBasis>) -> WasterCandidate {
+        let mut program = installscope_core::programs::InstalledProgram::default();
+        program.key = name.into();
+        program.name = name.into();
+        WasterCandidate {
+            program,
+            size,
+            basis,
+        }
+    }
+
+    fn entry_names(panel: &WasterPanel) -> Vec<String> {
+        panel.entries.iter().map(|e| e.0.name.clone()).collect()
+    }
+
+    #[test]
+    fn wasters_rank_measured_programs_by_size() {
+        // All sizes known, all ages measured: the panel is the measured
+        // list, largest first, with the 180-day boundary included and
+        // recently opened programs left out however big they are.
+        let candidates = vec![
+            candidate("alpha", 300, Some(UnusedBasis::LastOpened(400))),
+            candidate("beta", 100, Some(UnusedBasis::LastOpened(200))),
+            candidate("huge-but-used", 999, Some(UnusedBasis::LastOpened(10))),
+            candidate("boundary", 500, Some(UnusedBasis::LastOpened(180))),
+        ];
+        let panel = space_wasters(&candidates).expect("panel");
+        assert_eq!(panel.kind, WasterKind::NotOpened);
+        assert_eq!(entry_names(&panel), ["boundary", "alpha", "beta"]);
+        assert_eq!(panel.entries[0].2, 180);
+        assert_eq!(panel.unknown_opened, 0);
+        assert_eq!(panel.unknown_size, 0);
+    }
+
+    #[test]
+    fn wasters_mixed_evidence_never_calls_install_age_not_opened() {
+        // One measured program qualifies. The install-age-only program is
+        // bigger, but listing it under "not opened" would be a guess, so
+        // it is counted as not listed instead; the size-unknown program
+        // is counted too, and too-young / no-evidence programs vanish
+        // from every count.
+        let candidates = vec![
+            candidate("measured", 100, Some(UnusedBasis::LastOpened(300))),
+            candidate("install-age-only", 900, Some(UnusedBasis::Installed(400))),
+            candidate("size-unknown", 0, Some(UnusedBasis::LastOpened(300))),
+            candidate("too-young", 700, Some(UnusedBasis::Installed(90))),
+            candidate("no-evidence", 800, None),
+        ];
+        let panel = space_wasters(&candidates).expect("panel");
+        assert_eq!(panel.kind, WasterKind::NotOpened);
+        assert_eq!(entry_names(&panel), ["measured"]);
+        assert_eq!(panel.unknown_opened, 1);
+        assert_eq!(panel.unknown_size, 1);
+    }
+
+    #[test]
+    fn wasters_without_any_measurement_use_install_age() {
+        // Nothing has a recorded last-opened date: the panel presents the
+        // list for what it is — big programs installed long ago, carrying
+        // their install ages, not invented last-opened ages.
+        let candidates = vec![
+            candidate("older", 100, Some(UnusedBasis::Installed(500))),
+            candidate("bigger", 300, Some(UnusedBasis::Installed(200))),
+            candidate("recent-install", 999, Some(UnusedBasis::Installed(30))),
+        ];
+        let panel = space_wasters(&candidates).expect("panel");
+        assert_eq!(panel.kind, WasterKind::InstalledLongAgo);
+        assert_eq!(entry_names(&panel), ["bigger", "older"]);
+        assert_eq!(panel.entries[0].2, 200);
+        assert_eq!(panel.unknown_opened, 0);
+    }
+
+    #[test]
+    fn wasters_no_known_sizes_or_no_old_programs_no_panel() {
+        // Every old program's size is unknown: nothing can be ranked, so
+        // there is no panel rather than a list ordered by something else.
+        let candidates = vec![
+            candidate("a", 0, Some(UnusedBasis::LastOpened(400))),
+            candidate("b", 0, Some(UnusedBasis::Installed(400))),
+        ];
+        assert!(space_wasters(&candidates).is_none());
+        // Nothing old enough on either basis: also no panel.
+        let candidates = vec![
+            candidate("a", 500, Some(UnusedBasis::LastOpened(179))),
+            candidate("b", 500, None),
+        ];
+        assert!(space_wasters(&candidates).is_none());
+        assert!(space_wasters(&[]).is_none());
+    }
+
+    #[test]
+    fn wasters_list_is_capped_at_five_largest() {
+        let candidates: Vec<WasterCandidate> = (1..=7u64)
+            .map(|i| {
+                candidate(
+                    &format!("p{i}"),
+                    i * 100,
+                    Some(UnusedBasis::LastOpened(365)),
+                )
+            })
+            .collect();
+        let panel = space_wasters(&candidates).expect("panel");
+        assert_eq!(panel.entries.len(), 5);
+        assert_eq!(entry_names(&panel), ["p7", "p6", "p5", "p4", "p3"]);
     }
 }
