@@ -8,7 +8,9 @@ use super::Job;
 use egui::RichText;
 use installscope_core::backup::{ActionResult, BackupWriter};
 use installscope_core::i18n::{t, tf};
+use installscope_core::refcount::{annotate_plan, RefLabel, ReferenceIndex};
 use installscope_core::revert::{execute_plan, ExecOptions, Plan, Risk};
+use std::collections::BTreeSet;
 
 pub struct RemovalFlow {
     pub title: String,
@@ -32,6 +34,17 @@ pub struct RemovalFlow {
     pub open: bool,
     /// Confidence per plan item, computed once.
     pub scores: Vec<installscope_core::revert::Confidence>,
+    /// Reference-count label per plan item, computed once (parallel to
+    /// `plan.items`, like `scores`).
+    pub ref_labels: Vec<RefLabel>,
+    /// "Reference data covers X of your Y programs" for this review.
+    pub ref_coverage: Option<String>,
+    /// Install logs this flow removes (the owners the labels are relative
+    /// to — the same logs `logs_to_delete` names).
+    pub ref_log_ids: Vec<String>,
+    /// The reference index this review was labelled from, kept so labels
+    /// can be recomputed if the plan is filtered (Simple mode).
+    pub ref_index: Option<ReferenceIndex>,
 }
 
 impl RemovalFlow {
@@ -52,6 +65,10 @@ impl RemovalFlow {
             results: None,
             open: true,
             scores: Vec::new(),
+            ref_labels: Vec::new(),
+            ref_coverage: None,
+            ref_log_ids: Vec::new(),
+            ref_index: None,
         }
     }
 }
@@ -69,6 +86,18 @@ pub fn plan_ui(ui: &mut egui::Ui, flow: &mut RemovalFlow) {
             .iter()
             .map(installscope_core::revert::confidence)
             .collect();
+    }
+    // Recompute reference labels the same way (e.g. after Simple mode
+    // filtered the plan).
+    if flow.ref_index.is_some() && flow.ref_labels.len() != flow.plan.items.len() {
+        let removing: BTreeSet<String> = flow.ref_log_ids.iter().cloned().collect();
+        let new_labels = flow
+            .ref_index
+            .as_ref()
+            .map(|index| index.labels(&flow.plan, &removing));
+        if let Some(labels) = new_labels {
+            flow.ref_labels = labels;
+        }
     }
     let (mut green, mut yellow, mut red) = (0, 0, 0);
     for (i, c) in flow.plan.items.iter().zip(&flow.scores) {
@@ -96,11 +125,18 @@ pub fn plan_ui(ui: &mut egui::Ui, flow: &mut RemovalFlow) {
             ))
             .clicked()
         {
-            for (i, c) in flow.plan.items.iter_mut().zip(&flow.scores) {
-                i.selected = i.exists && c.band() == Risk::Safe;
+            let allow: Vec<bool> = (0..flow.plan.items.len())
+                .map(|n| ref_auto_select(flow, n))
+                .collect();
+            for ((i, c), a) in flow.plan.items.iter_mut().zip(&flow.scores).zip(&allow) {
+                i.selected = i.exists && c.band() == Risk::Safe && *a;
             }
         }
     });
+    if let Some(coverage) = &flow.ref_coverage {
+        ui.add_space(2.0);
+        small_muted(ui, coverage);
+    }
     ui.add_space(4.0);
     let missing = flow.plan.items.iter().filter(|i| !i.exists).count();
     ui.horizontal(|ui| {
@@ -119,11 +155,14 @@ pub fn plan_ui(ui: &mut egui::Ui, flow: &mut RemovalFlow) {
                 flow.plan.items.iter_mut().for_each(|i| i.selected = false);
             }
             if ui.small_button(t("Select all")).clicked() {
-                flow.plan
-                    .items
-                    .iter_mut()
-                    .filter(|i| i.exists && i.note.is_empty())
-                    .for_each(|i| i.selected = true);
+                let allow: Vec<bool> = (0..flow.plan.items.len())
+                    .map(|n| ref_auto_select(flow, n))
+                    .collect();
+                for (n, i) in flow.plan.items.iter_mut().enumerate() {
+                    if i.exists && i.note.is_empty() && allow[n] {
+                        i.selected = true;
+                    }
+                }
             }
         });
     });
@@ -219,6 +258,14 @@ pub fn plan_ui(ui: &mut egui::Ui, flow: &mut RemovalFlow) {
                             if !item.note.is_empty() {
                                 theme::badge(ui, t(&item.note), theme::WARN);
                             }
+                            if let Some(label) = flow.ref_labels.get(n) {
+                                let color = match label {
+                                    RefLabel::OnlyThisProgram => theme::OK,
+                                    RefLabel::Shared { .. } => theme::BAD,
+                                    RefLabel::NotInAnyLog => theme::MUTED,
+                                };
+                                theme::badge(ui, label.text(), color);
+                            }
                         });
                     }
                 });
@@ -238,8 +285,30 @@ pub fn plan_ui(ui: &mut egui::Ui, flow: &mut RemovalFlow) {
         });
 }
 
+/// Whether a bulk "select" button (Select all, Select only green) may tick
+/// item `n`: reference labels, if present, keep shared and unlogged items
+/// out of auto-selection. Flows that never ran annotation have no labels
+/// and keep their previous behavior.
+fn ref_auto_select(flow: &RemovalFlow, n: usize) -> bool {
+    flow.ref_labels.len() != flow.plan.items.len()
+        || matches!(
+            flow.ref_labels.get(n),
+            Some(RefLabel::OnlyThisProgram) | None
+        )
+}
+
 impl App {
     pub fn open_removal(&mut self, flow: RemovalFlow) {
+        let mut flow = flow;
+        // Label every item from the cross-program reference index: the
+        // logs this flow removes own the removal, everything else counts
+        // as "shared with others".
+        let removing: BTreeSet<String> = flow.logs_to_delete.iter().cloned().collect();
+        let index = ReferenceIndex::build(&self.logs.logs);
+        flow.ref_labels = annotate_plan(&mut flow.plan, &index, &removing);
+        flow.ref_log_ids = flow.logs_to_delete.clone();
+        flow.ref_coverage = index.coverage_line(self.programs.list.len());
+        flow.ref_index = Some(index);
         self.removal = Some(flow);
     }
 

@@ -178,7 +178,7 @@ const SERVICE_STOP_TIMEOUT: std::time::Duration = std::time::Duration::from_secs
 
 const SERVICES_PREFIX: &str = "hklm\\system\\currentcontrolset\\services\\";
 
-fn service_name(key_path: &str) -> Option<String> {
+pub(crate) fn service_name(key_path: &str) -> Option<String> {
     let f = fold(key_path);
     let rest = f.strip_prefix(SERVICES_PREFIX)?;
     if rest.is_empty() || rest.contains('\\') {
@@ -187,7 +187,7 @@ fn service_name(key_path: &str) -> Option<String> {
     Some(platform::leaf_name(key_path).to_string())
 }
 
-fn tasks_dir() -> String {
+pub(crate) fn tasks_dir() -> String {
     fold(&expand_env("%SystemRoot%\\System32\\Tasks\\"))
 }
 

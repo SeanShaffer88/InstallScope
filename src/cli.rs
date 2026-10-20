@@ -3,6 +3,7 @@
 use installscope_core::backup::{list_backups, restore_backup, BackupWriter};
 use installscope_core::model::{human_size, InstallLog};
 use installscope_core::platform::{self, Registry};
+use installscope_core::refcount::{annotate_plan, RefLabel, ReferenceIndex};
 use installscope_core::revert::{build_plan, execute_plan, ExecOptions};
 use installscope_core::revert::{residue, residue_markdown};
 use installscope_core::snapshot::{
@@ -1480,7 +1481,27 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 .ok_or_else(|| anyhow::anyhow!("missing log id"))?;
             let st = store()?;
             let log = st.load_log(id)?;
-            let plan = build_plan(&log.changes, reg.as_ref());
+            let mut plan = build_plan(&log.changes, reg.as_ref());
+            // Cross-program reference counting: items other programs'
+            // logs also claim, or no log mentions, are not auto-selected.
+            let index = ReferenceIndex::build(&st.list_logs());
+            let removing: std::collections::BTreeSet<String> =
+                [log.id.clone()].into_iter().collect();
+            let labels = annotate_plan(&mut plan, &index, &removing);
+            if let Some(line) =
+                index.coverage_line(programs::list_programs(reg.as_ref(), false).len())
+            {
+                println!("{line}");
+            }
+            for (item, label) in plan.items.iter().zip(&labels) {
+                if !matches!(label, RefLabel::OnlyThisProgram) {
+                    println!(
+                        "[refs] not selected: {} ({})",
+                        item.action.describe(),
+                        label.text()
+                    );
+                }
+            }
             let opts = ExecOptions {
                 remove_unlogged: has(&args, "--remove-unlogged"),
                 dry_run: has(&args, "--dry-run"),
