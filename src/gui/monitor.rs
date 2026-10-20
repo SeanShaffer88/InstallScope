@@ -76,6 +76,36 @@ impl MonitorState {
     }
 }
 
+/// Note under the Installer Decrapifier checklist in Monitor Review:
+/// what happens to the ticked components when the log is saved, stated
+/// for the backup configuration actually in force. The save job honors
+/// `Settings::backup_enabled()` — with backups off nothing is backed
+/// up, so the note must warn that the strike cannot be undone instead
+/// of claiming a backup (audit P1-4).
+fn strike_note(backup_on: bool) -> String {
+    if backup_on {
+        t("Ticked items are removed when you save the log, and backed up first, so the removal can be undone from the Backups page.")
+    } else {
+        t("Backups are off in Settings: ticked items are removed when you save the log without a backup, so the removal cannot be undone.")
+    }
+}
+
+/// Body and action for the confirmation Monitor Review's Discard
+/// button asks for (audit P1-2). Discarding deletes the only record of
+/// what the install changed — the reviewed log was never saved, and
+/// the pending session with its "before" snapshot is cleared — so the
+/// click routes through `App::ask` with this text and never discards
+/// directly.
+fn discard_prompt(name: &str) -> (String, Confirm) {
+    (
+        tf(
+            "The only record of everything {name} installed will be deleted, including the saved \"before\" snapshot. {name} stays installed, but without this log InstallScope cannot remove exactly what the install added, and the install cannot be undone from it.",
+            &[("name", name.to_string())],
+        ),
+        Confirm::DiscardReview,
+    )
+}
+
 impl App {
     pub fn start_install_and_monitor(&mut self, ctx: &egui::Context) {
         if self.monitor.is_active() {
@@ -476,6 +506,10 @@ impl App {
         }
         let model_url = self.settings.local_model_url.clone();
         let model_name = self.settings.local_model_name.clone();
+        // Captured as the review renders (the save job captures it again
+        // at click time), so the strike note below states the backup
+        // configuration that will actually apply.
+        let backup_on = self.settings.backup_enabled();
         let Some(log) = &mut self.monitor.review else {
             return;
         };
@@ -606,10 +640,11 @@ impl App {
                     if !self.monitor.decrap_note.is_empty() {
                         theme::warning_banner(ui, self.monitor.decrap_note.clone());
                     }
-                    small_muted(
-                        ui,
-                        t("Ticked items are removed when you save the log, and backed up first."),
-                    );
+                    if backup_on {
+                        small_muted(ui, strike_note(true));
+                    } else {
+                        theme::warning_banner(ui, strike_note(false));
+                    }
                 });
             }
         }
@@ -650,6 +685,9 @@ impl App {
                 );
             });
         ui.separator();
+        // The name as reviewed (it is editable above), for the Discard
+        // confirmation text.
+        let log_name = log.name.clone();
         let mut save = false;
         let mut discard = false;
         let mut keep = false;
@@ -680,7 +718,8 @@ impl App {
         if save && self.monitor.save_job.is_none() {
             let mut log = self.monitor.review.take().unwrap();
             let store = self.store.clone();
-            // Struck background components go first (backed up), unless
+            // Struck background components go first (backed up first
+            // when backups are on), unless
             // this is a trial being undone, which removes everything anyway.
             let chosen: Vec<Component> = if self.monitor.trial {
                 Vec::new()
@@ -753,7 +792,11 @@ impl App {
                 }
             }));
         } else if discard {
-            self.monitor.cancel(&self.store);
+            // Never discard straight from the click: ask first, with
+            // what will be lost stated (audit P1-2). Confirming runs
+            // the same monitor.cancel() as before via run_confirmed.
+            let (body, action) = discard_prompt(&log_name);
+            self.ask("Discard install log?", body, "Discard", action);
         }
     }
 }
@@ -775,5 +818,49 @@ impl App {
         flow.logs_to_delete = vec![log.id.clone()];
         flow.names = vec![log.name.clone()];
         self.open_removal(flow);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{discard_prompt, strike_note, Confirm};
+
+    // Audit P1-4: the Monitor Review strike note must describe the
+    // backup configuration actually in force — the save job honors
+    // Settings::backup_enabled(), so with backups off the old
+    // unconditional "backed up first" line was false.
+
+    #[test]
+    fn strike_note_only_claims_a_backup_when_backups_are_on() {
+        let on = strike_note(true);
+        assert!(on.contains("backed up first"), "{on}");
+        // The undo path is named.
+        assert!(on.contains("Backups page"), "{on}");
+        let off = strike_note(false);
+        assert!(off.contains("Backups are off"), "{off}");
+        assert!(off.contains("without a backup"), "{off}");
+        assert!(off.contains("cannot be undone"), "{off}");
+        assert!(!off.contains("backed up first"), "{off}");
+    }
+
+    // Audit P1-2: Discard never runs straight from the click; it asks
+    // through the confirmation system, and the text states what will
+    // be lost.
+
+    #[test]
+    fn discard_prompt_asks_and_states_what_will_be_lost() {
+        let (body, action) = discard_prompt("Foo Player");
+        // The click routes to the DiscardReview confirmation, whose
+        // classification (asks per the user's setting, dialog starts
+        // on Cancel) is pinned in app.rs's confirm_tests.
+        assert!(matches!(action, Confirm::DiscardReview));
+        assert!(body.contains("Foo Player"), "{body}");
+        assert!(body.contains("only record"), "{body}");
+        assert!(body.contains("stays installed"), "{body}");
+        assert!(
+            body.contains("cannot remove exactly what the install added"),
+            "{body}"
+        );
+        assert!(body.contains("cannot be undone"), "{body}");
     }
 }
