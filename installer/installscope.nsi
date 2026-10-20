@@ -1,5 +1,5 @@
 ; InstallScope installer (NSIS 3, Unicode)
-; Copyright (C) 2026 Sean Shaffer — GPLv3
+; Copyright (C) 2026 Sean Shaffer — MIT
 ;
 ; Build:  makensis -DVERSION=0.1.0 -DEXE=path\to\InstallScope.exe installer\installscope.nsi
 ; Output: InstallScope-Setup-<VERSION>.exe next to this script (or -DOUTDIR=...)
@@ -34,7 +34,7 @@ BrandingText "${APP} ${VERSION} · © ${PUBLISHER}"
 VIProductVersion "${VERSION}.0"
 VIAddVersionKey /LANG=1033 "ProductName" "${APP}"
 VIAddVersionKey /LANG=1033 "CompanyName" "${PUBLISHER}"
-VIAddVersionKey /LANG=1033 "LegalCopyright" "© 2026 ${PUBLISHER} (GPLv3)"
+VIAddVersionKey /LANG=1033 "LegalCopyright" "© 2026 ${PUBLISHER} (MIT)"
 VIAddVersionKey /LANG=1033 "FileDescription" "${APP} Setup"
 VIAddVersionKey /LANG=1033 "FileVersion" "${VERSION}"
 VIAddVersionKey /LANG=1033 "ProductVersion" "${VERSION}"

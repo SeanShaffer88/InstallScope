@@ -1,5 +1,5 @@
 ; InstallScope PortableApps.com Format installer
-; Copyright (C) 2026 Sean Shaffer. GPLv3: free software, no warranty.
+; Copyright (C) 2026 Sean Shaffer. MIT License: free software, no warranty.
 ;
 ; Installs a PortableApps.com Format package the way PortableApps.com
 ; installers do: into <destination>\<AppID>, keeping Data on upgrades and

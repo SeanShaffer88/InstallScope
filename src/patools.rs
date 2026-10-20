@@ -305,7 +305,7 @@ pub fn build_launcher(tc: &Toolchain, pkg: &Path) -> Result<PathBuf> {
     Ok(out)
 }
 
-/// InstallScope's installer script (GPLv3): installs a PortableApps.com Format
+/// InstallScope's installer script (MIT): installs a PortableApps.com Format
 /// package like PortableApps.com installers do. It honours /DESTINATION=
 /// and /AUTOCLOSE= from the PortableApps.com Platform and /S, keeps Data on
 /// upgrades and replaces App and Other.
@@ -358,7 +358,7 @@ pub fn build_installer(tc: &Toolchain, pkg: &Path, work: &Path) -> Result<PathBu
     Ok(out)
 }
 
-/// InstallScope's silent setup script (GPLv3): one file that redeploys a
+/// InstallScope's silent setup script (MIT): one file that redeploys a
 /// repackaged installation without questions.
 pub const SILENT_SETUP_NSI: &str = include_str!("silent_setup.nsi");
 

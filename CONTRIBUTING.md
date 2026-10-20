@@ -16,4 +16,4 @@ Open an issue with: Windows version, InstallScope version (Help → About), what
 See [docs/TRANSLATING.md](docs/TRANSLATING.md).
 
 ## License
-By contributing you agree that your contributions are licensed under the GNU GPL v3 or later.
+By contributing you agree that your contributions are licensed under the MIT License.

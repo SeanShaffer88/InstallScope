@@ -1,5 +1,5 @@
 ; InstallScope silent setup
-; Copyright (C) 2026 Sean Shaffer. GPLv3: free software, no warranty.
+; Copyright (C) 2026 Sean Shaffer. MIT License: free software, no warranty.
 ;
 ; One file that redeploys a repackaged installation without any questions:
 ; it unpacks the package (files, install.reg, install.ps1, uninstall.ps1),
