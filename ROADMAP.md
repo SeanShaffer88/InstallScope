@@ -19,8 +19,8 @@ bounded, tested workflow rather than a broad rewrite.
   Store-app uninstalls, reviewed leftover cleanup, analysis-only manual entries,
   and sequential batch uninstall with a separate cleanup review per program.
   Restore-point integration and full-flow parity remain.
-- **Window-targeted program identification** — a Revo Hunter Mode-inspired
-  picker is prototyped in the native preview. Validate it in the full
+- **Window-targeted program identification** — a picker is prototyped in the
+  native preview (point at a program's window to identify it). Validate it in the full
   production interface; match using a unique executable-path/install-location
   relationship, never a window title, and do not trigger actions automatically.
 - **Browser extension inventory** — group extensions by browser and profile,
@@ -144,19 +144,17 @@ bounded, tested workflow rather than a broad rewrite.
 
 ## Competitive fit
 
-- **Already covered; avoid duplication:** Total Uninstall and Revo emphasize
-  installed-program analysis, monitored installs, leftovers, forced removal,
-  and batch uninstall—workflows InstallScope already has. Keep investment on
-  reliability, review, and the native UI migration rather than parallel tools.
-- **Distinct Revo feature:** window-targeted identification is prototyped above.
+- **Already covered; avoid duplication:** installed-program analysis, monitored
+  installs, leftovers, forced removal, and batch uninstall are workflows
+  InstallScope already has. Keep investment on reliability, review, and the
+  native UI migration rather than parallel tools.
+- **Window-targeted identification** is prototyped above.
   Browser-extension inventory is a separate, reversible follow-on, not a
   browser-cleaning bundle.
-- **Auslogics Windows Slimmer:** its official
-  [feature page](https://www.auslogics.com/en/software/windows-slimmer/)
-  describes reviewed junk and update cleanup, Rescue Center restore, and
-  Compact OS. Prefer extending InstallScope's existing review/restore patterns for
-  relevant cleanup; defer Compact OS and secure deletion, which broaden scope
-  and carry substantially higher system/data risk.
+- **Reviewed junk and update cleanup:** extend InstallScope's existing
+  review/restore patterns for the relevant cleanup; defer Compact OS and
+  secure deletion, which broaden scope and carry substantially higher
+  system/data risk.
 
 ## Later
 
