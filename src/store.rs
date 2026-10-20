@@ -71,6 +71,10 @@ impl Store {
     pub fn cache_path(&self) -> PathBuf {
         self.root.join("cache.json")
     }
+    /// Autostart Gatekeeper state: the baseline and the review queue.
+    pub fn gatekeeper_path(&self) -> PathBuf {
+        self.root.join("gatekeeper.json")
+    }
 
     pub fn snapshots_dir(&self) -> PathBuf {
         self.root.join("snapshots")
