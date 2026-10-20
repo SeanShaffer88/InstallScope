@@ -53,6 +53,42 @@ pub enum Confirm {
     DeleteRestorePoint(u32),
 }
 
+impl Confirm {
+    /// Actions that always ask, even when the user turned confirmations off
+    /// in Advanced mode: restoring the whole PC (with a restart), deleting a
+    /// backup, and deep cleaning are hard or impossible to undo, so the
+    /// "Ask before deleting things" setting must not silence them.
+    pub fn always_confirm(&self) -> bool {
+        matches!(
+            self,
+            Confirm::RestoreTo(_) | Confirm::DeleteBackup(_) | Confirm::DeepClean(_)
+        )
+    }
+
+    /// Actions whose confirm button must not start focused in the dialog,
+    /// so a stray Enter cannot run them: anything that deletes, restores,
+    /// restarts, cleans or resets. The dialog starts on Cancel for these;
+    /// benign actions keep starting on the confirm button.
+    pub fn is_destructive(&self) -> bool {
+        matches!(
+            self,
+            Confirm::DeleteLog(_)
+                | Confirm::RestoreBackup(_)
+                | Confirm::DeleteBackup(_)
+                | Confirm::CleanJunk
+                | Confirm::DeleteStartup(_)
+                | Confirm::DeleteTask(_)
+                | Confirm::ResetSettings
+                | Confirm::DeepClean(_)
+                | Confirm::RestoreTo(_)
+                | Confirm::DeleteRestorePoint(_)
+                // Turning System Protection off makes Windows delete every
+                // existing restore point; turning it on is harmless.
+                | Confirm::SetProtection(false)
+        )
+    }
+}
+
 pub struct ConfirmDialog {
     pub title: String,
     pub body: String,
@@ -300,7 +336,7 @@ impl App {
     }
 
     pub fn ask(&mut self, title: &str, body: String, ok: &str, action: Confirm) {
-        if !self.settings.confirm_enabled() {
+        if !self.settings.must_confirm(action.always_confirm()) {
             self.run_confirmed(action);
             return;
         }
@@ -952,6 +988,7 @@ impl App {
 
         if let Some(c) = &self.confirm {
             let (title, body, ok) = (c.title.clone(), c.body.clone(), c.ok.clone());
+            let destructive = c.action.is_destructive();
             let resp = egui::Modal::new(egui::Id::new("confirm")).show(ctx, |ui| {
                 ui.set_max_width(440.0);
                 ui.heading(title);
@@ -961,15 +998,24 @@ impl App {
                 let mut choice = None;
                 ui.horizontal(|ui| {
                     let r = theme::primary_button(ui, ok);
-                    // Keyboard users start on the confirm button: Enter accepts,
-                    // Tab moves to Cancel, Esc cancels.
+                    let cancel = ui.button(t("Cancel"));
+                    // Keyboard users start on the safe button. Destructive
+                    // actions start on Cancel, so a stray Enter cannot run
+                    // them; Tab still reaches the action button and Enter
+                    // works there, and Esc cancels. Benign actions start on
+                    // the confirm button: Enter accepts, Tab moves to
+                    // Cancel, Esc cancels.
                     if ui.memory(|m| m.focused().is_none()) {
-                        r.request_focus();
+                        if destructive {
+                            cancel.request_focus();
+                        } else {
+                            r.request_focus();
+                        }
                     }
                     if r.clicked() {
                         choice = Some(true);
                     }
-                    if ui.button(t("Cancel")).clicked() {
+                    if cancel.clicked() {
                         choice = Some(false);
                     }
                 });
@@ -1581,5 +1627,52 @@ impl eframe::App for App {
 
     fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
         [17.0 / 255.0, 17.0 / 255.0, 19.0 / 255.0, 1.0]
+    }
+}
+
+#[cfg(test)]
+mod confirm_tests {
+    use super::Confirm;
+    use installscope_core::slimmer::DeepItem;
+
+    #[test]
+    fn only_the_irreversible_three_always_confirm() {
+        assert!(Confirm::RestoreTo(1).always_confirm());
+        assert!(Confirm::DeleteBackup("b".into()).always_confirm());
+        assert!(Confirm::DeepClean(DeepItem::ComponentStore).always_confirm());
+        // Everything else follows the user's confirmation setting.
+        assert!(!Confirm::DeleteLog("l".into()).always_confirm());
+        assert!(!Confirm::RestoreBackup("b".into()).always_confirm());
+        assert!(!Confirm::CleanJunk.always_confirm());
+        assert!(!Confirm::DeleteStartup(0).always_confirm());
+        assert!(!Confirm::DeleteTask(0).always_confirm());
+        assert!(!Confirm::ResetSettings.always_confirm());
+        assert!(!Confirm::CancelMonitoring.always_confirm());
+        assert!(!Confirm::SetProtection(false).always_confirm());
+        assert!(!Confirm::SetProtection(true).always_confirm());
+        assert!(!Confirm::DeleteRestorePoint(1).always_confirm());
+    }
+
+    #[test]
+    fn destructive_actions_start_on_cancel() {
+        for action in [
+            Confirm::DeleteLog("l".into()),
+            Confirm::RestoreBackup("b".into()),
+            Confirm::DeleteBackup("b".into()),
+            Confirm::CleanJunk,
+            Confirm::DeleteStartup(0),
+            Confirm::DeleteTask(0),
+            Confirm::ResetSettings,
+            Confirm::DeepClean(DeepItem::RestorePoints),
+            Confirm::RestoreTo(1),
+            Confirm::DeleteRestorePoint(1),
+            // Turning protection off deletes every restore point.
+            Confirm::SetProtection(false),
+        ] {
+            assert!(action.is_destructive(), "{action:?}");
+        }
+        // Benign actions keep starting on the confirm button.
+        assert!(!Confirm::CancelMonitoring.is_destructive());
+        assert!(!Confirm::SetProtection(true).is_destructive());
     }
 }
