@@ -23,6 +23,7 @@ pub mod difftree;
 pub mod extinv;
 pub mod features;
 pub mod fswalk;
+pub mod history;
 pub mod i18n;
 pub mod json;
 pub mod leftovers;
