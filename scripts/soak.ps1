@@ -48,7 +48,7 @@ $installers = @(
      url = 'https://github.com/jrsoftware/issrc/releases/download/is-6_4_3/innosetup-6.4.3.exe' }
 )
 
-New-Item -ItemType Directory -Force $Work, "$Work\cache", "$Work\app\ExpungeData" | Out-Null
+New-Item -ItemType Directory -Force $Work, "$Work\cache", "$Work\app\InstallScopeData" | Out-Null
 $exe = "$Work\app\InstallScope.exe"
 Copy-Item $InstallScope $exe -Force
 # Portable mode keeps logs and backups in the work folder.
@@ -64,7 +64,7 @@ New-Item "$Work\app\portable" -ItemType File -Force | Out-Null
     @{ path = '%PUBLIC%\Desktop'; recursive = $false },
     @{ path = '%USERPROFILE%\Desktop'; recursive = $false }
   )
-} | ConvertTo-Json -Depth 5 | Set-Content "$Work\app\ExpungeData\settings.json"
+} | ConvertTo-Json -Depth 5 | Set-Content "$Work\app\InstallScopeData\settings.json"
 
 foreach ($i in $installers) {
   $out = "$Work\cache\$($i.file)"
@@ -134,7 +134,7 @@ while ((Get-Date) -lt $deadline -and $failures.Count -eq 0) {
       }
     }
     # The log has served its purpose; removing it keeps the store small.
-    Remove-Item "$Work\app\ExpungeData\logs\$($log.id).json" -ErrorAction SilentlyContinue
+    Remove-Item "$Work\app\InstallScopeData\logs\$($log.id).json" -ErrorAction SilentlyContinue
   }
 
   $auto = Get-AutoLogs
@@ -150,7 +150,7 @@ while ((Get-Date) -lt $deadline -and $failures.Count -eq 0) {
     $handles = $watch.HandleCount
     $privMb = [math]::Round($watch.PrivateMemorySize64 / 1MB, 1)
   }
-  $dataMb = [math]::Round(((Get-ChildItem "$Work\app\ExpungeData" -Recurse -File | Measure-Object Length -Sum).Sum) / 1MB, 1)
+  $dataMb = [math]::Round(((Get-ChildItem "$Work\app\InstallScopeData" -Recurse -File | Measure-Object Length -Sum).Sum) / 1MB, 1)
 
   if ($cycle -eq $WarmupCycles) { $baseline = @{ handles = $handles; mb = $privMb } }
   if ($baseline -and -not $watch.HasExited) {

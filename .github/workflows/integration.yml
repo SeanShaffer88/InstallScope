@@ -98,7 +98,7 @@ jobs:
         if: env.SELECTED == 'true'
         shell: pwsh
         run: |
-          New-Item -ItemType Directory it, it/ExpungeData | Out-Null
+          New-Item -ItemType Directory it, it/InstallScopeData | Out-Null
           Copy-Item target/release/installscope.exe it/InstallScope.exe
           New-Item it/portable -ItemType File | Out-Null
           # Extra folders this installer type writes to (AppData, Package Cache).
@@ -115,7 +115,7 @@ jobs:
               @{ path = '%PUBLIC%\Desktop'; recursive = $false },
               @{ path = '%USERPROFILE%\Desktop'; recursive = $false }
             )
-          } | ConvertTo-Json -Depth 5 | Set-Content it/ExpungeData/settings.json
+          } | ConvertTo-Json -Depth 5 | Set-Content it/InstallScopeData/settings.json
       - name: Download installer
         if: env.SELECTED == 'true'
         id: download

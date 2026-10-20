@@ -22,8 +22,8 @@ SetCompressor /SOLID lzma
 !define APP "InstallScope"
 !define PUBLISHER "Sean Shaffer"
 !define URL "https://github.com/SeanShaffer88/InstallScope"
-; Keep the original key so an existing Expunge installation is upgraded in place.
-!define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\Expunge"
+; Breaking rename: the Expunge-era uninstall key is not reused.
+!define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\InstallScope"
 
 Name "${APP} ${VERSION}"
 OutFile "${OUTDIR}\InstallScope-Setup-${VERSION}.exe"
@@ -46,9 +46,9 @@ VIAddVersionKey /LANG=1033 "ProductVersion" "${VERSION}"
 !include "WinVer.nsh"
 
 !macro AddShellVerb EXT
-  WriteRegStr HKLM "Software\Classes\SystemFileAssociations\${EXT}\shell\ExpungeInstall" "MUIVerb" "Install with InstallScope"
-  WriteRegStr HKLM "Software\Classes\SystemFileAssociations\${EXT}\shell\ExpungeInstall" "Icon" '"$INSTDIR\InstallScope.exe",0'
-  WriteRegStr HKLM "Software\Classes\SystemFileAssociations\${EXT}\shell\ExpungeInstall\command" "" '"$INSTDIR\InstallScope.exe" --monitor-install "%1"'
+  WriteRegStr HKLM "Software\Classes\SystemFileAssociations\${EXT}\shell\InstallScopeInstall" "MUIVerb" "Install with InstallScope"
+  WriteRegStr HKLM "Software\Classes\SystemFileAssociations\${EXT}\shell\InstallScopeInstall" "Icon" '"$INSTDIR\InstallScope.exe",0'
+  WriteRegStr HKLM "Software\Classes\SystemFileAssociations\${EXT}\shell\InstallScopeInstall\command" "" '"$INSTDIR\InstallScope.exe" --monitor-install "%1"'
 !macroend
 
 !define MUI_ICON "..\assets\installscope.ico"
@@ -99,8 +99,6 @@ FunctionEnd
 Section "InstallScope" SecMain
   SectionIn RO
   SetOutPath "$INSTDIR"
-  Delete "$SMPROGRAMS\Expunge.lnk"
-  Delete "$DESKTOP\Expunge.lnk"
   File "/oname=InstallScope.exe" "${EXE}"
   !ifdef TOOLS
     ; The PortableApps.com Launcher (official source and its NSIS compiler)
@@ -144,7 +142,6 @@ SectionEnd
 
 Section "Uninstall"
   Delete "$INSTDIR\InstallScope.exe"
-  Delete "$INSTDIR\Expunge.exe"
   Delete "$INSTDIR\LICENSE.txt"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir /r "$INSTDIR\tools\PortableApps.comLauncher"
@@ -153,8 +150,8 @@ Section "Uninstall"
   Delete "$SMPROGRAMS\${APP}.lnk"
   Delete "$DESKTOP\${APP}.lnk"
   DeleteRegKey HKLM "${UNINST_KEY}"
-  DeleteRegKey HKLM "Software\Classes\SystemFileAssociations\.exe\shell\ExpungeInstall"
-  DeleteRegKey HKLM "Software\Classes\SystemFileAssociations\.msi\shell\ExpungeInstall"
-  ; Install logs and backups in %LOCALAPPDATA%\Expunge are kept for compatibility
-  ; and may be needed to undo earlier removals.
+  DeleteRegKey HKLM "Software\Classes\SystemFileAssociations\.exe\shell\InstallScopeInstall"
+  DeleteRegKey HKLM "Software\Classes\SystemFileAssociations\.msi\shell\InstallScopeInstall"
+  ; Install logs and backups in %LOCALAPPDATA%\InstallScope are kept on uninstall
+  ; and may be needed to undo earlier removals. Expunge-era data is left untouched.
 SectionEnd

@@ -8,7 +8,7 @@ use crate::platform::run_hidden;
 use anyhow::{anyhow, Result};
 
 /// Task name in Task Scheduler (inside an "InstallScope" folder).
-pub const TASK: &str = "Expunge\\Junk cleaning";
+pub const TASK: &str = "InstallScope\\Junk cleaning";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Frequency {

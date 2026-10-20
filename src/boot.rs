@@ -160,7 +160,7 @@ pub fn parse_events(xml: &str) -> BootInfo {
 }
 
 /// Task Scheduler folder for delayed programs.
-pub const DELAY_FOLDER: &str = "Expunge\\Delayed";
+pub const DELAY_FOLDER: &str = "InstallScope\\Delayed";
 
 fn task_name(entry_name: &str) -> String {
     let safe: String = entry_name
@@ -315,8 +315,8 @@ mod tests {
         assert!(x.contains("<Arguments>--min</Arguments>"));
         assert!(x.contains("<UserId>PC\\alex</UserId>"));
         assert!(!task_xml("a.exe", "", "u", 60).contains("<Arguments>"));
-        let csv = "\"\\Expunge\\Delayed\\Spotify\",\"N/A\",\"Ready\"\r\n\"\\Microsoft\\Other\",\"x\",\"Ready\"\r\n\"\\Expunge\\Delayed\\Discord\",\"N/A\",\"Ready\"";
+        let csv = "\"\\InstallScope\\Delayed\\Spotify\",\"N/A\",\"Ready\"\r\n\"\\Microsoft\\Other\",\"x\",\"Ready\"\r\n\"\\InstallScope\\Delayed\\Discord\",\"N/A\",\"Ready\"";
         assert_eq!(parse_task_list(csv), vec!["Discord", "Spotify"]);
-        assert_eq!(task_name("a/b"), "Expunge\\Delayed\\a_b");
+        assert_eq!(task_name("a/b"), "InstallScope\\Delayed\\a_b");
     }
 }

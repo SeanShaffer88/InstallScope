@@ -9,7 +9,7 @@ use crate::platform::{run_hidden, Registry};
 use anyhow::{anyhow, Result};
 use std::collections::BTreeSet;
 
-pub const TASK: &str = "Expunge\\Auto-monitoring";
+pub const TASK: &str = "InstallScope\\Auto-monitoring";
 /// Tag given to logs recorded in the background.
 pub const TAG: &str = "auto";
 

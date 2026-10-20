@@ -50,7 +50,7 @@ USAGE:
                                             (default 60) and list what changed
                                             on its own; --apply adds it to the
                                             exclusions
-  installscope transfer export <out.expunge> <program>...
+  installscope transfer export <out.installscope> <program>...
                                             Pack programs (by name) with their files
                                             and settings to move to another PC
   installscope transfer check <package>          Check a package against this PC
