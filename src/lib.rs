@@ -47,6 +47,7 @@ pub mod repackage;
 pub mod report;
 pub mod restore;
 pub mod revert;
+pub mod rewind;
 pub mod schedule;
 pub mod settings;
 pub mod shell;
