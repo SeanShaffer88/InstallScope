@@ -300,7 +300,8 @@ installscope logs [--group G] [--tag T] [--json]
 installscope tag <log-id> [--group G] [--tags a,b]
 installscope programs [--all] [--trust] [--json]
 installscope verify <file>                     Check a file's digital signature
-installscope revert <log-id> [--dry-run] [--remove-unlogged] [--no-backup] [--recycle] [--close-programs] [--restart-explorer] [--keep-log]
+installscope revert <log-id> [--dry-run] [--remove-unlogged] [--no-backup] [--recycle] [--close-programs] [--restart-explorer] [--keep-log] [--yes]
+installscope rewind <log-id> --list | --capture [--before] | --to <state> [--dry-run] [--yes]
 installscope export <log-id> <html|json|reg|ps1|xml> <output-file>
 installscope repackage <log-id> <folder> [--no-setup]
 installscope merge <log-id> <log-id>... [--name NAME]
@@ -311,31 +312,40 @@ installscope transfer import <package> [--overwrite]
 installscope export <log-id> portable <launcher.ini>
 installscope portable-build <installer> --name NAME [--version V] [--publisher P] [--category C] [--silent] [--out DIR] [--here] [--defaults] [--no-prompt] [--no-compile]
 installscope add-program <folder|program.exe> [--name NAME]
-installscope components <log-id> [--json] [--ask-model] [--strike]
+installscope components <log-id> [--json] [--ask-model] [--strike] [--yes]
 installscope orphans [--json]
-installscope uninstall <name>... [--silent] [--leftovers safe|none] [--dry-run]
-installscope clean [--categories a,b] [--list] [--dry-run]
+installscope uninstall <name>... [--silent] [--leftovers safe|none] [--dry-run] [--yes]
+installscope clean [--categories a,b] [--list] [--dry-run] [--yes]
+installscope clean --scheduled [--categories a,b]
 installscope schedule-clean daily|weekly|monthly|off [--categories a,b]
 installscope startup [--json]
 installscope startup enable|disable <name>
+installscope history [--since YYYY-MM-DD] [--json]
+installscope slowdown [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--json]
+installscope gatekeeper [--json] | scan | allow <id> | remove <id> [--yes] | enable|disable
 installscope watch
 installscope check-clean <log-id>
 installscope restore-point [list]
 installscope restore-point create [DESCRIPTION]
-installscope restore-point delete <number>
+installscope restore-point delete <number> [--yes]
 installscope restore-point rollback <number> --yes
 installscope backups
-installscope restore <backup-id>
+installscope restore <backup-id> [--yes]
+installscope pa-capture <job.json>
 installscope --version | --help
 ```
 
-Exit codes: 0 success, 1 error, 2 finished with failures / findings.
+Exit codes: 0 success, 1 error (including "not confirmed"), 2 finished with failures / findings.
+
+**Confirmations.** Commands that remove or overwrite things — `revert`, `uninstall`, `clean`, `components --strike`, `restore`, `transfer import`, `gatekeeper remove`, `restore-point delete` and `restore-point rollback`, and `rewind --to` — ask before they act. In a terminal they say exactly what will happen (targets, whether a backup is taken, what cannot be undone) and wait for a typed `yes`. Without a terminal (scripts, pipelines) they refuse, change nothing and exit 1, unless `--yes` is passed. Read-only commands never ask, and `--dry-run` previews never ask. The one exception is `clean --scheduled`, the Task Scheduler entry point created by `schedule-clean`: the schedule you set is itself the standing instruction, so it never asks.
+
+**Help.** Every command documents itself: `installscope <command> --help` prints its flags, what it changes, and how it confirms, then exits without doing anything. `installscope help <command>` works too.
 
 For installer quality checks in a build pipeline:
 
 ```
 installscope monitor --name MyApp --no-prompt --json -- dist\MyApp-Setup.exe /S
-installscope revert <log-id> --keep-log
+installscope revert <log-id> --keep-log --yes
 installscope check-clean <log-id>            # exits with code 2 if anything was left behind
 ```
 
