@@ -1,32 +1,45 @@
-//! InstallScope's look: a single dark theme with a red accent and red window border.
+//! InstallScope's look: the Command Deck theme — a dense operational status
+//! board on a pure black/red identity. Palette: window #000000, sidebar
+//! #050505, cards #101010, hairline rules #242424; primary red #6B0700 is
+//! reserved for the primary action, attention rules and the selected nav
+//! indicator; red text #E5484D reads at ≥4.5:1 on black.
 
 use egui::{Color32, CornerRadius, Stroke, Visuals};
 
+/// Primary red. Reserved for the primary action of a view, tiles that need
+/// attention (a 3px top rule), and the selected nav indicator.
 pub const ACCENT: Color32 = Color32::from_rgb(0x6B, 0x07, 0x00); // #6B0700
 pub const ACCENT_DIM: Color32 = Color32::from_rgb(0x4A, 0x05, 0x00);
-/// Lighter shade of the accent for red text and small icons on the dark
-/// background, where #6B0700 itself would be too dark to read.
-pub const ACCENT_TEXT: Color32 = Color32::from_rgb(0xE0, 0x5A, 0x45);
+/// Lighter shade of the accent for red text on the dark background, where
+/// #6B0700 itself would be too dark to read. #E5484D reaches ~5.4:1 on
+/// #000000 and ~4.9:1 on #101010.
+pub const ACCENT_TEXT: Color32 = Color32::from_rgb(0xE5, 0x48, 0x4D);
 /// Native window border colour (RGB).
 pub const BORDER_RGB: (u8, u8, u8) = (0x6B, 0x07, 0x00);
 
-pub const OK: Color32 = Color32::from_rgb(76, 201, 128);
-pub const WARN: Color32 = Color32::from_rgb(255, 170, 80);
+pub const OK: Color32 = Color32::from_rgb(0x3F, 0xB9, 0x50); // #3FB950
+pub const WARN: Color32 = Color32::from_rgb(0xD2, 0x99, 0x22); // #D29922
 pub const BAD: Color32 = ACCENT_TEXT;
-pub const MUTED: Color32 = Color32::from_rgb(168, 158, 163);
+/// Secondary text: #A8A8A8 reaches ~8.1:1 on #101010.
+pub const MUTED: Color32 = Color32::from_rgb(0xA8, 0xA8, 0xA8);
+/// Faintest text for non-essential meta (footers, section labels). #6E6E6E
+/// reaches only ~3.8:1 on #101010 / ~4.2:1 on #000000, so FAINT must never
+/// carry meaning that MUTED or TEXT should carry.
+pub const FAINT: Color32 = Color32::from_rgb(0x6E, 0x6E, 0x6E);
 pub const ADDED: Color32 = OK;
 pub const CHANGED: Color32 = WARN;
 pub const REMOVED: Color32 = BAD;
 
-pub const BG: Color32 = Color32::from_rgb(20, 17, 19);
-pub const SIDEBAR: Color32 = Color32::from_rgb(25, 21, 23);
-pub const CARD: Color32 = Color32::from_rgb(34, 29, 32);
+pub const BG: Color32 = Color32::from_rgb(0x00, 0x00, 0x00); // #000000
+pub const SIDEBAR: Color32 = Color32::from_rgb(0x05, 0x05, 0x05); // #050505
+pub const CARD: Color32 = Color32::from_rgb(0x10, 0x10, 0x10); // #101010
 const PANEL: Color32 = SIDEBAR;
-const WIDGET: Color32 = Color32::from_rgb(46, 40, 43);
-const HOVER: Color32 = Color32::from_rgb(60, 51, 55);
-pub const LINE: Color32 = Color32::from_rgb(52, 45, 48);
+const WIDGET: Color32 = Color32::from_rgb(0x1C, 0x1C, 0x1C);
+const HOVER: Color32 = Color32::from_rgb(0x2A, 0x2A, 0x2A);
+pub const LINE: Color32 = Color32::from_rgb(0x24, 0x24, 0x24); // #242424
 pub const NAV_SELECTED: Color32 = ACCENT;
-pub const TEXT: Color32 = Color32::from_rgb(236, 230, 233);
+/// Primary text: #F5F5F5 reaches ~17.4:1 on #101010.
+pub const TEXT: Color32 = Color32::from_rgb(0xF5, 0xF5, 0xF5);
 
 pub fn apply(ctx: &egui::Context, high_contrast: bool) {
     ctx.options_mut(|o| o.theme_preference = egui::ThemePreference::Dark);
@@ -34,9 +47,9 @@ pub fn apply(ctx: &egui::Context, high_contrast: bool) {
     v.override_text_color = Some(if high_contrast { Color32::WHITE } else { TEXT });
     v.window_fill = PANEL;
     v.panel_fill = BG;
-    v.faint_bg_color = Color32::from_rgb(22, 22, 25);
-    v.extreme_bg_color = Color32::from_rgb(12, 12, 14);
-    v.code_bg_color = Color32::from_rgb(30, 30, 34);
+    v.faint_bg_color = Color32::from_rgb(0x0A, 0x0A, 0x0A);
+    v.extreme_bg_color = Color32::from_rgb(0x00, 0x00, 0x00);
+    v.code_bg_color = Color32::from_rgb(0x10, 0x10, 0x10);
     v.hyperlink_color = ACCENT_TEXT;
     v.selection.bg_fill = ACCENT_DIM;
     // Selected text stays white so it is readable on the red highlight.
@@ -160,6 +173,32 @@ pub fn card<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
         .inner
 }
 
+/// A Command Deck panel: flat card with a 1px hairline border, no shadow.
+/// Use for Dashboard panels; other pages keep their existing frames.
+pub fn deck_panel<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    egui::Frame::new()
+        .fill(CARD)
+        .stroke(Stroke::new(1.0_f32, LINE))
+        .corner_radius(CornerRadius::same(6))
+        .inner_margin(egui::Margin::same(16))
+        .show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            add(ui)
+        })
+        .inner
+}
+
+/// A Command Deck section label: small, faint, uppercase. egui has no
+/// letter-spacing, so the deck's letterspacing is approximated with casing
+/// alone; the underlying string is unchanged.
+pub fn section_label(ui: &mut egui::Ui, text: impl Into<String>) -> egui::Response {
+    ui.label(
+        egui::RichText::new(text.into().to_uppercase())
+            .color(FAINT)
+            .size(11.0),
+    )
+}
+
 /// A red warning banner.
 pub fn warning_banner(ui: &mut egui::Ui, text: impl Into<String>) {
     egui::Frame::new()
@@ -224,7 +263,7 @@ pub fn nav_item_with_hint(
         painter.rect_filled(
             pill,
             CornerRadius::same(18),
-            Color32::from_rgb(44, 37, 40).gamma_multiply(hover),
+            Color32::from_rgb(22, 22, 22).gamma_multiply(hover),
         );
     }
     if sel > 0.0 {
