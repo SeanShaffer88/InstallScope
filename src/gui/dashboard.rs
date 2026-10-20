@@ -57,8 +57,10 @@ fn stat_tile(
 
 /// One quick-action row: icon, title, description, chevron. Like `stat_tile`,
 /// registered as a real button under a stable id so keyboard and screen
-/// reader users can reach and activate it, not just the mouse.
-fn action_row(ui: &mut egui::Ui, icon: &str, title: &str, desc: &str) -> bool {
+/// reader users can reach and activate it, not just the mouse. `explain` is
+/// the row's fuller explanation, attached with `a11y::explain` (hover text,
+/// the page's focus-follows line, and the screen-reader description).
+fn action_row(ui: &mut egui::Ui, icon: &str, title: &str, desc: &str, explain: &str) -> bool {
     let frame = egui::Frame::new()
         .fill(theme::CARD)
         .stroke(egui::Stroke::new(1.0_f32, theme::LINE))
@@ -86,6 +88,7 @@ fn action_row(ui: &mut egui::Ui, icon: &str, title: &str, desc: &str) -> bool {
         )
         .on_hover_cursor(egui::CursorIcon::PointingHand);
     super::a11y::button(&resp, &format!("{}. {}", t(title), t(desc)));
+    let resp = super::a11y::explain(resp, explain);
     resp.clicked()
 }
 
@@ -206,7 +209,7 @@ impl App {
                                 small_muted(ui, t("Finish monitoring when the installation is complete."));
                             });
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if theme::primary_button(ui, t("Go to Monitor")).clicked() {
+                                if super::a11y::explain(theme::primary_button(ui, t("Go to Monitor")), &t("Open the Monitor page for the installation being recorded. Finish monitoring there once the installation is complete.")).clicked() {
                                     self.tab = Tab::Monitor;
                                 }
                             });
@@ -251,21 +254,25 @@ impl App {
                             );
                         });
                     });
+                // The page's explanation line: keyboard and touch users
+                // read here what mouse users get as a tooltip (see
+                // a11y::explain).
+                super::a11y::focus_hint(ui, theme::MUTED);
                 ui.add_space(12.0);
 
                 let mut go: Option<(Tab, Option<super::programs::View>)> = None;
                 ui.columns(4, |cols| {
-                    if stat_tile(&mut cols[0], "programs", programs.to_string(), t("Programs installed"), theme::TEXT, false).clicked() {
+                    if super::a11y::explain(stat_tile(&mut cols[0], "programs", programs.to_string(), t("Programs installed"), theme::TEXT, false), &t("Open the Programs page: browse everything installed on this PC, and uninstall programs from there.")).clicked() {
                         go = Some((Tab::Programs, Some(super::programs::View::All)));
                     }
-                    if stat_tile(&mut cols[1], "monitored", monitored.to_string(), t("Monitored"), theme::TEXT, false).clicked() {
+                    if super::a11y::explain(stat_tile(&mut cols[1], "monitored", monitored.to_string(), t("Monitored"), theme::TEXT, false), &t("Open the Programs page showing only the installs InstallScope monitored. Their changes were recorded, so they can be removed precisely.")).clicked() {
                         go = Some((Tab::Programs, Some(super::programs::View::Monitored)));
                     }
                     let nc = if broken > 0 { theme::WARN } else { theme::TEXT };
-                    if stat_tile(&mut cols[2], "broken", broken.to_string(), t("Broken entries"), nc, broken > 0).clicked() {
+                    if super::a11y::explain(stat_tile(&mut cols[2], "broken", broken.to_string(), t("Broken entries"), nc, broken > 0), &t("Open the Programs page showing entries whose program files are missing. They are usually leftovers of programs removed another way, and can be cleaned up from there.")).clicked() {
                         go = Some((Tab::Programs, Some(super::programs::View::Broken)));
                     }
-                    if stat_tile(&mut cols[3], "backups", backups.to_string(), tf("Backups ({size})", &[("size", human_size(backup_bytes))]), theme::TEXT, false).clicked() {
+                    if super::a11y::explain(stat_tile(&mut cols[3], "backups", backups.to_string(), tf("Backups ({size})", &[("size", human_size(backup_bytes))]), theme::TEXT, false), &t("Open the Backups page: the backups InstallScope took before removals, ready to restore. This is where you undo a removal.")).clicked() {
                         go = Some((Tab::Backups, None));
                     }
                 });
@@ -279,21 +286,21 @@ impl App {
                 ui.add_space(16.0);
                 theme::section_label(ui, t("Quick actions"));
                 ui.add_space(6.0);
-                if action_row(ui, "📡", "Install a program with monitoring", "Record everything it changes so it can be removed precisely later") {
+                if action_row(ui, "📡", "Install a program with monitoring", "Record everything it changes so it can be removed precisely later", &t("Open the Monitor page and run an installer while InstallScope watches. Everything it changes is recorded, so it can be removed precisely later.")) {
                     self.tab = Tab::Monitor;
                     self.start_install_and_monitor(ctx);
                 }
                 ui.add_space(6.0);
-                if action_row(ui, "🗑", "Uninstall programs", "Remove programs and everything they leave behind") {
+                if action_row(ui, "🗑", "Uninstall programs", "Remove programs and everything they leave behind", &t("Open the Programs page to uninstall programs. You review everything before anything is removed, and removals are backed up unless backups are off in Settings.")) {
                     self.tab = Tab::Programs;
                 }
                 ui.add_space(6.0);
-                if action_row(ui, "🚀", "Speed up startup", "Choose which programs, services and tasks start with Windows") {
+                if action_row(ui, "🚀", "Speed up startup", "Choose which programs, services and tasks start with Windows", &t("Open the Startup page: choose which programs, services and tasks start with Windows. Anything you turn off there can be turned back on from the same page.")) {
                     self.tab = Tab::Startup;
                     self.on_tab_opened(ctx, Tab::Startup);
                 }
                 ui.add_space(6.0);
-                if action_row(ui, "✨", "Clean junk files", "Temporary files, caches and crash dumps") {
+                if action_row(ui, "✨", "Clean junk files", "Temporary files, caches and crash dumps", &t("Open the Junk Cleaner for temporary files, caches and crash dumps. You see exactly which files will be deleted and confirm before anything is removed.")) {
                     self.tab = Tab::Cleaner;
                 }
                 if self.settings.advanced_mode {
@@ -305,18 +312,19 @@ impl App {
                         "🔍",
                         "Find leftovers of removed programs",
                         "Includes clearly stale uninstall entries and other registrations pointing to missing files",
+                        &t("Scan for what programs that are already gone left behind: stale entries and registrations pointing to missing files. You review everything it finds before anything is removed."),
                     ) {
                         self.scan_orphans();
                     }
                 }
                 ui.add_space(6.0);
-                if action_row(ui, "⏪", "System Restore", "Create restore points or roll Windows back to an earlier state") {
+                if action_row(ui, "⏪", "System Restore", "Create restore points or roll Windows back to an earlier state", &t("Open the System Restore page: create a restore point, or roll Windows' system files and settings back to an earlier state. Your documents and photos are not part of a restore point.")) {
                     self.tab = Tab::Restore;
                 }
-                if action_row(ui, "🎒", "Make a portable app", "Turn a program's installer into a PortableApps.com package") {
+                if action_row(ui, "🎒", "Make a portable app", "Turn a program's installer into a PortableApps.com package", &t("Open the Setup Package Creator: turn a program's installer into a PortableApps.com package that runs without being installed.")) {
                     self.tab = Tab::Builder;
                 }
-                if action_row(ui, "🛡", "Remove bloatware", "Trials, promotions and pre-installed apps that came with this PC") {
+                if action_row(ui, "🛡", "Remove bloatware", "Trials, promotions and pre-installed apps that came with this PC", &t("Open Bloatware Shield: trials, promotions and pre-installed apps that came with this PC. You review and confirm before anything is removed.")) {
                     self.tab = Tab::Debloat;
                 }
 
@@ -360,7 +368,7 @@ impl App {
                         theme::deck_panel(ui, |ui| {
                             for (p, size, days) in wasters {
                                 ui.horizontal(|ui| {
-                                    if ui.link(RichText::new(&p.name).strong()).clicked() {
+                                    if super::a11y::explain(ui.link(RichText::new(&p.name).strong()), &t("Open the Programs page with this program selected. Nothing is removed — uninstalling starts there, with a review.")).clicked() {
                                         self.programs.selected = Some(p.key.clone());
                                         self.programs.filter.clear();
                                         self.tab = Tab::Programs;
@@ -378,7 +386,7 @@ impl App {
                             }
                             ui.horizontal(|ui| {
                                 small_muted(ui, tf("{size} in total", &[("size", installscope_core::model::human_size(total))]));
-                                if ui.button(t("Review and uninstall…")).clicked() {
+                                if super::a11y::explain(ui.button(t("Review and uninstall…")), &t("Start the uninstall wizard for every program listed above. You review everything before anything is removed, and removals are backed up unless backups are off in Settings.")).clicked() {
                                     let chosen: Vec<_> = wasters.iter().map(|w| w.0.clone()).collect();
                                     self.start_uninstall(chosen, false);
                                 }
@@ -403,7 +411,7 @@ impl App {
                         let last = recent.len().saturating_sub(1);
                         for (i, (id, name, created)) in recent.iter().enumerate() {
                             ui.horizontal(|ui| {
-                                if ui.link(RichText::new(name).strong()).clicked() {
+                                if super::a11y::explain(ui.link(RichText::new(name).strong()), &t("Open the Install Logs page with this install selected, to see everything it changed or to remove it precisely.")).clicked() {
                                     self.logs.selected = Some(id.clone());
                                     self.tab = Tab::Logs;
                                 }
@@ -475,6 +483,7 @@ mod tests {
                     "🗑",
                     "Uninstall programs",
                     "Remove programs and everything they leave behind",
+                    "Open the Programs page to uninstall programs.",
                 );
             });
         });
