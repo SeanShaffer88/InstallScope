@@ -47,7 +47,12 @@ pub enum Confirm {
     /// Run one deep (Windows) cleanup.
     DeepClean(installscope_core::slimmer::DeepItem),
     /// Apply the ticked Anti-Telemetry changes.
-    /// Remove the ticked pre-installed apps.
+    /// Remove the ticked pre-installed apps, deprovisioning the named
+    /// Store apps for new user accounts at the same time.
+    DeprovisionBloat(
+        Vec<String>,
+        Vec<installscope_core::programs::InstalledProgram>,
+    ),
     SetProtection(bool),
     RestoreTo(u32),
     DeleteRestorePoint(u32),
@@ -56,19 +61,23 @@ pub enum Confirm {
 impl Confirm {
     /// Actions that always ask, even when the user turned confirmations off
     /// in Advanced mode: restoring the whole PC (with a restart), deleting a
-    /// backup, and deep cleaning are hard or impossible to undo, so the
-    /// "Ask before deleting things" setting must not silence them.
+    /// backup, deep cleaning, and deprovisioning are hard or impossible to
+    /// undo, so the "Ask before deleting things" setting must not silence
+    /// them.
     pub fn always_confirm(&self) -> bool {
         matches!(
             self,
-            Confirm::RestoreTo(_) | Confirm::DeleteBackup(_) | Confirm::DeepClean(_)
+            Confirm::RestoreTo(_)
+                | Confirm::DeleteBackup(_)
+                | Confirm::DeepClean(_)
+                | Confirm::DeprovisionBloat(_, _)
         )
     }
 
     /// Actions whose confirm button must not start focused in the dialog,
     /// so a stray Enter cannot run them: anything that deletes, restores,
-    /// restarts, cleans or resets. The dialog starts on Cancel for these;
-    /// benign actions keep starting on the confirm button.
+    /// restarts, cleans, resets, or deprovisions. The dialog starts on
+    /// Cancel for these; benign actions keep starting on the confirm button.
     pub fn is_destructive(&self) -> bool {
         matches!(
             self,
@@ -82,6 +91,7 @@ impl Confirm {
                 | Confirm::DeepClean(_)
                 | Confirm::RestoreTo(_)
                 | Confirm::DeleteRestorePoint(_)
+                | Confirm::DeprovisionBloat(_, _)
                 // Turning System Protection off makes Windows delete every
                 // existing restore point; turning it on is harmless.
                 | Confirm::SetProtection(false)
@@ -362,6 +372,13 @@ impl App {
             Confirm::DeleteTask(i) => self.delete_task(i),
             Confirm::DisableExtension(key) => self.disable_extension(&key),
             Confirm::RestoreExtension(key) => self.restore_extension(&key),
+            Confirm::DeprovisionBloat(names, programs) => {
+                // The names ride with the wizard and are consumed only
+                // after those programs were actually removed; a cancelled
+                // wizard discards them unrun (see Wizard::deprovision).
+                self.start_uninstall_with_deprovision(programs, names);
+                self.debloat.items = None;
+            }
             Confirm::ResetSettings => {
                 let lang = self.settings.language.clone();
                 self.settings = Settings {
@@ -1636,10 +1653,11 @@ mod confirm_tests {
     use installscope_core::slimmer::DeepItem;
 
     #[test]
-    fn only_the_irreversible_three_always_confirm() {
+    fn only_the_irreversible_actions_always_confirm() {
         assert!(Confirm::RestoreTo(1).always_confirm());
         assert!(Confirm::DeleteBackup("b".into()).always_confirm());
         assert!(Confirm::DeepClean(DeepItem::ComponentStore).always_confirm());
+        assert!(Confirm::DeprovisionBloat(vec!["a".into()], vec![]).always_confirm());
         // Everything else follows the user's confirmation setting.
         assert!(!Confirm::DeleteLog("l".into()).always_confirm());
         assert!(!Confirm::RestoreBackup("b".into()).always_confirm());
@@ -1666,6 +1684,7 @@ mod confirm_tests {
             Confirm::DeepClean(DeepItem::RestorePoints),
             Confirm::RestoreTo(1),
             Confirm::DeleteRestorePoint(1),
+            Confirm::DeprovisionBloat(vec!["a".into()], vec![]),
             // Turning protection off deletes every restore point.
             Confirm::SetProtection(false),
         ] {
