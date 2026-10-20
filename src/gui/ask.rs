@@ -223,7 +223,7 @@ impl App {
                                     .collect(),
                             );
                         }
-                        small_muted(ui, t("You'll see every file and registry entry before anything is removed, and it is all backed up."));
+                        small_muted(ui, t("You'll see every file and registry entry before anything is removed, and what InstallScope removes is backed up first, unless you have turned backups off in Settings."));
                     });
                 }
             });
