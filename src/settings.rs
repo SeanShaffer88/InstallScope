@@ -185,7 +185,7 @@ impl Default for Settings {
             file_exclusions: default_file_exclusions(),
             auto_exclusions: true,
             backup_before_removal: true,
-            create_restore_point: false,
+            create_restore_point: true,
             remove_unlogged_files: false,
             confirm_actions: true,
             use_recycle_bin: false,
@@ -361,5 +361,40 @@ mod profile_tests {
         s.delete_profile("QUICK");
         assert_eq!(s.profiles.len(), 1);
         assert!(s.active_profile.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod restore_point_default_tests {
+    use super::*;
+
+    fn settings_from(json: &str) -> Settings {
+        crate::json::compat::from_str(json).expect("test JSON must parse")
+    }
+
+    #[test]
+    fn restore_point_is_on_by_default() {
+        assert!(Settings::default().create_restore_point);
+    }
+
+    #[test]
+    fn missing_field_gets_the_new_default() {
+        assert!(settings_from("{}").create_restore_point);
+    }
+
+    #[test]
+    fn explicit_false_in_an_existing_file_is_kept() {
+        let s = settings_from(r#"{"create_restore_point":false}"#);
+        assert!(!s.create_restore_point);
+        // And an explicit true still parses as true.
+        assert!(settings_from(r#"{"create_restore_point":true}"#).create_restore_point);
+    }
+
+    #[test]
+    fn round_trip_preserves_the_value() {
+        let mut s = Settings::default();
+        s.create_restore_point = false;
+        let text = crate::json::compat::to_string_pretty(&s).expect("must serialize");
+        assert!(!settings_from(&text).create_restore_point);
     }
 }

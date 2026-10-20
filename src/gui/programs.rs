@@ -1415,6 +1415,9 @@ impl App {
                         });
                         ui.add_space(6.0);
                         if !w.force {
+                            ui.label(t("Each program's own uninstaller runs first. InstallScope cannot undo changes made by a program's own uninstaller."));
+                            ui.label(t("Afterwards, InstallScope removes any leftovers it finds. That removal is backed up first, so it can be undone from the Backups page."));
+                            ui.add_space(6.0);
                             ui.checkbox(&mut w.quiet, t("Unattended: no windows, prompts or restarts"))
                                 .on_hover_text(t("InstallScope uses each uninstaller's silent mode, runs them one at a time, holds back restarts until the end, and moves on if one gets stuck. You can walk away."));
                             if w.quiet {
@@ -1432,6 +1435,10 @@ impl App {
                         ui.add_enabled_ui(elevated, |ui| {
                             ui.checkbox(&mut w.restore_point, t("Create a System Restore point first"));
                         });
+                        small_muted(ui, t("A restore point lets Windows roll your PC back to how it is now, if an uninstall causes problems."));
+                        if !elevated {
+                            small_muted(ui, t("Needs administrator rights, so no restore point will be created. Run InstallScope as administrator to turn this on."));
+                        }
                         ui.add_space(8.0);
                         ui.horizontal(|ui| {
                             if theme::primary_button(ui, t("Start")).clicked() {
