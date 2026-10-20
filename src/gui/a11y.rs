@@ -1,11 +1,14 @@
 //! Keyboard accessibility: a visible focus ring, arrow-key list navigation,
-//! and screen-reader names for custom-drawn widgets.
+//! screen-reader names for custom-drawn widgets, and control explanations
+//! that mouse, keyboard, touch and screen-reader users can all reach.
 //!
 //! egui already moves focus with Tab / Shift+Tab (and arrow keys between
 //! focused widgets), activates the focused button with Enter or Space, and
 //! exposes the UI to screen readers (Narrator, NVDA) through AccessKit.
 
-use egui::{Context, Id, Key, Modifiers, Response, WidgetInfo, WidgetType};
+use egui::{
+    Align2, Color32, Context, FontId, Id, Key, Modifiers, Response, Ui, WidgetInfo, WidgetType,
+};
 
 fn mode_id() -> Id {
     Id::new("installscope_keyboard_mode")
@@ -78,6 +81,89 @@ pub fn selectable(resp: &Response, label: &str, selected: bool) {
     resp.widget_info(|| WidgetInfo::selected(WidgetType::SelectableLabel, true, selected, &label));
 }
 
+fn focus_explanation_id() -> Id {
+    Id::new("installscope_focus_explanation")
+}
+
+/// An explanation recorded by [`explain`] for the control that holds
+/// keyboard focus, kept between passes so a page can show it in a fixed
+/// place (see [`focus_hint`]).
+#[derive(Clone, Default)]
+struct FocusExplanation {
+    control: Option<Id>,
+    text: String,
+}
+
+/// Attach a plain-language explanation to a control so that every input
+/// mode can reach it:
+///
+/// - **Mouse** — the explanation is the control's hover tooltip, shown
+///   whether the control is enabled or disabled (a disabled control is
+///   exactly where "why can't I use this?" needs an answer).
+/// - **Keyboard and touch** — egui never shows tooltips for keyboard
+///   focus, so while the control has focus the explanation is recorded
+///   for the page's explanation line ([`focus_hint`]). A tap focuses a
+///   control just as Tab does, so touch users see it there too.
+/// - **Screen readers** — the explanation becomes the control's AccessKit
+///   `description`, announced after its name. egui's [`WidgetInfo`] has
+///   no description field, so the control's node is addressed directly
+///   through [`Context::accesskit_node_builder`], alongside the name and
+///   role the control already reports for itself; this is a no-op when
+///   no assistive technology is attached.
+///
+/// Keep explanations to one short sentence: the explanation line shows a
+/// single line. Essential information (consequences, requirements) must
+/// also be visible page text or a confirmation — never let this helper
+/// be the only carrier.
+pub fn explain(resp: Response, text: &str) -> Response {
+    if text.is_empty() {
+        return resp;
+    }
+    let _ = resp.ctx.accesskit_node_builder(resp.id, |node| {
+        node.set_description(text);
+    });
+    if resp.has_focus() {
+        let recorded = FocusExplanation {
+            control: Some(resp.id),
+            text: text.to_string(),
+        };
+        resp.ctx
+            .data_mut(|d| d.insert_temp(focus_explanation_id(), recorded));
+    }
+    resp.on_hover_text(text).on_disabled_hover_text(text)
+}
+
+/// Take the explanation recorded for the control that currently has
+/// focus, if any. Taking clears the record; [`explain`] re-records it on
+/// every pass in which its control keeps focus, so the explanation line
+/// tracks focus with at most a pass of lag — the same trade egui's own
+/// tooltips make with their previous-pass state.
+pub fn take_focus_explanation(ctx: &Context) -> Option<String> {
+    let recorded = ctx.data_mut(|d| d.remove_temp::<FocusExplanation>(focus_explanation_id()))?;
+    if recorded.control.is_some() && recorded.control == ctx.memory(|m| m.focused()) {
+        Some(recorded.text)
+    } else {
+        None
+    }
+}
+
+/// A page's explanation line: a fixed-height slot, placed near the top of
+/// a page, showing the explanation of the focused control (see
+/// [`explain`]). The height is reserved whether or not an explanation is
+/// showing, so focus moving never shifts the page layout.
+pub fn focus_hint(ui: &mut Ui, color: Color32) {
+    let (_id, rect) = ui.allocate_space(egui::vec2(ui.available_width(), 17.0));
+    if let Some(text) = take_focus_explanation(ui.ctx()) {
+        ui.painter_at(rect).text(
+            rect.left_top() + egui::vec2(0.0, 1.0),
+            Align2::LEFT_TOP,
+            text,
+            FontId::proportional(12.0),
+            color,
+        );
+    }
+}
+
 /// Arrow-key navigation for a list: Up/Down, Page Up/Down, Home/End.
 /// Only acts when no widget has keyboard focus (press Esc to leave a text
 /// box first) and no dialog is open. Returns the new index if it changed.
@@ -137,6 +223,7 @@ pub fn escape_pressed(ctx: &Context) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use egui::{Event, Pos2, RawInput, Rect, Vec2};
 
     fn press(ctx: &Context, key: Key) -> Option<usize> {
         let mut out = None;
@@ -165,5 +252,98 @@ mod tests {
         assert_eq!(press(&ctx, Key::Home), Some(0));
         assert_eq!(press(&ctx, Key::PageDown), Some(4));
         assert_eq!(press(&ctx, Key::Enter), None);
+    }
+
+    fn frame_input(events: Vec<Event>) -> RawInput {
+        RawInput {
+            screen_rect: Some(Rect::from_min_size(Pos2::ZERO, Vec2::new(900.0, 700.0))),
+            events,
+            ..Default::default()
+        }
+    }
+
+    fn tab() -> Vec<Event> {
+        vec![Event::Key {
+            key: Key::Tab,
+            physical_key: None,
+            pressed: true,
+            repeat: false,
+            modifiers: Modifiers::NONE,
+        }]
+    }
+
+    /// One pass with a single explained button, the way a page uses it.
+    fn explained_button(ctx: &Context, events: Vec<Event>) -> egui::FullOutput {
+        ctx.run(frame_input(events), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let resp = ui.add(egui::Button::new("Create"));
+                explain(resp, "Create a restore point of how Windows is now.");
+            });
+        })
+    }
+
+    #[test]
+    fn explain_sets_the_accesskit_description() {
+        let ctx = Context::default();
+        ctx.enable_accesskit();
+        // Two passes: registration, then the steady state a screen reader
+        // would be listening to.
+        explained_button(&ctx, Vec::new());
+        let out = explained_button(&ctx, Vec::new());
+        let update = out
+            .platform_output
+            .accesskit_update
+            .expect("a tree update while AccessKit is enabled");
+        let button = update
+            .nodes
+            .iter()
+            .map(|(_, node)| node)
+            .find(|node| node.role() == egui::accesskit::Role::Button)
+            .expect("the button is in the accessibility tree");
+        assert_eq!(
+            button.description(),
+            Some("Create a restore point of how Windows is now.")
+        );
+    }
+
+    /// Three buttons in a column: two explained, one plain.
+    fn three_buttons(ctx: &Context, events: Vec<Event>) {
+        let _ = ctx.run(frame_input(events), |ctx| {
+            egui::CentralPanel::default().show(ctx, |ui| {
+                let first = ui.add(egui::Button::new("First"));
+                explain(first, "First explanation.");
+                let second = ui.add(egui::Button::new("Second"));
+                explain(second, "Second explanation.");
+                ui.add(egui::Button::new("Plain"));
+            });
+        });
+    }
+
+    #[test]
+    fn focus_explanation_follows_focus() {
+        let ctx = Context::default();
+        three_buttons(&ctx, Vec::new());
+        // Nothing focused yet: no explanation to show.
+        assert_eq!(take_focus_explanation(&ctx), None);
+
+        three_buttons(&ctx, tab());
+        three_buttons(&ctx, Vec::new());
+        assert_eq!(
+            take_focus_explanation(&ctx).as_deref(),
+            Some("First explanation.")
+        );
+
+        three_buttons(&ctx, tab());
+        three_buttons(&ctx, Vec::new());
+        assert_eq!(
+            take_focus_explanation(&ctx).as_deref(),
+            Some("Second explanation.")
+        );
+
+        // Focus moves on to a control with no explanation: the line clears
+        // instead of showing the previous control's text.
+        three_buttons(&ctx, tab());
+        three_buttons(&ctx, Vec::new());
+        assert_eq!(take_focus_explanation(&ctx), None);
     }
 }

@@ -1,5 +1,6 @@
 //! System Restore page: restore points and System Protection settings.
 
+use super::a11y;
 use super::app::{App, Confirm};
 use super::theme;
 use super::widgets::*;
@@ -115,6 +116,9 @@ impl App {
                 }
                 None => {}
             }
+            // The focused control's explanation: keyboard and touch users
+            // read here what mouse users get as a tooltip (see a11y::explain).
+            a11y::focus_hint(ui, theme::MUTED);
             // System Protection.
             let prot = self.restore.protection.clone();
             theme::card(ui, |ui| {
@@ -138,7 +142,12 @@ impl App {
                     if advanced {
                         ui.horizontal_wrapped(|ui| {
                             let label = if p.enabled { t("Turn off") } else { t("Turn on") };
-                            if ui.add_enabled(!busy && self.elevated, egui::Button::new(label)).clicked() {
+                            let why = if p.enabled {
+                                t("Turn System Protection off. Windows deletes every restore point, so InstallScope asks first.")
+                            } else {
+                                t("Turn System Protection on, so restore points can be created again.")
+                            };
+                            if a11y::explain(ui.add_enabled(!busy && self.elevated, egui::Button::new(label)), &why).clicked() {
                                 if p.enabled {
                                     self.ask(
                                         "Turn off System Protection?",
@@ -152,11 +161,12 @@ impl App {
                             }
                             ui.add_space(12.0);
                             ui.label(t("Maximum disk space:"));
-                            ui.add(egui::Slider::new(&mut self.restore.max_percent, 1..=30).suffix(" %"));
+                            let slider = ui.add(egui::Slider::new(&mut self.restore.max_percent, 1..=30).suffix(" %"));
+                            a11y::explain(slider, &t("The share of the drive restore points may use. The size in gigabytes is shown next to the slider."));
                             if let Some(d) = p.drive_size {
                                 small_muted(ui, human_size(d * self.restore.max_percent as u64 / 100));
                             }
-                            if ui.add_enabled(!busy && self.elevated, egui::Button::new(t("Apply"))).clicked() {
+                            if a11y::explain(ui.add_enabled(!busy && self.elevated, egui::Button::new(t("Apply"))), &t("Apply the disk space limit above. If the new limit is smaller than the space already in use, Windows deletes the oldest restore points to fit.")).clicked() {
                                 let pct = self.restore.max_percent;
                                 self.restore_action(ctx, move || {
                                     restore::set_max_space(pct)
@@ -174,9 +184,10 @@ impl App {
             theme::card(ui, |ui| {
                 ui.label(RichText::new(t("Create a restore point")).strong());
                 ui.horizontal(|ui| {
-                    ui.add(egui::TextEdit::singleline(&mut self.restore.description).hint_text(t("Description, e.g. Before installing drivers")).desired_width(320.0));
+                    let desc = ui.add(egui::TextEdit::singleline(&mut self.restore.description).hint_text(t("Description, e.g. Before installing drivers")).desired_width(320.0));
+                    a11y::explain(desc, &t("A name for the new restore point, so you can recognize it in the list below later. You can leave it empty."));
                     let ok = !busy && self.elevated && prot.as_ref().is_some_and(|p| p.enabled);
-                    if ui.add_enabled(ok, egui::Button::new(t("Create"))).clicked() {
+                    if a11y::explain(ui.add_enabled(ok, egui::Button::new(t("Create"))), &t("Create a restore point now: a snapshot of Windows' system files and settings that you can roll back to if something goes wrong. Your documents and photos are not part of it.")).clicked() {
                         let d = if self.restore.description.trim().is_empty() {
                             "InstallScope manual restore point".to_string()
                         } else {
@@ -189,7 +200,7 @@ impl App {
                                 .map_err(|e| e.to_string())
                         });
                     }
-                    if ui.button(t("Open Windows System Restore")).clicked() {
+                    if a11y::explain(ui.button(t("Open Windows System Restore")), &t("Open Windows' own System Restore window. It lists the same restore points, with a calendar view.")).clicked() {
                         restore::open_wizard();
                     }
                 });
@@ -200,7 +211,7 @@ impl App {
             }
             ui.horizontal(|ui| {
                 ui.label(RichText::new(t("Restore points")).heading());
-                if ui.add_enabled(self.restore.load_job.is_none(), egui::Button::new(format!("⟳ {}", t("Refresh")))).clicked() {
+                if a11y::explain(ui.add_enabled(self.restore.load_job.is_none(), egui::Button::new(format!("⟳ {}", t("Refresh")))), &t("Read the restore points and the System Protection status from Windows again.")).clicked() {
                     self.refresh_restore(ctx);
                 }
             });
@@ -248,10 +259,10 @@ impl App {
                             ui.label(t(p.kind.label()));
                         });
                         row.col(|ui| {
-                            if ui.add_enabled(!busy && self.elevated, egui::Button::new(t("Restore…")).small()).clicked() {
+                            if a11y::explain(ui.add_enabled(!busy && self.elevated, egui::Button::new(t("Restore…")).small()), &t("Roll Windows back to this restore point. Windows restarts straight away; your documents, photos and other personal files are not changed.")).clicked() {
                                 roll_back = Some(p.clone());
                             }
-                            if advanced && ui.add_enabled(!busy && self.elevated, egui::Button::new(t("Delete")).small()).clicked() {
+                            if advanced && a11y::explain(ui.add_enabled(!busy && self.elevated, egui::Button::new(t("Delete")).small()), &t("Delete this restore point. This can't be undone.")).clicked() {
                                 delete = Some(p.clone());
                             }
                         });
