@@ -4,7 +4,7 @@
 
 pub(super) const HELP: &str = "\
 InstallScope — Windows Install, Uninstall & Developer Tools
-Copyright (C) 2026 Sean Shaffer. GPLv3: free software, no warranty.
+Copyright (C) 2026 Sean Shaffer. MIT License: free software, no warranty.
 
 USAGE:
   installscope                                   Start the graphical interface

@@ -3,14 +3,14 @@
 </p>
 
 <p align="center">
-  <b>InstallScope</b> — a free, open-source (GPLv3) toolkit for Windows 11 that records exactly what an installation changes, removes it precisely, and builds portable packages from what it captured.<br>
+  <b>InstallScope</b> — a free, open-source (MIT) toolkit for Windows 11 that records exactly what an installation changes, removes it precisely, and builds portable packages from what it captured.<br>
   Written in Rust. Local-first: no telemetry, no accounts, nothing leaves your PC.
 </p>
 
 <p align="center">
   <a href="https://github.com/SeanShaffer88/InstallScope/releases/latest"><img alt="Download" src="https://img.shields.io/github/v/release/SeanShaffer88/InstallScope?label=download&color=e53935"></a>
   <a href="https://github.com/SeanShaffer88/InstallScope/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/SeanShaffer88/InstallScope/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="LICENSE"><img alt="License: GPL v3" src="https://img.shields.io/badge/license-GPLv3-blue"></a>
+  <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/badge/license-MIT-blue"></a>
   <img alt="Platform: Windows 11" src="https://img.shields.io/badge/platform-Windows%2011-0078d4">
 </p>
 
@@ -441,6 +441,6 @@ Ideas and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) for 
 
 Copyright © 2026 Sean Shaffer.
 
-InstallScope is free software: you can redistribute it and/or modify it under the terms of the **GNU General Public License, version 3** (or, at your option, any later version). See [LICENSE](LICENSE) for details.
+InstallScope is free software under the **MIT License**. See [LICENSE](LICENSE) for details.
 
 The release downloads include the [PortableApps.com Launcher](https://github.com/PortableApps/Launcher) source and the NSIS compiler distributed with it, under their own licenses (GPLv2 and the zlib/libpng license); they are separate programs that InstallScope runs, unchanged.

@@ -19,7 +19,7 @@ fn main() {
         .set("CompanyName", "Sean Shaffer")
         .set(
             "LegalCopyright",
-            "Copyright © 2026 Sean Shaffer. Licensed under GPLv3.",
+            "Copyright © 2026 Sean Shaffer. Licensed under the MIT License.",
         )
         .set("OriginalFilename", "InstallScope.exe")
         .set("InternalName", "InstallScope")
