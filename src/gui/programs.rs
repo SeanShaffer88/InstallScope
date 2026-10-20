@@ -121,6 +121,12 @@ pub struct Wizard {
     waiting_since: Option<Instant>,
     retries: u32,
     restore_point: bool,
+    /// Store apps (by display name) the user confirmed for deprovisioning
+    /// in the Bloatware Shield. Consumed once, when the uninstalls finish:
+    /// only names whose program was actually removed are deprovisioned.
+    /// Empty for every other wizard; dropping the wizard (cancel) drops
+    /// the list unrun.
+    pub deprovision: Vec<String>,
     stage: Stage,
     index: usize,
     launched: bool,
@@ -147,6 +153,7 @@ impl Wizard {
             waiting_since: None,
             retries: 0,
             restore_point,
+            deprovision: Vec::new(),
             stage: Stage::Confirm,
             index: 0,
             launched: false,
@@ -586,6 +593,23 @@ impl App {
             force,
             self.settings.create_restore_point,
         ));
+    }
+
+    /// Start the uninstall wizard carrying confirmed deprovisioning intent
+    /// (Bloatware Shield). The names are consumed only after the matching
+    /// programs were actually removed; closing the wizard before then —
+    /// at the review stage or mid-run — discards them unrun.
+    pub fn start_uninstall_with_deprovision(
+        &mut self,
+        programs: Vec<InstalledProgram>,
+        deprovision: Vec<String>,
+    ) {
+        if programs.is_empty() {
+            return;
+        }
+        let mut w = Wizard::new(programs, false, self.settings.create_restore_point);
+        w.deprovision = deprovision;
+        self.wizard = Some(w);
     }
 
     pub fn ui_programs(&mut self, ctx: &egui::Context) {
@@ -1303,6 +1327,45 @@ impl App {
         }
         if let Some((plan, logs, offer)) = w.scan_job.as_ref().and_then(|j| j.poll()) {
             w.scan_job = None;
+            // Deprovisioning, deferred from the Bloatware Shield: the
+            // uninstallers have finished, so the confirmed names whose
+            // program was really removed are deprovisioned now — never
+            // before the removal, and never for skipped or failed ones.
+            // The names arrived with the user's confirmation; a wizard
+            // cancelled at any earlier stage took them with it.
+            let pending = std::mem::take(&mut w.deprovision);
+            if !pending.is_empty() {
+                let removed: Vec<String> = w
+                    .programs
+                    .iter()
+                    .zip(w.status.iter())
+                    .filter(|(_, s)| matches!(s, ItemStatus::Done | ItemStatus::Reboot))
+                    .map(|(p, _)| p.name.clone())
+                    .collect();
+                let (go, skipped) =
+                    installscope_core::debloat::partition_deprovision(&pending, &removed);
+                self.debloat.deprovision_job = Some(Job::spawn(ctx, move |_| {
+                    let mut rows: Vec<installscope_core::backup::ActionResult> = go
+                        .iter()
+                        .map(|n| match installscope_core::debloat::deprovision(n) {
+                            Ok(()) => installscope_core::backup::ActionResult::ok(
+                                n,
+                                t("Deprovisioned: new user accounts won't get this app"),
+                            ),
+                            Err(e) => {
+                                installscope_core::backup::ActionResult::err(n, format!("{e:#}"))
+                            }
+                        })
+                        .collect();
+                    rows.extend(skipped.iter().map(|n| {
+                        installscope_core::backup::ActionResult::err(
+                            n,
+                            t("Not deprovisioned: the app is still installed"),
+                        )
+                    }));
+                    rows
+                }));
+            }
             let name = if names.len() == 1 {
                 names[0].clone()
             } else {

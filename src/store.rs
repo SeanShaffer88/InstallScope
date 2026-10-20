@@ -79,6 +79,10 @@ impl Store {
     pub fn gatekeeper_path(&self) -> PathBuf {
         self.root.join("gatekeeper.json")
     }
+    /// Record of the most recent deprovisioning run (data root).
+    pub fn deprovision_report_path(&self) -> PathBuf {
+        self.root.join("deprovision.json")
+    }
 
     pub fn snapshots_dir(&self) -> PathBuf {
         self.root.join("snapshots")
@@ -153,6 +157,27 @@ impl Store {
     pub fn delete_log(&self, id: &str) -> Result<()> {
         std::fs::remove_file(self.log_path(id))?;
         Ok(())
+    }
+
+    /// Save the outcome of a deprovisioning run (atomic tmp+rename, like
+    /// the install logs).
+    pub fn save_deprovision_report(
+        &self,
+        report: &crate::debloat::DeprovisionReport,
+    ) -> Result<()> {
+        let json = crate::json::compat::to_string_pretty(report)?;
+        let tmp = self.root.join("deprovision.json.tmp");
+        std::fs::write(&tmp, json)?;
+        std::fs::rename(&tmp, self.deprovision_report_path())?;
+        Ok(())
+    }
+
+    /// The most recent deprovisioning run, if one was recorded. A corrupt
+    /// or unreadable file is not an error here; it just means no report.
+    pub fn load_deprovision_report(&self) -> Option<crate::debloat::DeprovisionReport> {
+        std::fs::read_to_string(self.deprovision_report_path())
+            .ok()
+            .and_then(|s| crate::json::compat::from_str(&s).ok())
     }
 
     pub fn list_logs(&self) -> Vec<InstallLog> {

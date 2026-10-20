@@ -315,6 +315,19 @@ pub struct BloatItem {
 }
 crate::json_struct!(BloatItem, { program, class, why, provisioned });
 
+/// The outcome of the most recent deprovisioning run, kept in the data
+/// folder so the user can see later what was deprovisioned and what failed.
+/// Deprovisioning cannot be undone, so its record must outlive the status
+/// line it was reported on.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct DeprovisionReport {
+    pub version: u32,
+    /// Local time the run finished (`DateTime::ymd_hms`).
+    pub ran_at: String,
+    pub rows: Vec<crate::backup::ActionResult>,
+}
+crate::json_struct!(DeprovisionReport, default, { version, ran_at, rows });
+
 fn matches(rule: &Rule, p: &InstalledProgram) -> bool {
     let name = p.name.to_lowercase();
     if rule.store {
@@ -424,6 +437,29 @@ pub fn provisioned_packages() -> Vec<String> {
     }
 }
 
+/// Split the confirmed deprovision list into what may proceed and what must
+/// be skipped. Deprovisioning is irreversible and machine-wide, so it may
+/// only run for programs that were actually removed in the same flow: the
+/// caller passes the names it confirmed for deprovisioning (`pending`) and
+/// the names whose uninstall completed (`removed`). Pending names that were
+/// skipped, failed or cancelled keep their provisioned copies and are
+/// returned as `skipped`, in order, without duplicates.
+pub fn partition_deprovision(pending: &[String], removed: &[String]) -> (Vec<String>, Vec<String>) {
+    let mut proceed = Vec::new();
+    let mut skipped = Vec::new();
+    for name in pending {
+        if proceed.contains(name) || skipped.contains(name) {
+            continue;
+        }
+        if removed.iter().any(|r| r == name) {
+            proceed.push(name.clone());
+        } else {
+            skipped.push(name.clone());
+        }
+    }
+    (proceed, skipped)
+}
+
 /// Stop Windows from installing a Store app for new user accounts
 /// (needs administrator rights).
 pub fn deprovision(name: &str) -> anyhow::Result<()> {
@@ -470,6 +506,55 @@ mod tests {
             source: Source::Store,
             ..Default::default()
         }
+    }
+
+    fn names(v: &[&str]) -> Vec<String> {
+        v.iter().map(|s| s.to_string()).collect()
+    }
+
+    #[test]
+    fn deprovision_only_for_programs_actually_removed() {
+        // Everything removed: everything proceeds, nothing skipped.
+        let (go, skip) = partition_deprovision(&names(&["A", "B"]), &names(&["A", "B"]));
+        assert_eq!(go, names(&["A", "B"]));
+        assert!(skip.is_empty());
+        // Nothing removed (the removal was cancelled or failed): nothing
+        // may proceed.
+        let (go, skip) = partition_deprovision(&names(&["A", "B"]), &[]);
+        assert!(go.is_empty());
+        assert_eq!(skip, names(&["A", "B"]));
+        // Mixed: only the removed ones proceed; order follows the
+        // confirmed list, not the removal list.
+        let (go, skip) = partition_deprovision(&names(&["A", "B", "C"]), &names(&["C", "A"]));
+        assert_eq!(go, names(&["A", "C"]));
+        assert_eq!(skip, names(&["B"]));
+        // Duplicates in the confirmed list never produce two runs.
+        let (go, skip) = partition_deprovision(&names(&["A", "A"]), &names(&["A"]));
+        assert_eq!(go, names(&["A"]));
+        assert!(skip.is_empty());
+        // Removed names that were never confirmed are ignored.
+        let (go, skip) = partition_deprovision(&names(&["A"]), &names(&["A", "Z"]));
+        assert_eq!(go, names(&["A"]));
+        assert!(skip.is_empty());
+    }
+
+    #[test]
+    fn deprovision_report_round_trips() {
+        let report = DeprovisionReport {
+            version: 1,
+            ran_at: "2026-10-20 01:40:00".into(),
+            rows: vec![
+                crate::backup::ActionResult::ok("App", "Deprovisioned"),
+                crate::backup::ActionResult::err("Other", "access denied"),
+            ],
+        };
+        let text = crate::json::compat::to_string(&report).unwrap();
+        let back: DeprovisionReport = crate::json::compat::from_str(&text).unwrap();
+        assert_eq!(back, report);
+        // A report written by an older/newer build with missing or extra
+        // fields still loads; absent rows read as empty.
+        let partial: DeprovisionReport = crate::json::compat::from_str("{}").unwrap();
+        assert!(partial.rows.is_empty());
     }
 
     #[test]
