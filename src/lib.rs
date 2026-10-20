@@ -20,6 +20,7 @@ pub mod debloat;
 pub mod decrap;
 pub mod deflate;
 pub mod difftree;
+pub mod extinv;
 pub mod features;
 pub mod fswalk;
 pub mod i18n;
