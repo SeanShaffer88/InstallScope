@@ -297,6 +297,9 @@ impl App {
 
     pub fn ui_monitor(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().frame(theme::content_frame()).show(ctx, |ui| {
+            // The focused control's explanation line, for keyboard
+            // and touch users (see a11y::explain).
+            super::a11y::focus_hint(ui, theme::MUTED);
             if !self.monitor.error.is_empty() {
                 ui.colored_label(theme::BAD, &self.monitor.error);
                 ui.add_space(6.0);
@@ -326,7 +329,7 @@ impl App {
                         }
                         small_muted(ui, t("Don't install anything until this finishes."));
                         ui.add_space(10.0);
-                        if ui.button(t("Cancel")).clicked() {
+                        if super::a11y::explain(ui.button(t("Cancel")), &t("Cancel monitoring and throw away the snapshots taken so far. Anything already installed stays installed.")).clicked() {
                             self.monitor.cancel(&self.store);
                         }
                     });
@@ -350,11 +353,11 @@ impl App {
                         ui.add_space(14.0);
                         ui.horizontal(|ui| {
                             ui.add_space((ui.available_width() - 260.0).max(0.0) / 2.0);
-                            if theme::primary_button(ui, format!("✔ {}", t("Finish monitoring"))).clicked() {
+                            if super::a11y::explain(theme::primary_button(ui, format!("✔ {}", t("Finish monitoring"))), &t("Take the \"after\" snapshot now, compare it with the \"before\" one, and review everything the installation changed.")).clicked() {
                                 self.monitor.error.clear();
                                 self.finish_monitoring(ctx);
                             }
-                            if ui.button(t("Cancel")).clicked() {
+                            if super::a11y::explain(ui.button(t("Cancel")), &t("Cancel monitoring. You confirm first; the \"before\" snapshot is thrown away and anything already installed stays installed.")).clicked() {
                                 self.ask(
                                     "Cancel monitoring?",
                                     t("The \"before\" snapshot will be discarded. Anything already installed stays installed."),
@@ -403,7 +406,7 @@ impl App {
         let Some(live) = &self.live else { return };
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(500));
-        egui::CollapsingHeader::new(RichText::new(t("Live activity")).strong())
+        let live_header = egui::CollapsingHeader::new(RichText::new(t("Live activity")).strong())
             .default_open(self.settings.advanced_mode)
             .show(ui, |ui| {
                 let (a, c, r, g) = live.counts();
@@ -432,6 +435,7 @@ impl App {
                         }
                     });
             });
+        super::a11y::explain(live_header.header_response, &t("Changes noticed live while the installer runs. The complete list, including registry values, is worked out when you click Finish monitoring."));
     }
 
     fn monitor_idle(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
@@ -452,7 +456,7 @@ impl App {
                 ui.label(RichText::new(format!("📦 {}", t("Install and monitor"))).strong().size(16.0));
                 small_muted(ui, t("Choose an installer. InstallScope takes a snapshot, runs it, and waits for you to finish."));
                 ui.add_space(10.0);
-                if theme::primary_button(ui, t("Choose installer…")).clicked() {
+                if super::a11y::explain(theme::primary_button(ui, t("Choose installer…")), &t("Choose an installer file. InstallScope snapshots your PC, runs the installer, and records everything it changes, so the program can be removed exactly later.")).clicked() {
                     self.start_install_and_monitor(ctx);
                 }
             });
@@ -462,11 +466,15 @@ impl App {
                 small_muted(ui, t("Start monitoring, then install anything any way you like (Store, winget, a script)."));
                 ui.add_space(6.0);
                 ui.horizontal(|ui| {
-                    ui.label(t("Name"));
-                    ui.add(egui::TextEdit::singleline(&mut self.monitor.name).hint_text(t("e.g. Photo Editor")).desired_width(200.0));
+                    let name_label = ui.label(t("Name"));
+                    super::a11y::explain(
+                        ui.add(egui::TextEdit::singleline(&mut self.monitor.name).hint_text(t("e.g. Photo Editor")).desired_width(200.0))
+                            .labelled_by(name_label.id),
+                        &t("A name for the program you are about to install, used as the title of its install log. If you leave it empty, the log is called Unnamed program."),
+                    );
                 });
                 ui.add_space(4.0);
-                if ui.button(t("Start monitoring")).clicked() {
+                if super::a11y::explain(ui.button(t("Start monitoring")), &t("Take the \"before\" snapshot now. Then install the program any way you like, and click Finish monitoring when it is done.")).clicked() {
                     let name = if self.monitor.name.trim().is_empty() { t("Unnamed program") } else { self.monitor.name.trim().to_string() };
                     self.begin_monitoring(ctx, name, String::new(), false);
                 }
@@ -527,17 +535,33 @@ impl App {
             .num_columns(2)
             .spacing([10.0, 6.0])
             .show(ui, |ui| {
-                ui.label(t("Name"));
-                ui.add(egui::TextEdit::singleline(&mut log.name).desired_width(320.0));
+                let name_label = ui.label(t("Name"));
+                super::a11y::explain(
+                    ui.add(egui::TextEdit::singleline(&mut log.name).desired_width(320.0))
+                        .labelled_by(name_label.id),
+                    &t("The name this install log is saved under. Editing it changes only the log, not the installed program."),
+                );
                 ui.end_row();
-                ui.label(t("Publisher"));
-                ui.add(egui::TextEdit::singleline(&mut log.publisher).desired_width(320.0));
+                let publisher_label = ui.label(t("Publisher"));
+                super::a11y::explain(
+                    ui.add(egui::TextEdit::singleline(&mut log.publisher).desired_width(320.0))
+                        .labelled_by(publisher_label.id),
+                    &t("The publisher recorded in this install log. Editing it changes only the log, not the installed program."),
+                );
                 ui.end_row();
-                ui.label(t("Version"));
-                ui.add(egui::TextEdit::singleline(&mut log.version).desired_width(160.0));
+                let version_label = ui.label(t("Version"));
+                super::a11y::explain(
+                    ui.add(egui::TextEdit::singleline(&mut log.version).desired_width(160.0))
+                        .labelled_by(version_label.id),
+                    &t("The version recorded in this install log. Editing it changes only the log, not the installed program."),
+                );
                 ui.end_row();
-                ui.label(t("Notes"));
-                ui.add(egui::TextEdit::singleline(&mut log.notes).desired_width(320.0));
+                let notes_label = ui.label(t("Notes"));
+                super::a11y::explain(
+                    ui.add(egui::TextEdit::singleline(&mut log.notes).desired_width(320.0))
+                        .labelled_by(notes_label.id),
+                    &t("Your own notes about this installation, saved with the log."),
+                );
                 ui.end_row();
             });
         ui.horizontal_wrapped(|ui| {
@@ -595,8 +619,18 @@ impl App {
                     ui.add_space(4.0);
                     for (c, ticked) in list.iter_mut() {
                         ui.horizontal_wrapped(|ui| {
-                            ui.checkbox(ticked, "")
-                                .on_hover_text(t("Strike: remove it when the log is saved"));
+                            let strike = super::a11y::explain(
+                                ui.checkbox(ticked, ""),
+                                &t("Strike: remove it when the log is saved"),
+                            );
+                            strike.widget_info(|| {
+                                egui::WidgetInfo::selected(
+                                    egui::WidgetType::Checkbox,
+                                    true,
+                                    *ticked,
+                                    &c.name,
+                                )
+                            });
                             let (col, label) = match c.verdict {
                                 Verdict::Bloat => {
                                     (theme::BAD, t("Bloatware / telemetry / silent updater"))
@@ -607,12 +641,14 @@ impl App {
                             };
                             theme::badge(ui, label, col);
                             small_muted(ui, t(c.kind.label()));
-                            ui.label(RichText::new(&c.name).strong()).on_hover_text(
-                                if c.command.is_empty() {
-                                    c.location.clone()
-                                } else {
-                                    c.command.clone()
-                                },
+                            let detail = if c.command.is_empty() {
+                                c.location.clone()
+                            } else {
+                                c.command.clone()
+                            };
+                            super::a11y::explain(
+                                ui.label(RichText::new(&c.name).strong()),
+                                &detail,
                             );
                         });
                         if let Some(r) = c.reasons.first() {
@@ -624,9 +660,16 @@ impl App {
                     ui.horizontal_wrapped(|ui| {
                         if unknown && !model_url.is_empty() {
                             let busy = self.monitor.decrap_job.is_some();
-                            if ui
-                                .add_enabled(!busy, egui::Button::new(t("Ask the local model about the unknown ones")))
-                                .clicked()
+                            let why = if busy {
+                                t("The local model is judging the unknown components now.")
+                            } else {
+                                t("Ask the language model running on this PC, set up in Settings, to judge the components marked Unknown. It is only contacted when you click, and InstallScope refuses any address that is not on this PC, so nothing leaves this PC.")
+                            };
+                            if super::a11y::explain(
+                                ui.add_enabled(!busy, egui::Button::new(t("Ask the local model about the unknown ones"))),
+                                &why,
+                            )
+                            .clicked()
                             {
                                 ask_model = true;
                             }
@@ -693,20 +736,20 @@ impl App {
         let mut keep = false;
         ui.horizontal(|ui| {
             if trial {
-                if theme::primary_button(ui, format!("↩ {}", t("Undo the trial"))).clicked() {
+                if super::a11y::explain(theme::primary_button(ui, format!("↩ {}", t("Undo the trial"))), &t("Save the log and remove everything the trial install added, backed up first unless backups are off in Settings.")).clicked() {
                     save = true;
                 }
                 // Keeping it means a normal install log, so it can still be
                 // removed precisely later. No Discard: that would leave the
                 // program installed with no record of what it added.
-                if ui.button(t("Keep it installed")).clicked() {
+                if super::a11y::explain(ui.button(t("Keep it installed")), &t("Keep the program installed and save this review as a normal install log, so it can still be removed exactly later.")).clicked() {
                     keep = true;
                 }
             } else {
-                if theme::primary_button(ui, format!("💾 {}", t("Save install log"))).clicked() {
+                if super::a11y::explain(theme::primary_button(ui, format!("💾 {}", t("Save install log"))), &t("Save the reviewed changes as the install log, so this program can later be removed exactly. Ticked background components are struck as the log is saved.")).clicked() {
                     save = true;
                 }
-                if ui.button(t("Discard")).clicked() {
+                if super::a11y::explain(ui.button(t("Discard")), &t("Discard this review. You confirm first: discarding deletes the only record of what the installation changed, and the program stays installed.")).clicked() {
                     discard = true;
                 }
             }
