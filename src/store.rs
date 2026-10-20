@@ -71,6 +71,10 @@ impl Store {
     pub fn cache_path(&self) -> PathBuf {
         self.root.join("cache.json")
     }
+    /// Slowdown Detective history (`history.json` in the data root).
+    pub fn history_path(&self) -> PathBuf {
+        crate::history::HistoryStore::path(&self.root)
+    }
 
     pub fn snapshots_dir(&self) -> PathBuf {
         self.root.join("snapshots")
