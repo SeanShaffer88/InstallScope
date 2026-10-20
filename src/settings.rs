@@ -61,6 +61,12 @@ pub struct Settings {
     pub show_store_apps: bool,
     /// Advanced mode shows technical details and developer tools.
     pub advanced_mode: bool,
+    /// Autostart Gatekeeper: watch for new autostart entries (Run keys and
+    /// Startup folders) and hold them in a review queue, attributed to the
+    /// install log that added them, until you allow or remove each one.
+    /// Off by default; the Gatekeeper never blocks an installer and never
+    /// removes anything without your decision.
+    pub gatekeeper_enabled: bool,
     /// Brighter text and stronger outlines.
     pub high_contrast: bool,
     /// The welcome screen has been completed.
@@ -77,7 +83,7 @@ pub struct Settings {
     /// The profile the current scope came from ("" = none).
     pub active_profile: String,
 }
-crate::json_struct!(Settings, default, { language, zoom, registry_roots, file_roots, registry_exclusions, file_exclusions, auto_exclusions, backup_before_removal, create_restore_point, remove_unlogged_files, confirm_actions, use_recycle_bin, restart_explorer, close_programs, local_model_url, local_model_name, show_system_components, show_store_apps, advanced_mode, high_contrast, first_run_done, portableapps_dir, packager_name, portable_out_dir, profiles, active_profile });
+crate::json_struct!(Settings, default, { language, zoom, registry_roots, file_roots, registry_exclusions, file_exclusions, auto_exclusions, backup_before_removal, create_restore_point, remove_unlogged_files, confirm_actions, use_recycle_bin, restart_explorer, close_programs, local_model_url, local_model_name, show_system_components, show_store_apps, advanced_mode, gatekeeper_enabled, high_contrast, first_run_done, portableapps_dir, packager_name, portable_out_dir, profiles, active_profile });
 
 /// A named monitoring scope: what snapshots capture and ignore.
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -196,6 +202,7 @@ impl Default for Settings {
             show_system_components: false,
             show_store_apps: false,
             advanced_mode: false,
+            gatekeeper_enabled: false,
             high_contrast: false,
             first_run_done: false,
             portableapps_dir: String::new(),
