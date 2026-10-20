@@ -106,6 +106,14 @@ USAGE:
                                             Clean junk automatically
   installscope startup [--json]                  List startup programs
   installscope startup enable|disable <name>     Turn a startup program on or off
+  installscope history [--since YYYY-MM-DD] [--json]
+                                            Record new changes, then list the
+                                            recorded ones (installs, updates,
+                                            removals, autostart changes)
+  installscope slowdown [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--json]
+                                            What changed in the period, ranked
+                                            by measured startup impact where
+                                            Windows has it
   installscope watch                             Background auto-monitoring (started
                                             at sign-in when turned on in Settings)
   installscope check-clean <log-id>              Check that nothing recorded in a log
@@ -314,6 +322,59 @@ fn load_settings(st: &Store) -> installscope_core::settings::Settings {
 
 fn store() -> anyhow::Result<Store> {
     Store::open()
+}
+
+/// Fold the current install logs, program list and startup list into the
+/// Slowdown Detective history and save it. Cheap reads only — no snapshot.
+fn capture_history(st: &Store, reg: &dyn Registry) -> installscope_core::history::HistoryStore {
+    let mut h = installscope_core::history::HistoryStore::load(&st.root);
+    let logs = st.list_logs();
+    let programs_now = programs::list_programs(reg, false);
+    let autostart = installscope_core::startup::list_startup(reg);
+    h.capture(
+        &logs,
+        &programs_now,
+        &autostart,
+        installscope_core::time::unix_now(),
+    );
+    if let Err(e) = h.save(&st.root) {
+        eprintln!("warning: could not save the change history: {e}");
+    }
+    h
+}
+
+/// One history event as a single display line.
+fn event_line(e: &installscope_core::history::HistoryEvent) -> String {
+    use installscope_core::history::HistoryEventKind as K;
+    let mut s = format!("{}  {:<17} {}", e.date, e.kind.label(), e.subject);
+    match e.kind {
+        K::ProgramUpdated => s.push_str(&format!("  {} → {}", e.from_version, e.to_version)),
+        K::ProgramInstalled if !e.to_version.is_empty() => {
+            s.push_str(&format!("  {}", e.to_version))
+        }
+        K::ProgramRemoved if !e.from_version.is_empty() => {
+            s.push_str(&format!("  (was {})", e.from_version))
+        }
+        _ => {}
+    }
+    if !e.target.is_empty() {
+        s.push_str(&format!("  {}", e.target));
+    }
+    if !e.detail.is_empty() {
+        s.push_str(&format!("  — {}", e.detail));
+    }
+    s
+}
+
+fn event_json(
+    e: &installscope_core::history::HistoryEvent,
+    measured_ms: Option<u64>,
+) -> installscope_core::json::Value {
+    installscope_core::json!({
+        "date": e.date, "kind": format!("{:?}", e.kind), "subject": e.subject,
+        "from_version": e.from_version, "to_version": e.to_version,
+        "target": e.target, "detail": e.detail, "measured_ms": measured_ms,
+    })
 }
 
 fn save_new_log(
@@ -1203,6 +1264,176 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                     );
                     if results.iter().any(|r| !r.ok) {
                         return Ok(2);
+                    }
+                }
+            }
+        }
+        "history" => {
+            let st = store()?;
+            let h = capture_history(&st, reg.as_ref());
+            let since = arg_value(&args, "--since");
+            if let Some(s) = &since {
+                if installscope_core::time::Date::parse_ymd(s).is_none() {
+                    anyhow::bail!("--since wants a date as YYYY-MM-DD, got {s}");
+                }
+            }
+            let mut events: Vec<_> = h
+                .events
+                .iter()
+                .filter(|e| since.as_deref().is_none_or(|s| e.date.as_str() >= s))
+                .collect();
+            events.reverse(); // newest first
+            if has(&args, "--json") {
+                let items: Vec<_> = events.iter().map(|e| event_json(e, None)).collect();
+                println!(
+                    "{}",
+                    installscope_core::json::compat::to_string_pretty(&items)?
+                );
+            } else if events.is_empty() {
+                match h.started_date() {
+                    Some(d) => println!("No changes recorded yet. Recording began {d}; installs, updates, removals and autostart changes will appear here as they happen."),
+                    None => println!("No changes recorded yet."),
+                }
+            } else {
+                for e in &events {
+                    println!("{}", event_line(e));
+                }
+            }
+        }
+        "slowdown" => {
+            use installscope_core::history::HistoryEventKind as K;
+            use installscope_core::time::Date;
+            let st = store()?;
+            let h = capture_history(&st, reg.as_ref());
+            let today = Date::today_local();
+            let to = match arg_value(&args, "--to") {
+                Some(s) => Date::parse_ymd(&s)
+                    .ok_or_else(|| anyhow::anyhow!("--to wants a date as YYYY-MM-DD, got {s}"))?,
+                None => today,
+            };
+            let from = match arg_value(&args, "--from") {
+                Some(s) => Date::parse_ymd(&s)
+                    .ok_or_else(|| anyhow::anyhow!("--from wants a date as YYYY-MM-DD, got {s}"))?,
+                None => today.add_days(-90),
+            };
+            if from > to {
+                anyhow::bail!("--from {from} is after --to {to}");
+            }
+            let rep = installscope_core::history::report(&h, from, to);
+
+            // Measurements, where Windows has them: boot diagnostics for
+            // autostart entries, the usage tracker's startup figures for
+            // programs still installed. Anything unmeasured stays unranked —
+            // it is never reported as zero impact.
+            let boot = installscope_core::boot::read();
+            let usage = installscope_core::usage::UsageData::gather(reg.as_ref(), &st.root);
+            let programs_now = programs::list_programs(reg.as_ref(), false);
+            let measured = |e: &installscope_core::history::HistoryEvent| -> Option<u64> {
+                if let Some(ms) = installscope_core::history::boot_impact_ms(e, boot.as_ref()) {
+                    return Some(ms);
+                }
+                if e.kind.is_program() {
+                    let p = programs_now.iter().find(|p| {
+                        installscope_core::model::fold(&p.name)
+                            == installscope_core::model::fold(&e.subject)
+                    })?;
+                    return usage.for_program(p).startup_ms;
+                }
+                None
+            };
+
+            if has(&args, "--json") {
+                let doc = installscope_core::json!({
+                    "from": from.to_string(), "to": to.to_string(),
+                    "history_started": rep.history_started,
+                    "total_events": rep.total_events,
+                    "measurements_available": boot.is_some(),
+                    "events": rep.events.iter().map(|e| event_json(e, measured(e))).collect::<Vec<_>>(),
+                });
+                println!(
+                    "{}",
+                    installscope_core::json::compat::to_string_pretty(&doc)?
+                );
+            } else {
+                println!("Slowdown Detective — changes from {from} to {to}");
+                match &rep.history_started {
+                    Some(d) => println!(
+                        "Recording since {d} · {} events recorded in all.",
+                        rep.total_events
+                    ),
+                    None => println!("Recording has not begun."),
+                }
+                if let Some(ms) = boot.as_ref().and_then(|b| b.last_boot_ms) {
+                    println!(
+                        "Last startup took {:.0} s (Windows boot diagnostics).",
+                        ms as f64 / 1000.0
+                    );
+                }
+                if rep.is_empty() {
+                    if rep.total_events == 0 {
+                        println!(
+                            "\nNot enough history yet: InstallScope has only just begun \
+                             recording, so there is no earlier state to compare against. \
+                             Installs, updates, removals and autostart changes from now on \
+                             will build the history this report needs."
+                        );
+                    } else {
+                        println!(
+                            "\nNothing changed between {from} and {to}. \
+                             {} events are recorded outside that window; widen it with --from/--to.",
+                            rep.total_events
+                        );
+                    }
+                } else {
+                    let mut ranked: Vec<(&installscope_core::history::HistoryEvent, u64)> =
+                        Vec::new();
+                    let mut rest: Vec<&installscope_core::history::HistoryEvent> = Vec::new();
+                    for e in &rep.events {
+                        match measured(e) {
+                            Some(ms) => ranked.push((e, ms)),
+                            None => rest.push(e),
+                        }
+                    }
+                    ranked.sort_by(|a, b| b.1.cmp(&a.1).then(b.0.date.cmp(&a.0.date)));
+                    if !ranked.is_empty() {
+                        println!(
+                            "\nRanked by measured startup impact (averages Windows measured):"
+                        );
+                        for (e, ms) in &ranked {
+                            println!("  [{:>6} ms] {}", ms, event_line(e));
+                        }
+                    } else if boot.is_none() {
+                        println!(
+                            "\nStartup-impact measurements are unavailable (Windows boot \
+                             diagnostics need administrator rights), so changes are ranked \
+                             by recency and count instead."
+                        );
+                    }
+                    if !rest.is_empty() {
+                        if !ranked.is_empty() {
+                            println!(
+                                "\nEverything else — no impact measurement exists for these, newest first:"
+                            );
+                        }
+                        for kind in [
+                            K::ProgramInstalled,
+                            K::ProgramUpdated,
+                            K::ProgramRemoved,
+                            K::AutostartAdded,
+                            K::AutostartRemoved,
+                            K::AutostartChanged,
+                        ] {
+                            let mut group: Vec<_> =
+                                rest.iter().filter(|e| e.kind == kind).collect();
+                            if group.is_empty() {
+                                continue;
+                            }
+                            group.reverse(); // newest first within the group
+                            println!("\n{} ({}):", kind.label(), group.len());
+                            for e in group {
+                                println!("  {}", event_line(e));
+                            }
+                        }
                     }
                 }
             }
