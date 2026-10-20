@@ -171,5 +171,6 @@
   "packager_name": "",
   "portable_out_dir": "",
   "profiles": [],
-  "active_profile": ""
+  "active_profile": "",
+  "rewind_budget_bytes": 2147483648
 }
