@@ -18,7 +18,7 @@ pub enum HolderKind {
     Explorer,
     /// A Windows service (`service` names it).
     Service,
-    /// A process Windows can't run without; never closed by Expunge.
+    /// A process Windows can't run without; never closed by InstallScope.
     System,
     /// Any other program.
     Program,

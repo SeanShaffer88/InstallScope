@@ -5,9 +5,9 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use expunge_core::i18n::{self, t, tf};
-use expunge_core::noise::{self, Learned};
-use expunge_core::settings::{FileRoot, Settings};
+use installscope_core::i18n::{self, t, tf};
+use installscope_core::noise::{self, Learned};
+use installscope_core::settings::{FileRoot, Settings};
 
 /// Keyboard shortcuts shown in Settings (keys, description).
 const SHORTCUTS: &[(&str, &str)] = &[
@@ -29,7 +29,7 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ("Ctrl+1 … Ctrl+9", "Go to a page"),
     ("Ctrl+Tab / Ctrl+Shift+Tab", "Next / previous page"),
     ("Ctrl+F", "Search"),
-    ("Ctrl+K", "Ask Expunge (plain-language search)"),
+    ("Ctrl+K", "Ask InstallScope (plain-language search)"),
     ("F5", "Refresh"),
     ("F10", "Go to the menu bar (then arrow keys)"),
     ("F1", "Help for this page"),
@@ -129,7 +129,7 @@ impl App {
         let settings = self.settings.clone();
         self.settings_ui.learned = None;
         self.settings_ui.learn_job = Some(Job::spawn(ctx, move |pr| {
-            use expunge_core::snapshot::{diff, take_snapshot};
+            use installscope_core::snapshot::{diff, take_snapshot};
             pr.set_phase(t("Taking the first snapshot…"));
             let before = take_snapshot(reg.as_ref(), &settings, pr).map_err(|e| e.to_string())?;
             for left in (1..=LEARN_SECONDS).rev() {
@@ -186,7 +186,7 @@ impl App {
                 .collect::<Vec<_>>()
         };
         let (regs, files) = (pick(&res.registry), pick(&res.files));
-        let date = expunge_core::time::DateTime::now_local().ymd();
+        let date = installscope_core::time::DateTime::now_local().ymd();
         noise::append_learned(&mut self.settings.registry_exclusions, &regs, &date);
         noise::append_learned(&mut self.settings.file_exclusions, &files, &date);
         self.save_settings();
@@ -201,7 +201,7 @@ impl App {
     fn ui_noise(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         if ui
             .checkbox(&mut self.settings.auto_exclusions, t("Automatically ignore temporary files, logs and caches (recommended)"))
-            .on_hover_text(t("Uses Expunge's built-in list of volatile locations in addition to yours. It is updated with Expunge."))
+            .on_hover_text(t("Uses InstallScope's built-in list of volatile locations in addition to yours. It is updated with InstallScope."))
             .changed()
         {
             self.save_settings();
@@ -397,7 +397,7 @@ impl App {
                 ui.add_space(10.0);
                 theme::card(ui, |ui| {
                     ui.label(RichText::new(t("Keyboard")).heading());
-                    small_muted(ui, t("Everything in Expunge can be used without a mouse. Screen readers such as Narrator and NVDA read every control."));
+                    small_muted(ui, t("Everything in InstallScope can be used without a mouse. Screen readers such as Narrator and NVDA read every control."));
                     ui.add_space(4.0);
                     egui::Grid::new("keys").num_columns(2).spacing([18.0, 4.0]).show(ui, |ui| {
                         for (keys, what) in SHORTCUTS {
@@ -413,7 +413,16 @@ impl App {
                     ui.add_space(4.0);
                     changed |= ui.checkbox(&mut self.settings.create_restore_point, t("Create a System Restore point before uninstalling")).changed();
                     if self.settings.advanced_mode {
-                        changed |= ui.checkbox(&mut self.settings.backup_before_removal, t("Back up everything before removing it (recommended)")).changed();
+                        changed |= ui
+                            .checkbox(
+                                &mut self.settings.backup_before_removal,
+                                t("Back up everything before removing it (recommended)"),
+                            )
+                            .on_hover_text(t("If disabled, files and registry changes made by InstallScope's removal and cleanup workflows cannot be restored from the Backups page."))
+                            .changed();
+                        if !self.settings.backup_before_removal {
+                            theme::warning_banner(ui, t("Backups are off. InstallScope cannot restore files or registry changes made by removal and cleanup workflows."));
+                        }
                         changed |= ui.checkbox(&mut self.settings.confirm_actions, t("Ask before deleting things")).changed();
                         changed |= ui
                             .checkbox(&mut self.settings.use_recycle_bin, t("Also send removed files to the Recycle Bin"))
@@ -457,7 +466,7 @@ impl App {
                             ui.end_row();
                         });
                         if !self.settings.local_model_url.is_empty() {
-                            if let Err(e) = expunge_core::llm::parse_local_url(&self.settings.local_model_url) {
+                            if let Err(e) = installscope_core::llm::parse_local_url(&self.settings.local_model_url) {
                                 theme::warning_banner(ui, t(&e.to_string()));
                             }
                         }
@@ -487,7 +496,7 @@ impl App {
                             self.auto_watch = Some(v);
                         }
                         if self.auto_watch.is_none() && self.auto_watch_job.is_none() {
-                            self.auto_watch_job = Some(super::Job::spawn(ui.ctx(), |_| expunge_core::autowatch::is_enabled()));
+                            self.auto_watch_job = Some(super::Job::spawn(ui.ctx(), |_| installscope_core::autowatch::is_enabled()));
                         }
                         let mut on = self.auto_watch.unwrap_or(false);
                         let r = ui.add_enabled(
@@ -495,7 +504,7 @@ impl App {
                             egui::Checkbox::new(&mut on, t("Record installations automatically, even ones I forget to monitor")),
                         );
                         if r.changed() {
-                            let res = if on { expunge_core::autowatch::enable() } else { expunge_core::autowatch::disable() };
+                            let res = if on { installscope_core::autowatch::enable() } else { installscope_core::autowatch::disable() };
                             match res {
                                 Ok(()) => self.auto_watch = Some(on),
                                 Err(e) => self.set_status(e.to_string()),
@@ -514,21 +523,21 @@ impl App {
                     let reg = self.reg.clone();
                     let (machine, mut user) = *self.settings_ui.shell_registered.get_or_insert_with(|| {
                         (
-                            expunge_core::shell::is_registered(reg.as_ref(), true),
-                            expunge_core::shell::is_registered(reg.as_ref(), false),
+                            installscope_core::shell::is_registered(reg.as_ref(), true),
+                            installscope_core::shell::is_registered(reg.as_ref(), false),
                         )
                     });
                     if machine {
-                        ui.label(format!("✔ {}", t("\"Install with Expunge\" is in the right-click menu for all users (added by Setup).")));
+                        ui.label(format!("✔ {}", t("\"Install with InstallScope\" is in the right-click menu for all users (added by Setup).")));
                     } else if ui
-                        .checkbox(&mut user, t("Add \"Install with Expunge\" to the right-click menu of installers"))
+                        .checkbox(&mut user, t("Add \"Install with InstallScope\" to the right-click menu of installers"))
                         .changed()
                     {
                         let res = if user {
                             let exe = std::env::current_exe().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
-                            expunge_core::shell::register(reg.as_ref(), &exe, &t("Install with Expunge"), false)
+                            installscope_core::shell::register(reg.as_ref(), &exe, &t("Install with InstallScope"), false)
                         } else {
-                            expunge_core::shell::unregister(reg.as_ref(), false)
+                            installscope_core::shell::unregister(reg.as_ref(), false)
                         };
                         if let Err(e) = res {
                             self.set_status(e.to_string());
@@ -591,15 +600,15 @@ impl App {
                         ui.label(t("Data folder"));
                         ui.add(egui::Label::new(RichText::new(self.store.root.to_string_lossy()).monospace()).truncate());
                         if ui.small_button(t("Open")).clicked() {
-                            expunge_core::platform::shell_open(&self.store.root.to_string_lossy());
+                            installscope_core::platform::shell_open(&self.store.root.to_string_lossy());
                         }
                     });
                     small_muted(
                         ui,
                         if self.store.portable {
-                            t("Portable mode: everything is stored next to Expunge.exe.")
+                            t("Portable mode: everything is stored next to InstallScope.exe.")
                         } else {
-                            t("Tip: put an empty file named \"portable\" next to Expunge.exe to keep all data beside it.")
+                            t("Tip: put an empty file named \"portable\" next to InstallScope.exe to keep all data beside it.")
                         },
                     );
                 });

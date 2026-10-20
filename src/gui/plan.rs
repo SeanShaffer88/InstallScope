@@ -6,9 +6,9 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use expunge_core::backup::{ActionResult, BackupWriter};
-use expunge_core::i18n::{t, tf};
-use expunge_core::revert::{execute_plan, ExecOptions, Plan, Risk};
+use installscope_core::backup::{ActionResult, BackupWriter};
+use installscope_core::i18n::{t, tf};
+use installscope_core::revert::{execute_plan, ExecOptions, Plan, Risk};
 
 pub struct RemovalFlow {
     pub title: String,
@@ -31,7 +31,7 @@ pub struct RemovalFlow {
     pub results: Option<(Vec<ActionResult>, Option<String>)>,
     pub open: bool,
     /// Confidence per plan item, computed once.
-    pub scores: Vec<expunge_core::revert::Confidence>,
+    pub scores: Vec<installscope_core::revert::Confidence>,
 }
 
 impl RemovalFlow {
@@ -67,7 +67,7 @@ pub fn plan_ui(ui: &mut egui::Ui, flow: &mut RemovalFlow) {
             .plan
             .items
             .iter()
-            .map(expunge_core::revert::confidence)
+            .map(installscope_core::revert::confidence)
             .collect();
     }
     let (mut green, mut yellow, mut red) = (0, 0, 0);
@@ -92,7 +92,7 @@ pub fn plan_ui(ui: &mut egui::Ui, flow: &mut RemovalFlow) {
         if ui
             .small_button(t("Select only green"))
             .on_hover_text(t(
-                "Tick only the items Expunge is confident are safe to remove.",
+                "Tick only the items InstallScope is confident are safe to remove.",
             ))
             .clicked()
         {
@@ -261,7 +261,7 @@ impl App {
             && flow.job.is_none()
             && flow.results.is_none()
         {
-            flow.hidden_for_safety = Some(expunge_core::revert::simplify(&mut flow.plan));
+            flow.hidden_for_safety = Some(installscope_core::revert::simplify(&mut flow.plan));
             flow.offer_unlogged = false;
             flow.remove_unlogged = false;
         }
@@ -348,17 +348,42 @@ impl App {
             };
             flow.job = Some(Job::spawn(ctx, move |_| {
                 let mut writer = if backup_on {
-                    BackupWriter::new(&backup_root, &title).ok()
+                    match BackupWriter::new(&backup_root, &title) {
+                        Ok(writer) => Some(writer),
+                        Err(error) => {
+                            return (
+                                vec![ActionResult::err(
+                                    "Backup",
+                                    tf(
+                                        "Could not create a backup; no changes were made: {error}",
+                                        &[("error", format!("{error:#}"))],
+                                    ),
+                                )],
+                                None,
+                            );
+                        }
+                    }
                 } else {
                     None
                 };
-                let results = execute_plan(&plan, reg.as_ref(), writer.as_mut(), &opts);
+                let mut results = execute_plan(&plan, reg.as_ref(), writer.as_mut(), &opts);
                 let id = match writer {
                     Some(w) if w.is_empty() => {
                         w.discard();
                         None
                     }
-                    Some(w) => w.finish().ok().map(|b| b.id),
+                    Some(w) => match w.finish() {
+                        Ok(backup) => Some(backup.id),
+                        Err(error) => {
+                            results.push(ActionResult::err(
+                                "Backup",
+                                format!(
+                                    "Changes may have completed, but the backup could not be finalized: {error:#}"
+                                ),
+                            ));
+                            None
+                        }
+                    },
                     None => None,
                 };
                 (results, id)

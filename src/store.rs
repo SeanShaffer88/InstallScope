@@ -1,7 +1,7 @@
-//! Where Expunge keeps its data: install logs, backups, pending monitoring
+//! Where InstallScope keeps its data: install logs, backups, pending monitoring
 //! sessions and settings.
 //!
-//! Installed mode: `%LOCALAPPDATA%\Expunge`.
+//! Installed mode: `%LOCALAPPDATA%\Expunge` (kept for upgrade compatibility).
 //! Portable mode (a file named `portable` next to the exe): `ExpungeData\`
 //! next to the exe.
 
@@ -163,7 +163,7 @@ impl Store {
     /// Import a log exported from another machine or an older install.
     pub fn import_log(&self, path: &Path) -> Result<InstallLog> {
         let mut log: InstallLog = crate::json::compat::from_str(&std::fs::read_to_string(path)?)
-            .context("not an Expunge install log")?;
+            .context("not an InstallScope install log")?;
         if log.id.is_empty() || self.log_path(&log.id).exists() {
             log.id = crate::util::new_id();
         }

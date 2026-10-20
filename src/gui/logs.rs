@@ -7,10 +7,10 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use expunge_core::i18n::{t, tf};
-use expunge_core::model::{human_size, ChangeSet, InstallLog};
-use expunge_core::report;
-use expunge_core::revert::build_plan;
+use installscope_core::i18n::{t, tf};
+use installscope_core::model::{human_size, ChangeSet, InstallLog};
+use installscope_core::report;
+use installscope_core::revert::build_plan;
 
 #[derive(Default)]
 pub struct LogsState {
@@ -24,7 +24,7 @@ pub struct LogsState {
     /// (query, logs fingerprint, [(log id, name, match count, first match)]).
     pub search_cache: Option<(String, usize, Vec<(String, String, usize, String)>)>,
     /// Change statistics per log id, computed once when logs load.
-    pub stats: std::collections::HashMap<String, expunge_core::model::ChangeStats>,
+    pub stats: std::collections::HashMap<String, installscope_core::model::ChangeStats>,
     /// Tags being edited, as typed.
     pub tags_text: String,
     /// Show only this group ("" = all).
@@ -259,22 +259,32 @@ impl App {
         if self.logs.package_job.is_some() {
             return;
         }
-        let Some(dir) = pick_folder(&t("Choose where to save the silent installer")) else {
+        let Some(dir) = pick_folder(&t("Choose where to save the setup package")) else {
             return;
         };
         let reg = self.reg.clone();
         let root = self.store.root.clone();
         self.set_status(tf(
-            "Making a silent installer for {name}…",
+            "Creating a setup package for {name}…",
             &[("name", log.name.clone())],
         ));
         self.logs.package_job = Some(Job::spawn(&self.ctx, move |pr| {
-            let s =
-                expunge_core::repackage::repackage(&log, reg.as_ref(), &dir, &|p| pr.set_phase(p))
-                    .map_err(|e| e.to_string())?;
-            let setup = expunge_core::patools::ensure(&root, &|p| pr.set_phase(p.to_string()))
+            let s = installscope_core::repackage::repackage(&log, reg.as_ref(), &dir, &|p| {
+                pr.set_phase(p)
+            })
+            .map_err(|e| e.to_string())?;
+            if s.missing > 0 {
+                return Ok((
+                    s.folder,
+                    Err(format!(
+                        "{} captured file(s) are missing; no Setup.exe was created. Review the install log or make a fresh capture.",
+                        s.missing
+                    )),
+                ));
+            }
+            let setup = installscope_core::patools::ensure(&root, &|p| pr.set_phase(p.to_string()))
                 .and_then(|tc| {
-                    expunge_core::patools::build_silent_setup(
+                    installscope_core::patools::build_silent_setup(
                         &tc,
                         &s.folder,
                         &log.name,
@@ -295,17 +305,17 @@ impl App {
         match r {
             Ok((_, Ok(setup))) => {
                 self.set_status(tf(
-                    "Silent installer ready: {file}",
+                    "Setup package ready: {file}",
                     &[("file", setup.display().to_string())],
                 ));
-                expunge_core::platform::reveal(&setup.to_string_lossy());
+                installscope_core::platform::reveal(&setup.to_string_lossy());
             }
             Ok((folder, Err(e))) => {
                 self.set_status(tf(
-                    "The deploy folder is ready, but Setup.exe couldn't be made: {error}",
+                    "The deploy folder is ready, but Setup.exe could not be created: {error}",
                     &[("error", e)],
                 ));
-                expunge_core::platform::shell_open(&folder.to_string_lossy());
+                installscope_core::platform::shell_open(&folder.to_string_lossy());
             }
             Err(e) => self.set_status(e),
         }
@@ -313,11 +323,11 @@ impl App {
 
     fn print_log(&mut self, log: &InstallLog) {
         let path = std::env::temp_dir().join(format!(
-            "Expunge-{}-print.html",
-            expunge_core::util::safe_file_name(&log.name)
+            "InstallScope-{}-print.html",
+            installscope_core::util::safe_file_name(&log.name)
         ));
         match std::fs::write(&path, report::to_print_html(log)) {
-            Ok(()) => expunge_core::platform::shell_open(&path.to_string_lossy()),
+            Ok(()) => installscope_core::platform::shell_open(&path.to_string_lossy()),
             Err(e) => self.set_status(e.to_string()),
         }
     }
@@ -331,7 +341,7 @@ impl App {
         // The list holds summaries; merge the full logs from disk.
         let full = |l: &InstallLog| self.store.load_log(&l.id).unwrap_or_else(|_| l.clone());
         let (fa, fb) = (full(&la), full(&lb));
-        let merged = expunge_core::merge::merge_logs(&[&fa, &fb], "");
+        let merged = installscope_core::merge::merge_logs(&[&fa, &fb], "");
         match self.store.save_log(&merged) {
             Ok(()) => {
                 self.set_status(tf(
@@ -346,24 +356,24 @@ impl App {
     }
 
     fn export_log(&mut self, log: &InstallLog, ext: &str) {
-        let base = expunge_core::util::safe_file_name(&log.name);
+        let base = installscope_core::util::safe_file_name(&log.name);
         let (content, filter) = match ext {
             "html" => (report::to_html(log), "HTML"),
             "reg" => (report::to_reg_undo(log), "Registry script"),
             "ps1" => (report::to_ps1(log), "PowerShell"),
             "xml" => (report::to_xml(log), "XML"),
             "ini" => (
-                expunge_core::portable::launcher_ini(
+                installscope_core::portable::launcher_ini(
                     &log.changes,
                     &log.name,
-                    &expunge_core::portable::Folders::current(),
+                    &installscope_core::portable::Folders::current(),
                 )
                 .text,
                 "PortableApps.com Launcher settings",
             ),
             _ => (
-                expunge_core::json::compat::to_string_pretty(log).unwrap_or_default(),
-                "Expunge log",
+                installscope_core::json::compat::to_string_pretty(log).unwrap_or_default(),
+                "InstallScope log",
             ),
         };
         let default = format!("{base}.{ext}");
@@ -384,7 +394,7 @@ impl App {
             Ok(()) => {
                 self.set_status(tf("Saved {path}", &[("path", path.display().to_string())]));
                 if ext == "html" {
-                    expunge_core::platform::shell_open(&path.to_string_lossy());
+                    installscope_core::platform::shell_open(&path.to_string_lossy());
                 }
             }
             Err(e) => self.set_status(e.to_string()),
@@ -632,6 +642,23 @@ impl App {
                         let full = self.logs.logs[idx].clone();
                         self.uninstall_from_log(&full);
                     }
+                    if ui
+                        .add_enabled(
+                            self.logs.package_job.is_none(),
+                            egui::Button::new(t("Create Setup Package…")),
+                        )
+                        .on_hover_text(t("Build a silent Setup.exe and deploy folder from this recorded installation."))
+                        .clicked()
+                    {
+                        let id = self.logs.logs[idx].id.clone();
+                        match self.store.load_log(&id) {
+                            Ok(full) => self.start_silent_package(full),
+                            Err(error) => self.set_status(tf(
+                                "Could not load this install log: {error}",
+                                &[("error", error.to_string())],
+                            )),
+                        }
+                    }
                     ui.menu_button(t("Export"), |ui| {
                         for (ext, label) in [
                             ("html", "HTML report"),
@@ -646,16 +673,6 @@ impl App {
                                 let full = self.logs.logs[idx].clone();
                                 self.export_log(&full, ext);
                             }
-                        }
-                        ui.separator();
-                        if ui
-                            .add_enabled(self.logs.package_job.is_none(), egui::Button::new(t("Silent installer (Setup.exe)…")))
-                            .on_hover_text(t("Redeploy this exact version later without the setup wizard: one silent Setup.exe, plus a folder with the files, install.reg, install.ps1 and uninstall.ps1."))
-                            .clicked()
-                        {
-                            ui.close();
-                            let full = self.store.load_log(&self.logs.logs[idx].id).unwrap_or_else(|_| self.logs.logs[idx].clone());
-                            self.start_silent_package(full);
                         }
                     });
                     if ui.button(format!("🖨 {}", t("Print"))).on_hover_text(t("Open the report in your browser and print it.")).clicked() {
@@ -730,7 +747,7 @@ impl App {
                     }
                 });
                 if save {
-                    let tags = expunge_core::model::parse_tags(&self.logs.tags_text);
+                    let tags = installscope_core::model::parse_tags(&self.logs.tags_text);
                     let group = self.logs.logs[idx].group.trim().to_string();
                     self.logs.logs[idx].tags = tags;
                     self.logs.logs[idx].group = group;

@@ -4,10 +4,10 @@ use super::theme;
 use super::widgets::*;
 use super::*;
 use egui::RichText;
-use expunge_core::i18n::{self, t, tf};
-use expunge_core::platform::{self, Registry};
-use expunge_core::settings::Settings;
-use expunge_core::store::Store;
+use installscope_core::i18n::{self, t, tf};
+use installscope_core::platform::{self, Registry};
+use installscope_core::settings::Settings;
+use installscope_core::store::Store;
 use std::sync::Arc;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -40,7 +40,7 @@ pub enum Confirm {
     CancelMonitoring,
     /// Turn an optional Windows feature on (true) or off.
     /// Run one deep (Windows) cleanup.
-    DeepClean(expunge_core::slimmer::DeepItem),
+    DeepClean(installscope_core::slimmer::DeepItem),
     /// Apply the ticked Anti-Telemetry changes.
     /// Remove the ticked pre-installed apps.
     SetProtection(bool),
@@ -81,10 +81,10 @@ pub struct App {
     pub shell: super::shell_ui::ShellState,
     pub debloat: super::debloat_ui::DebloatState,
     pub alt: super::alt_ui::AltState,
-    /// "Ask Expunge" plain-language search (Ctrl+K).
+    /// "Ask InstallScope" plain-language search (Ctrl+K).
     pub ask_ui: super::ask::AskState,
     /// Live activity while monitoring an installation.
-    pub live: Option<expunge_core::live::LiveWatcher>,
+    pub live: Option<installscope_core::live::LiveWatcher>,
     /// Whether background monitoring is on (read from Task Scheduler once).
     pub auto_watch: Option<bool>,
     pub auto_watch_job: Option<super::Job<bool>>,
@@ -96,7 +96,7 @@ pub struct App {
     /// A file operation (deleting a backup) running in the background.
     pub file_job: Option<Job<Result<(), String>>>,
     /// System-wide scan for registrations left by removed programs.
-    pub orphan_job: Option<Job<expunge_core::revert::Plan>>,
+    pub orphan_job: Option<Job<installscope_core::revert::Plan>>,
     pub startup: startup_tab::StartupState,
     pub cleaner: cleaner::CleanerState,
     pub settings_ui: settings_tab::SettingsState,
@@ -109,7 +109,7 @@ pub struct App {
     pub ctrl_tab: Option<bool>,
     pub welcome_open: bool,
     pub focus_search: bool,
-    /// Installer passed from Explorer's "Install with Expunge".
+    /// Installer passed from Explorer's "Install with InstallScope".
     pub pending_install: Option<String>,
     /// Arguments to pass on when relaunching as Administrator.
     pub launch_args: Vec<String>,
@@ -124,7 +124,7 @@ impl App {
         launch_args: Vec<String>,
     ) -> Self {
         let store = Store::open().unwrap_or_else(|_| {
-            Store::at(&std::env::temp_dir().join("Expunge")).expect("data folder")
+            Store::at(&std::env::temp_dir().join("InstallScope")).expect("data folder")
         });
         let settings = store.load_settings();
         let first_run_done = settings.first_run_done;
@@ -192,7 +192,7 @@ impl App {
             removal: None,
         };
         app.programs.cache = std::sync::Arc::new(std::sync::Mutex::new(
-            expunge_core::cache::Cache::load(&app.store.cache_path()),
+            installscope_core::cache::Cache::load(&app.store.cache_path()),
         ));
         app.reload_logs();
         app.reload_backups();
@@ -226,9 +226,9 @@ impl App {
     /// Re-read backups from disk in the background.
     pub fn reload_backups(&mut self) {
         let dir = self.store.backups_dir();
-        self.backups
-            .loader
-            .request(&self.ctx, move || expunge_core::backup::list_backups(&dir));
+        self.backups.loader.request(&self.ctx, move || {
+            installscope_core::backup::list_backups(&dir)
+        });
     }
 
     /// Start the system-wide orphan scan.
@@ -239,7 +239,7 @@ impl App {
         let reg = self.reg.clone();
         self.set_status(t("Looking for leftovers of removed programs…"));
         self.orphan_job = Some(Job::spawn(&self.ctx, move |_| {
-            expunge_core::orphans::scan_system(reg.as_ref())
+            installscope_core::orphans::scan_system(reg.as_ref())
         }));
     }
 
@@ -260,7 +260,7 @@ impl App {
         let mut flow =
             super::plan::RemovalFlow::new(t("Leftovers of removed programs"), plan, false, false);
         flow.plan.info.push(t(
-            "These registrations point to files or folders that no longer exist. Windows' own entries are never included.",
+            "Uninstall entries are included only when both their declared install folder and uninstaller are missing. MSI, hidden, protected, and Windows-owned entries are excluded. Review every item before removal; selected registry data is backed up.",
         ));
         self.open_removal(flow);
     }
@@ -367,10 +367,10 @@ impl App {
                     if std::mem::take(&mut self.focus_menu) {
                         file.response.request_focus();
                         ui.ctx().data_mut(|d| {
-                            d.insert_temp(egui::Id::new("expunge_keyboard_mode"), true)
+                            d.insert_temp(egui::Id::new("installscope_keyboard_mode"), true)
                         });
                     }
-                    ui.menu_button(t("Tools"), |ui| {
+                    ui.menu_button(t("Utilities"), |ui| {
                         if ui.button(t("Install and monitor…")).clicked() {
                             ui.close();
                             self.tab = Tab::Monitor;
@@ -380,7 +380,7 @@ impl App {
                             ui.close();
                             self.tab = Tab::Restore;
                         }
-                        if ui.button(t("Portable App Builder")).clicked() {
+                        if ui.button(t("PortableApps Forge")).clicked() {
                             ui.close();
                             self.tab = Tab::Builder;
                         }
@@ -407,8 +407,8 @@ impl App {
                         if ui.button(t("Create restore point")).clicked() {
                             ui.close();
                             self.programs.restore_job = Some(Job::spawn(ctx, |_| {
-                                expunge_core::restore::create_restore_point(
-                                    "Expunge manual restore point",
+                                installscope_core::restore::create_restore_point(
+                                    "InstallScope manual restore point",
                                 )
                                 .map_err(|e| e.to_string())
                             }));
@@ -467,7 +467,7 @@ impl App {
                             ));
                         }
                         ui.separator();
-                        if ui.button(t("About Expunge")).clicked() {
+                        if ui.button(t("About InstallScope")).clicked() {
                             ui.close();
                             self.about_open = true;
                         }
@@ -523,105 +523,225 @@ impl App {
                     .stroke(egui::Stroke::new(1.0_f32, theme::LINE)),
             )
             .show(ctx, |ui| {
-                ui.horizontal(|ui| {
-                    let tex = self.logo_small.clone();
-                    ui.add(egui::Image::new(&tex).fit_to_exact_size(egui::vec2(28.0, 28.0)));
-                    ui.label(
-                        RichText::new("Expunge")
-                            .size(19.0)
-                            .strong()
-                            .color(egui::Color32::WHITE),
-                    );
-                });
-                ui.add_space(14.0);
-                let monitoring = self.monitor.is_active();
-                let broken = self.programs.broken.len();
-                let items: [(Tab, &str, &str, Option<String>); 7] = [
-                    (Tab::Dashboard, "🏠", "Dashboard", None),
-                    (
-                        Tab::Programs,
-                        "📦",
-                        "Programs",
-                        (broken > 0).then(|| broken.to_string()),
-                    ),
-                    (
-                        Tab::Monitor,
-                        if monitoring { "⏺" } else { "📡" },
-                        "Monitor",
-                        monitoring.then(|| "REC".to_string()),
-                    ),
-                    (Tab::Logs, "📋", "Install logs", None),
-                    (Tab::Backups, "💾", "Backups", None),
-                    (Tab::Startup, "🚀", "Startup", None),
-                    (Tab::Cleaner, "🗑", "Cleaner", None),
-                ];
-                for (tab, icon, label, badge) in items {
-                    if theme::nav_item(ui, icon, &t(label), self.tab == tab, badge).clicked() {
-                        self.tab = tab;
-                        self.on_tab_opened(ctx, tab);
-                    }
-                }
-                ui.add_space(14.0);
-                ui.label(RichText::new(t("TOOLS")).small().color(theme::MUTED));
-                ui.add_space(2.0);
-                if theme::nav_item(
-                    ui,
-                    "⏪",
-                    &t("System Restore"),
-                    self.tab == Tab::Restore,
-                    None,
-                )
-                .clicked()
-                {
-                    self.tab = Tab::Restore;
-                }
-                if theme::nav_item(ui, "📸", &t("Snapshots"), self.tab == Tab::Lab, None).clicked()
-                {
-                    self.tab = Tab::Lab;
-                    self.reload_logs();
-                    self.on_lab_opened();
-                }
-                if theme::nav_item(
-                    ui,
-                    "🎒",
-                    &t("Portable App Builder"),
-                    self.tab == Tab::Builder,
-                    None,
-                )
-                .clicked()
-                {
-                    self.tab = Tab::Builder;
-                }
-                if theme::nav_item(
-                    ui,
-                    "🛡",
-                    &t("Bloatware Shield"),
-                    self.tab == Tab::Debloat,
-                    None,
-                )
-                .clicked()
-                {
-                    self.tab = Tab::Debloat;
-                }
-                if theme::nav_item(
-                    ui,
-                    "☰",
-                    &t("Right-click menu"),
-                    self.tab == Tab::Shell,
-                    None,
-                )
-                .clicked()
-                {
-                    self.tab = Tab::Shell;
-                }
+                let footer_height = if self.elevated { 48.0 } else { 90.0 };
+                egui::ScrollArea::vertical()
+                    .id_salt("nav_items")
+                    .auto_shrink([false, false])
+                    .max_height((ui.available_height() - footer_height).max(0.0))
+                    .show(ui, |ui| {
+                        ui.horizontal(|ui| {
+                            let tex = self.logo_small.clone();
+                            ui.add(
+                                egui::Image::new(&tex).fit_to_exact_size(egui::vec2(28.0, 28.0)),
+                            );
+                            ui.label(
+                                RichText::new("InstallScope")
+                                    .size(19.0)
+                                    .strong()
+                                    .color(egui::Color32::WHITE),
+                            );
+                        });
+                        ui.add_space(14.0);
+                        let monitoring = self.monitor.is_active();
+                        let broken = self.programs.broken.len();
+                        let items: [(Tab, &str, &str, Option<String>, &str); 7] = [
+                            (
+                                Tab::Dashboard,
+                                "🏠",
+                                "Dashboard",
+                                None,
+                                "Your system at a glance",
+                            ),
+                            (
+                                Tab::Programs,
+                                "📦",
+                                "Programs",
+                                (broken > 0).then(|| broken.to_string()),
+                                "Uninstall programs completely, including everything they leave behind",
+                            ),
+                            (
+                                Tab::Monitor,
+                                if monitoring { "⏺" } else { "📡" },
+                                "Monitor",
+                                monitoring.then(|| "REC".to_string()),
+                                "Record installations so they can be removed precisely",
+                            ),
+                            (
+                                Tab::Logs,
+                                "📋",
+                                "Install Logs",
+                                None,
+                                "Everything each monitored installation changed",
+                            ),
+                            (
+                                Tab::Backups,
+                                "💾",
+                                "Backups",
+                                None,
+                                "Undo any removal, cleanup or startup change",
+                            ),
+                            (
+                                Tab::Startup,
+                                "🚀",
+                                "Startup",
+                                None,
+                                "Programs, services and tasks that start with Windows",
+                            ),
+                            (
+                                Tab::Cleaner,
+                                "🗑",
+                                "Cleaner",
+                                None,
+                                "Free space taken by temporary files and caches",
+                            ),
+                        ];
+                        for (tab, icon, label, badge, hint) in items {
+                            if theme::nav_item_with_hint(
+                                ui,
+                                icon,
+                                &t(label),
+                                self.tab == tab,
+                                badge,
+                                Some(&t(hint)),
+                            )
+                            .clicked()
+                            {
+                                self.tab = tab;
+                                self.on_tab_opened(ctx, tab);
+                            }
+                        }
+                        ui.add_space(14.0);
+                        ui.label(RichText::new(t("Utilities")).small().color(theme::MUTED));
+                        ui.add_space(2.0);
+                        if theme::nav_item_with_hint(
+                            ui,
+                            "⏪",
+                            &t("System Restore"),
+                            self.tab == Tab::Restore,
+                            None,
+                            Some(&t("Create, delete and roll back to restore points")),
+                        )
+                        .clicked()
+                        {
+                            self.tab = Tab::Restore;
+                        }
+                        if theme::nav_item_with_hint(
+                            ui,
+                            "📸",
+                            &t("Snapshots"),
+                            self.tab == Tab::Lab,
+                            None,
+                            Some(&t(
+                                "Capture the system at any moment and compare any two captures",
+                            )),
+                        )
+                        .clicked()
+                        {
+                            self.tab = Tab::Lab;
+                            self.reload_logs();
+                            self.on_lab_opened();
+                        }
+                        if theme::nav_item_with_hint(
+                            ui,
+                            "🎒",
+                            &t("PortableApps Forge"),
+                            self.tab == Tab::Builder,
+                            None,
+                            Some(&t(
+                                "Capture an installation and turn it into a PortableApps.com package",
+                            )),
+                        )
+                        .clicked()
+                        {
+                            self.tab = Tab::Builder;
+                        }
+                        for (icon, label, hint) in [
+                            (
+                                "📦",
+                                "Setup Package Creator",
+                                "Planned: Build a guided installer from a reviewed project, with complete dependency checks.",
+                            ),
+                            (
+                                "🧪",
+                                "Developer Sandbox",
+                                "Planned: Run development apps in a disposable, restricted environment.",
+                            ),
+                            (
+                                "💿",
+                                "Temporary Scratch Disk",
+                                "Planned: Create a size-limited temporary workspace for testing and builds.",
+                            ),
+                            (
+                                "🗂",
+                                "VSS Viewer",
+                                "Planned: Browse VSS snapshots read-only and copy selected files.",
+                            ),
+                        ] {
+                            ui.add_enabled_ui(false, |ui| {
+                                theme::nav_item_with_hint(
+                                    ui,
+                                    icon,
+                                    &t(label),
+                                    false,
+                                    Some(t("Planned")),
+                                    Some(&t(hint)),
+                                )
+                                .on_disabled_hover_text(t(hint));
+                            });
+                        }
+                        if theme::nav_item_with_hint(
+                            ui,
+                            "🛡",
+                            &t("Bloatware Shield"),
+                            self.tab == Tab::Debloat,
+                            None,
+                            Some(&t(
+                                "Remove the trials, promotions and pre-installed apps that came with this PC",
+                            )),
+                        )
+                        .clicked()
+                        {
+                            self.tab = Tab::Debloat;
+                        }
+                        if theme::nav_item_with_hint(
+                            ui,
+                            "☰",
+                            &t("Right-Click Menu"),
+                            self.tab == Tab::Shell,
+                            None,
+                            Some(&t(
+                                "Every shell extension and menu command, with broken ones left by removed programs",
+                            )),
+                        )
+                        .clicked()
+                        {
+                            self.tab = Tab::Shell;
+                        }
+                    });
                 ui.with_layout(egui::Layout::bottom_up(egui::Align::Min), |ui| {
                     if !self.elevated
-                        && theme::nav_item(ui, "🛡", &t("Run as Administrator"), false, None)
+                        && theme::nav_item_with_hint(
+                            ui,
+                            "🛡",
+                            &t("Run as Administrator"),
+                            false,
+                            None,
+                            Some(&t("Restart as Administrator")),
+                        )
                             .clicked()
                     {
                         self.admin_prompt = true;
                     }
-                    if theme::nav_item(ui, "⚙", &t("Settings"), self.tab == Tab::Settings, None)
+                    if theme::nav_item_with_hint(
+                        ui,
+                        "⚙",
+                        &t("Settings"),
+                        self.tab == Tab::Settings,
+                        None,
+                        Some(&t(
+                            "Manage language, appearance, monitoring scope, backup protection and advanced behavior",
+                        )),
+                    )
                         .clicked()
                     {
                         self.tab = Tab::Settings;
@@ -661,7 +781,7 @@ impl App {
                 "Capture the system at any moment and compare any two captures",
             ),
             Tab::Builder => (
-                "Portable App Builder",
+                "PortableApps Forge",
                 "Capture an installation and turn it into a PortableApps.com package",
             ),
             Tab::Shell => (
@@ -706,7 +826,7 @@ impl App {
                         }
                         ui.add_space(4.0);
                         if ui
-                            .button(format!("🔎 {}", t("Ask Expunge")))
+                            .button(format!("🔎 {}", t("Ask InstallScope")))
                             .on_hover_text(t(
                                 "Search programs and install logs in plain words (Ctrl+K)",
                             ))
@@ -752,9 +872,9 @@ impl App {
                         small_muted(
                             ui,
                             format!(
-                                "Expunge {} · © {}",
-                                expunge_core::APP_VERSION,
-                                expunge_core::APP_AUTHOR
+                                "InstallScope {} · © {}",
+                                installscope_core::APP_VERSION,
+                                installscope_core::APP_AUTHOR
                             ),
                         );
                         if self.store.portable {
@@ -775,7 +895,7 @@ impl App {
                 });
                 ui.add_space(6.0);
                 ui.label(t(
-                    "Expunge is not running as Administrator. It needs admin rights to work effectively: \
+                    "InstallScope is not running as Administrator. It needs admin rights to work effectively: \
                      to monitor and undo installations system-wide, remove programs installed for all users, \
                      manage services, and clean protected folders.",
                 ));
@@ -844,7 +964,7 @@ impl App {
         }
         if self.about_open {
             let logo = self.logo.clone();
-            egui::Window::new(t("About Expunge"))
+            egui::Window::new(t("About InstallScope"))
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -853,14 +973,18 @@ impl App {
                     ui.vertical_centered(|ui| {
                         let tex = logo.clone();
                         ui.add(egui::Image::new(&tex).fit_to_exact_size(egui::vec2(96.0, 96.0)));
-                        ui.heading(RichText::new("Expunge").color(theme::ACCENT_TEXT).strong());
+                        ui.heading(
+                            RichText::new("InstallScope")
+                                .color(theme::ACCENT_TEXT)
+                                .strong(),
+                        );
                         ui.label(tf(
                             "Version {n}",
-                            &[("n", expunge_core::APP_VERSION.to_string())],
+                            &[("n", installscope_core::APP_VERSION.to_string())],
                         ));
                         ui.add_space(6.0);
-                        ui.label(t("Open Source Install Monitor & Uninstaller"));
-                        ui.label(format!("© 2026 {}", expunge_core::APP_AUTHOR));
+                        ui.label(t("Windows Install, Uninstall & Developer Tools"));
+                        ui.label(format!("© 2026 {}", installscope_core::APP_AUTHOR));
                         ui.add_space(6.0);
                         small_muted(
                             ui,
@@ -890,19 +1014,19 @@ impl App {
         self.poll_silent_package();
         self.poll_precheck(ctx);
         // Resource-use history: a quick sample of running programs every
-        // five minutes while Expunge is open (background monitoring does the
+        // five minutes while InstallScope is open (background monitoring does the
         // same when it is on).
         {
             use std::sync::atomic::{AtomicI64, Ordering};
             static LAST: AtomicI64 = AtomicI64::new(0);
-            let now = expunge_core::time::unix_now();
+            let now = installscope_core::time::unix_now();
             if now - LAST.load(Ordering::Relaxed) >= 300 {
                 LAST.store(now, Ordering::Relaxed);
                 let root = self.store.root.clone();
                 std::thread::spawn(move || {
                     #[cfg(windows)]
-                    expunge_core::platform::windows::lower_thread_priority();
-                    expunge_core::usage::sample_and_save(&root, 290);
+                    installscope_core::platform::windows::lower_thread_priority();
+                    installscope_core::usage::sample_and_save(&root, 290);
                 });
             }
         }
@@ -918,7 +1042,7 @@ impl App {
     }
 
     fn import_log(&mut self) {
-        let Some(path) = pick_file(&t("Import install log"), "Expunge log", &["json"]) else {
+        let Some(path) = pick_file(&t("Import install log"), "InstallScope log", &["json"]) else {
             return;
         };
         match self.store.import_log(&path) {
@@ -937,7 +1061,7 @@ impl App {
         };
         let mut all = self.programs.list.clone();
         all.extend(self.programs.store_apps.clone());
-        match std::fs::write(&path, expunge_core::programs::to_csv(&all)) {
+        match std::fs::write(&path, installscope_core::programs::to_csv(&all)) {
             Ok(()) => self.set_status(tf("Saved {path}", &[("path", path.display().to_string())])),
             Err(e) => self.set_status(e.to_string()),
         }
@@ -955,7 +1079,7 @@ pub fn logo_small_image() -> egui::ColorImage {
 }
 
 fn decode_png(bytes: &[u8]) -> egui::ColorImage {
-    match expunge_core::png::decode(bytes) {
+    match installscope_core::png::decode(bytes) {
         Ok(img) => {
             let size = [img.width as usize, img.height as usize];
             egui::ColorImage::from_rgba_unmultiplied(size, &img.pixels)
@@ -968,19 +1092,19 @@ fn decode_png(bytes: &[u8]) -> egui::ColorImage {
 fn page_help(tab: Tab) -> &'static [&'static str] {
     match tab {
         Tab::Dashboard => &[
-            "The dashboard shows how many programs are installed, which ones Expunge recorded, and anything that needs attention.",
+            "The dashboard shows how many programs are installed, which ones InstallScope recorded, and anything that needs attention.",
             "Click a tile or a quick action to jump straight to it.",
         ],
         Tab::Programs => &[
             "This is the list of programs installed on this PC. Select one to see its details, or double-click it to uninstall.",
-            "Uninstall first runs the program's own uninstaller, then Expunge looks for anything left behind (leftovers) and shows you before removing it.",
+            "Uninstall first runs the program's own uninstaller, then InstallScope looks for anything left behind (leftovers) and shows you before removing it.",
             "Tick several programs to uninstall them one after another. \"Broken\" lists entries whose files are already gone.",
-            "Everything Expunge removes is backed up first, so you can undo it on the Backups page.",
+            "Everything InstallScope removes is backed up first, so you can undo it on the Backups page.",
         ],
         Tab::Monitor => &[
-            "Monitoring means Expunge takes a \"before\" picture of your system, you install a program, and Expunge takes an \"after\" picture.",
-            "The difference is exactly what the installation added or changed. Expunge saves it as an install log.",
-            "Later, Expunge can use that log to remove the program completely and precisely — even things its own uninstaller would forget.",
+            "Monitoring means InstallScope takes a \"before\" picture of your system, you install a program, and InstallScope takes an \"after\" picture.",
+            "The difference is exactly what the installation added or changed. InstallScope saves it as an install log.",
+            "Later, InstallScope can use that log to remove the program completely and precisely — even things its own uninstaller would forget.",
         ],
         Tab::Logs => &[
             "Each install log lists everything one monitored installation added or changed: files, folders, registry entries, services and tasks.",
@@ -988,7 +1112,7 @@ fn page_help(tab: Tab) -> &'static [&'static str] {
             "You can export a log as a readable report, or as scripts that undo the installation on another PC.",
         ],
         Tab::Backups => &[
-            "Before Expunge deletes or changes anything, it copies it here.",
+            "Before InstallScope deletes or changes anything, it copies it here.",
             "If something stops working after a removal, click Restore to put everything back exactly as it was.",
         ],
         Tab::Startup => &[
@@ -1007,7 +1131,7 @@ fn page_help(tab: Tab) -> &'static [&'static str] {
         ],
         Tab::Lab => &[
             "A snapshot records the registry and files at one moment. Take one, make changes (install something, change settings), take another and compare the two to see exactly what changed.",
-            "The differences can be saved as an install log, so they can be undone like a monitored installation. Everything is also available from the command line (expunge --help).",
+            "The differences can be saved as an install log, so they can be undone like a monitored installation. Everything is also available from the command line (installscope --help).",
         ],
         Tab::Shell => &[
             "Programs add commands and shell extensions to the right-click menu of files, folders, drives and the desktop. Many stay behind after the program is gone, which clutters the menu and can slow down File Explorer.",
@@ -1019,9 +1143,9 @@ fn page_help(tab: Tab) -> &'static [&'static str] {
             "Recommended items are ticked; optional maker tools are not. Drivers, audio and hotkey tools and Windows' own parts are never listed. Removal goes through the usual review, and everything is backed up.",
         ],
         Tab::Builder => &[
-            "Choose a program's installer and describe the program. Expunge snapshots Windows, runs the installer, lets you start the program once, snapshots again and builds a PortableApps.com Format package from the difference.",
+            "Choose a program's installer and describe the program. InstallScope snapshots Windows, runs the installer, lets you start the program once, snapshots again and builds a PortableApps.com Format package from the difference.",
             "In Windows Sandbox nothing touches this PC. On this PC, the installation is recorded so you can remove it precisely afterwards.",
-            "With the PortableApps.com Launcher and Installer installed, Expunge also makes the launcher and the .paf.exe installer. Review the Launcher settings it wrote before publishing.",
+            "With the PortableApps.com Launcher and Installer installed, InstallScope also makes the launcher and the .paf.exe installer. Review the Launcher settings it wrote before publishing.",
         ],
         Tab::Settings => &[
             "Simple mode keeps the interface focused and plain. Advanced mode shows technical details, services and scheduled tasks.",
@@ -1031,7 +1155,7 @@ fn page_help(tab: Tab) -> &'static [&'static str] {
 }
 
 impl App {
-    /// First-run welcome: language, mode, and what Expunge does.
+    /// First-run welcome: language, mode, and what InstallScope does.
     fn welcome(&mut self, ctx: &egui::Context) {
         if !self.welcome_open {
             return;
@@ -1042,7 +1166,7 @@ impl App {
             ui.horizontal(|ui| {
                 ui.add(egui::Image::new(&self.logo).fit_to_exact_size(egui::vec2(48.0, 48.0)));
                 ui.vertical(|ui| {
-                    ui.heading(RichText::new(t("Welcome to Expunge")).strong());
+                    ui.heading(RichText::new(t("Welcome to InstallScope")).strong());
                     small_muted(
                         ui,
                         t("Remove programs completely — and only what belongs to them."),
@@ -1106,7 +1230,7 @@ impl App {
                 ui.add_space(4.0);
             }
             ui.add_space(8.0);
-            ui.label(RichText::new(t("How do you want Expunge to look?")).strong());
+            ui.label(RichText::new(t("How do you want InstallScope to look?")).strong());
             ui.columns(2, |cols| {
                 for (i, (adv, title, body)) in [
                     (
@@ -1183,7 +1307,7 @@ impl App {
             ));
             return;
         }
-        // "Install with Expunge": check the setup file first.
+        // "Install with InstallScope": check the setup file first.
         self.precheck_installer(ctx, path);
     }
 
@@ -1358,8 +1482,8 @@ impl eframe::App for App {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.frame += 1;
-        // Benchmarks: record why each frame was drawn (EXPUNGE_REPAINT_LOG=file).
-        if let Some(path) = std::env::var_os("EXPUNGE_REPAINT_LOG") {
+        // Benchmarks: record why each frame was drawn (INSTALLSCOPE_REPAINT_LOG=file).
+        if let Some(path) = std::env::var_os("INSTALLSCOPE_REPAINT_LOG") {
             use std::io::Write;
             if let Ok(mut f) = std::fs::OpenOptions::new()
                 .create(true)

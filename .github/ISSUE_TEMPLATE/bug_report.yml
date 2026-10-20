@@ -4,7 +4,7 @@ labels: [bug]
 body:
   - type: input
     id: version
-    attributes: { label: Expunge version, description: "Help → About Expunge" }
+    attributes: { label: InstallScope version, description: "Help → About InstallScope" }
     validations: { required: true }
   - type: input
     id: windows
@@ -12,7 +12,7 @@ body:
     validations: { required: true }
   - type: dropdown
     id: mode
-    attributes: { label: How is Expunge installed?, options: [Installer, Portable, Built from source] }
+    attributes: { label: How is InstallScope installed?, options: [Installer, Portable, Built from source] }
   - type: textarea
     id: what
     attributes: { label: What happened?, description: "Steps to reproduce, what you expected, what you got." }

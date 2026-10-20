@@ -170,7 +170,7 @@ mod tests {
 
     #[test]
     fn streams_file_changes() {
-        let d = std::env::temp_dir().join(format!("expunge-live-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("installscope-live-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(d.join("sub")).unwrap();
         let w = LiveWatcher::start(

@@ -30,7 +30,7 @@ pub struct Settings {
     pub registry_exclusions: Vec<String>,
     /// Glob patterns for file noise to ignore.
     pub file_exclusions: Vec<String>,
-    /// Also apply Expunge's built-in list of volatile locations (temporary
+    /// Also apply InstallScope's built-in list of volatile locations (temporary
     /// files, logs, browser and app caches).
     pub auto_exclusions: bool,
     /// Copy everything to a backup before deleting it.
@@ -65,12 +65,12 @@ pub struct Settings {
     pub high_contrast: bool,
     /// The welcome screen has been completed.
     pub first_run_done: bool,
-    /// Portable App Builder: the PortableApps folder holding the
+    /// PortableApps Forge: the PortableApps folder holding the
     /// PortableApps.com Launcher and Installer ("" = search every drive).
     pub portableapps_dir: String,
-    /// Portable App Builder: your name, added to the package's publisher.
+    /// PortableApps Forge: your name, added to the package's publisher.
     pub packager_name: String,
-    /// Portable App Builder: where packages are saved.
+    /// PortableApps Forge: where packages are saved.
     pub portable_out_dir: String,
     /// Saved monitoring scopes, e.g. "Quick (Program Files only)" or "Deep".
     pub profiles: Vec<ScanProfile>,

@@ -15,7 +15,7 @@ use std::process::{Child, Command, Stdio};
 use std::time::{Duration, Instant};
 
 fn helper() -> Option<PathBuf> {
-    // target/<profile>/deps/expunge_core-<hash>.exe -> target/<profile>/examples/
+    // target/<profile>/deps/installscope_core-<hash>.exe -> target/<profile>/examples/
     let exe = std::env::current_exe().ok()?;
     let p = exe
         .parent()?
@@ -227,7 +227,7 @@ fn a_service_is_stopped_and_its_files_released_before_they_are_deleted() {
     std::fs::copy(&helper, &exe).unwrap();
     let data = dir.join("service.db");
     std::fs::write(&data, b"data").unwrap();
-    let name = format!("ExpungeLockTest{}", std::process::id());
+    let name = format!("InstallScopeLockTest{}", std::process::id());
     let bin = format!(
         "\"{}\" service {name} \"{}\"",
         exe.display(),
@@ -293,7 +293,7 @@ fn stopping_a_service_that_does_not_exist_is_not_an_error() {
         // what matters here is the answer for an elevated removal.
         return;
     }
-    let r = locks::stop_service("ExpungeNoSuchService-1b0e", Duration::from_secs(5))
+    let r = locks::stop_service("InstallScopeNoSuchService-1b0e", Duration::from_secs(5))
         .unwrap_or_else(|e| panic!("stop_service: {e:#}"));
     assert_eq!(r, ServiceStop::NotFound);
 }
@@ -367,7 +367,10 @@ fn a_program_that_only_loaded_one_of_the_files_is_not_closed() {
 
 #[test]
 fn registry_watch_reports_changes_and_stays_quiet_otherwise() {
-    let key = format!("HKCU\\Software\\ExpungeWatchTest{}", std::process::id());
+    let key = format!(
+        "HKCU\\Software\\InstallScopeWatchTest{}",
+        std::process::id()
+    );
     let (code, out) = platform::run_hidden("reg.exe", &["add", &key, "/f"]).unwrap();
     assert_eq!(code, 0, "{out}");
     struct Cleanup(String);
@@ -377,7 +380,8 @@ fn registry_watch_reports_changes_and_stays_quiet_otherwise() {
         }
     }
     let _c = Cleanup(key.clone());
-    let w = platform::RegistryWatch::new(&[&key, "HKCU\\Software\\NoSuchKeyForExpunge"]).unwrap();
+    let w =
+        platform::RegistryWatch::new(&[&key, "HKCU\\Software\\NoSuchKeyForInstallScope"]).unwrap();
     // Nothing changes: the wait ends by timing out.
     assert_eq!(
         w.wait(Some(Duration::from_millis(300))).unwrap(),

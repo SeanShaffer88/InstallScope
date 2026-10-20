@@ -7,8 +7,8 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use expunge_core::debloat::{self, BloatItem, Class};
-use expunge_core::i18n::{t, tf};
+use installscope_core::debloat::{self, BloatItem, Class};
+use installscope_core::i18n::{t, tf};
 use std::collections::HashSet;
 
 #[derive(Default)]
@@ -30,12 +30,12 @@ impl App {
         self.debloat.job = Some(Job::spawn(ctx, move |pr| {
             pr.set_phase("Reading installed programs".to_string());
             let programs = if programs.is_empty() {
-                expunge_core::programs::list_programs(reg.as_ref(), hidden)
+                installscope_core::programs::list_programs(reg.as_ref(), hidden)
             } else {
                 programs
             };
             pr.set_phase("Reading Store apps".to_string());
-            let store = expunge_core::programs::list_store_apps();
+            let store = installscope_core::programs::list_store_apps();
             let provisioned = debloat::provisioned_packages();
             debloat::scan(&programs, &store, &provisioned)
         }));
@@ -182,7 +182,7 @@ impl App {
                                     ui.vertical(|ui| {
                                         ui.horizontal_wrapped(|ui| {
                                             ui.label(RichText::new(i.title()).strong());
-                                            if i.program.source == expunge_core::programs::Source::Store {
+                                            if i.program.source == installscope_core::programs::Source::Store {
                                                 theme::badge(ui, t("Store app"), theme::MUTED);
                                             }
                                             if i.provisioned {

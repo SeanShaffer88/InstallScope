@@ -1,4 +1,4 @@
-//! Core data types shared by every part of Expunge.
+//! Core data types shared by every part of InstallScope.
 //!
 //! Registry and file paths are compared case-insensitively (like Windows does),
 //! so every map is keyed by a *folded* (lower-cased) path while the entry itself
@@ -292,7 +292,7 @@ pub fn cmp_fold(a: &str, b: &str) -> std::cmp::Ordering {
         .cmp(b.chars().flat_map(char::to_lowercase))
 }
 
-/// A point-in-time capture of the parts of the system Expunge watches.
+/// A point-in-time capture of the parts of the system InstallScope watches.
 ///
 /// Stored as arenas: every path and value name lives in one text pool and
 /// every value's data in one byte pool, referenced by fixed-size records,
@@ -679,7 +679,7 @@ pub struct ChangeStats {
 crate::json_struct!(ChangeStats, { keys_added, keys_removed, values_added, values_removed, values_modified, files_added, dirs_added, files_removed, files_modified, bytes_added });
 
 /// A saved record of everything one installation changed: the heart of a
-/// monitored program. Reverting it is how Expunge uninstalls precisely.
+/// monitored program. Reverting it is how InstallScope uninstalls precisely.
 #[derive(Clone, Debug, Default)]
 pub struct InstallLog {
     pub id: String,

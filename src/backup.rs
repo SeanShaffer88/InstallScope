@@ -1,4 +1,4 @@
-//! Backups: everything Expunge removes or changes is first copied here, so any
+//! Backups: everything InstallScope removes or changes is first copied here, so any
 //! uninstall, cleanup or startup change can be rolled back.
 
 use crate::model::{KeyData, RegValue};
@@ -225,19 +225,19 @@ impl BackupWriter {
     }
 
     /// Record that the operation is about to create this file.
-    pub fn add_file_absent(&mut self, path: &str) {
+    pub fn add_file_absent(&mut self, path: &str) -> Result<()> {
         self.backup
             .items
             .push(BackupItem::FileAbsent { path: path.into() });
-        let _ = self.save();
+        self.save()
     }
 
     /// Record that the operation is about to create this folder.
-    pub fn add_dir_absent(&mut self, path: &str) {
+    pub fn add_dir_absent(&mut self, path: &str) -> Result<()> {
         self.backup
             .items
             .push(BackupItem::DirAbsent { path: path.into() });
-        let _ = self.save();
+        self.save()
     }
 
     pub fn add_key_absent(&mut self, path: &str) -> Result<()> {
@@ -256,7 +256,7 @@ impl BackupWriter {
         self.backup.complete = true;
         self.save()?;
         // Also export the registry part as a standard .reg file, so it can be
-        // restored by double-clicking even without Expunge.
+        // restored by double-clicking even without InstallScope.
         let reg = backup_to_reg(&self.backup);
         if !reg.is_empty() {
             let mut bytes = vec![0xFF, 0xFE];
@@ -367,7 +367,7 @@ pub fn backup_to_reg(b: &Backup) -> String {
         return body;
     }
     format!(
-        "Windows Registry Editor Version 5.00\r\n\r\n; Expunge backup {} — {}\r\n; Created {}. Double-click (as Administrator) to restore these registry entries.\r\n\r\n{body}",
+        "Windows Registry Editor Version 5.00\r\n\r\n; InstallScope backup {} — {}\r\n; Created {}. Double-click (as Administrator) to restore these registry entries.\r\n\r\n{body}",
         b.id, b.title, b.created
     )
 }
@@ -636,5 +636,18 @@ mod tests {
             crate::json::compat::from_str(r#"{"id":"1","title":"t","created":"c","items":[]}"#)
                 .unwrap();
         assert!(old.complete);
+    }
+
+    #[test]
+    fn absent_paths_require_a_durable_manifest_write() {
+        let tmp = crate::util::tempdir().unwrap();
+        let root = tmp.path().join("backups");
+        let mut writer = BackupWriter::new(&root, "write-ahead").unwrap();
+        let manifest = writer.dir().join("manifest.json");
+        std::fs::remove_file(&manifest).unwrap();
+        std::fs::create_dir(&manifest).unwrap();
+
+        assert!(writer.add_file_absent("new-file").is_err());
+        assert!(writer.add_dir_absent("new-folder").is_err());
     }
 }

@@ -1,13 +1,13 @@
 //! Scheduled junk cleaning through Windows Task Scheduler.
 //!
-//! The task runs `Expunge.exe clean --scheduled --categories …` with the
-//! categories chosen when it was set up, so the schedule needs no Expunge
+//! The task runs `InstallScope.exe clean --scheduled --categories …` with the
+//! categories chosen when it was set up, so the schedule needs no InstallScope
 //! process running in the background.
 
 use crate::platform::run_hidden;
 use anyhow::{anyhow, Result};
 
-/// Task name in Task Scheduler (inside an "Expunge" folder).
+/// Task name in Task Scheduler (inside an "InstallScope" folder).
 pub const TASK: &str = "Expunge\\Junk cleaning";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -127,14 +127,14 @@ mod tests {
     #[test]
     fn task_arguments() {
         let a = create_args(
-            "C:\\Tools\\Expunge.exe",
+            "C:\\Tools\\InstallScope.exe",
             &["user_temp", "crash_dumps"],
             Frequency::Weekly,
             false,
         );
         assert!(a.contains(&"WEEKLY".to_string()));
         assert!(a.iter().any(|x| x
-            == "\"C:\\Tools\\Expunge.exe\" clean --scheduled --categories user_temp,crash_dumps"));
+            == "\"C:\\Tools\\InstallScope.exe\" clean --scheduled --categories user_temp,crash_dumps"));
         assert!(!a.contains(&"HIGHEST".to_string()));
         let a = create_args("x.exe", &["user_temp"], Frequency::Monthly, true);
         assert!(a.contains(&"MONTHLY".to_string()) && a.contains(&"HIGHEST".to_string()));
@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn reads_task_xml() {
         let xml = r#"<Task><Triggers><CalendarTrigger><ScheduleByWeek><WeeksInterval>1</WeeksInterval></ScheduleByWeek></CalendarTrigger></Triggers>
-<Actions><Exec><Command>"C:\Expunge.exe"</Command><Arguments>clean --scheduled --categories user_temp,shader_cache</Arguments></Exec></Actions></Task>"#;
+<Actions><Exec><Command>"C:\InstallScope.exe"</Command><Arguments>clean --scheduled --categories user_temp,shader_cache</Arguments></Exec></Actions></Task>"#;
         let (f, c) = parse_task_xml(xml).unwrap();
         assert_eq!(f, Frequency::Weekly);
         assert_eq!(c, vec!["user_temp", "shader_cache"]);

@@ -1,7 +1,7 @@
 //! The winget / Scoop bridge: lightweight or open-source alternatives to the
 //! program being uninstalled, installable through Windows' package manager
 //! (winget) or Scoop with one click. The list is curated and kept in
-//! Expunge; nothing is looked up online until you choose to install.
+//! InstallScope; nothing is looked up online until you choose to install.
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Alternative {

@@ -1,4 +1,4 @@
-//! Portable App Builder page: capture an installation (in Windows Sandbox or
+//! PortableApps Forge page: capture an installation (in Windows Sandbox or
 //! on this PC) and turn it into a PortableApps.com package.
 
 use super::app::App;
@@ -6,10 +6,10 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use expunge_core::i18n::{t, tf};
-use expunge_core::model::{human_size, InstallLog};
-use expunge_core::pafbuild::{self, AppDetails, Compiled, InstallerKind, PaTools, Package};
-use expunge_core::platform;
+use installscope_core::i18n::{t, tf};
+use installscope_core::model::{human_size, InstallLog};
+use installscope_core::pafbuild::{self, AppDetails, Compiled, InstallerKind, PaTools, Package};
+use installscope_core::platform;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -85,7 +85,7 @@ impl App {
         self.builder.tools_job = Some(Job::spawn(ctx, move |_| {
             (
                 pafbuild::find_tools(&dir),
-                expunge_core::patools::find(&root).is_some(),
+                installscope_core::patools::find(&root).is_some(),
             )
         }));
     }
@@ -217,7 +217,7 @@ impl App {
                 .store
                 .root
                 .join("builder")
-                .join(expunge_core::util::new_id());
+                .join(installscope_core::util::new_id());
             *b.stage.lock().unwrap() = t("Starting Windows Sandbox");
             match pafbuild::start_sandbox(&job, &work) {
                 Ok(()) => {
@@ -424,13 +424,13 @@ impl App {
                 small_muted(ui, t("Windows Sandbox isn't turned on. It's part of Windows 11 Pro, Enterprise and Education: turn on \"Windows Sandbox\" in Windows Features and restart."));
                 self.builder.use_sandbox = false;
             }
-            ui.radio_value(&mut self.builder.use_sandbox, false, t("On this PC (Expunge records the installation so you can remove it precisely afterwards)"));
+            ui.radio_value(&mut self.builder.use_sandbox, false, t("On this PC (InstallScope records the installation so you can remove it precisely afterwards)"));
             ui.add_space(4.0);
             ui.checkbox(
                 &mut self.builder.include_defaults,
                 t("Use the settings from the first run as the package's default settings"),
             );
-            small_muted(ui, t("Expunge first watches Windows for 30 seconds to learn what changes on its own, so it can leave that out."));
+            small_muted(ui, t("InstallScope first watches Windows for 30 seconds to learn what changes on its own, so it can leave that out."));
         });
         ui.add_space(8.0);
         theme::card(ui, |ui| {
@@ -483,7 +483,7 @@ impl App {
                 }
                 None => {
                     ui.label(t("Installer: built in"));
-                    small_muted(ui, t("to publish on portableapps.com, install the official PortableApps.com Installer and Expunge uses it instead"));
+                    small_muted(ui, t("to publish on portableapps.com, install the official PortableApps.com Installer and InstallScope uses it instead"));
                 }
             }
         });
@@ -575,7 +575,7 @@ impl App {
             ui.add_space(6.0);
             ui.label(RichText::new(t("Portability check")).strong());
             for i in &pkg.portability.issues {
-                use expunge_core::portability::Severity;
+                use installscope_core::portability::Severity;
                 let (icon, color) = match i.severity {
                     Severity::Problem => ("✖", theme::BAD),
                     Severity::Warning => ("⚠", theme::WARN),
@@ -591,6 +591,20 @@ impl App {
             ui.horizontal_wrapped(|ui| {
                 if ui.button(t("Open folder")).clicked() {
                     platform::shell_open(&dir.to_string_lossy());
+                }
+                if let Some(compactor) = self
+                    .builder
+                    .tools
+                    .as_ref()
+                    .and_then(|tools| tools.app_compactor.as_ref())
+                {
+                    if ui
+                        .button(t("Open AppCompactor"))
+                        .on_hover_text(t("Launches AppCompactor; select this package there and test it after compression."))
+                        .clicked()
+                    {
+                        platform::shell_open(&compactor.to_string_lossy());
+                    }
                 }
                 let launcher_ini = dir.join("App").join("AppInfo").join("Launcher").join(format!("{}.ini", pkg.app_id));
                 if ui.button(t("Edit Launcher settings")).clicked() {

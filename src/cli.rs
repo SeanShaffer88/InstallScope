@@ -1,65 +1,65 @@
 //! Command-line interface for scripting and IT use.
 
-use expunge_core::backup::{list_backups, restore_backup, BackupWriter};
-use expunge_core::model::{human_size, InstallLog};
-use expunge_core::platform::{self, Registry};
-use expunge_core::revert::{build_plan, execute_plan, ExecOptions};
-use expunge_core::revert::{residue, residue_markdown};
-use expunge_core::snapshot::{
+use installscope_core::backup::{list_backups, restore_backup, BackupWriter};
+use installscope_core::model::{human_size, InstallLog};
+use installscope_core::platform::{self, Registry};
+use installscope_core::revert::{build_plan, execute_plan, ExecOptions};
+use installscope_core::revert::{residue, residue_markdown};
+use installscope_core::snapshot::{
     detect_program, diff, filter_changes, load_snapshot, save_snapshot, take_snapshot, Progress,
 };
-use expunge_core::store::Store;
-use expunge_core::{programs, report};
+use installscope_core::store::Store;
+use installscope_core::{programs, report};
 use std::path::PathBuf;
 
 const HELP: &str = "\
-Expunge — Open Source Install Monitor & Uninstaller
+InstallScope — Windows Install, Uninstall & Developer Tools
 Copyright (C) 2026 Sean Shaffer. GPLv3: free software, no warranty.
 
 USAGE:
-  expunge                                   Start the graphical interface
-  expunge monitor [--name NAME] -- <installer> [args...]
+  installscope                                   Start the graphical interface
+  installscope monitor [--name NAME] -- <installer> [args...]
                                             Snapshot, run the installer, wait,
                                             snapshot again, save an install log
-  expunge snapshot <file.snap>              Save a snapshot of the system
-  expunge diff <before.snap> <after.snap> [--name NAME]
+  installscope snapshot <file.snap>              Save a snapshot of the system
+  installscope diff <before.snap> <after.snap> [--name NAME]
                                             Compare two snapshots, save a log
-  expunge logs [--group G] [--tag T] [--json]
+  installscope logs [--group G] [--tag T] [--json]
                                             List saved install logs
-  expunge tag <log-id> [--group G] [--tags a,b]
+  installscope tag <log-id> [--group G] [--tags a,b]
                                             Set a log's group and tags
-  expunge programs [--all] [--trust] [--json]
+  installscope programs [--all] [--trust] [--json]
                                             List installed programs (--trust adds
                                             each program's digital signature)
-  expunge verify <file>                     Check a file's digital signature
+  installscope verify <file>                     Check a file's digital signature
                                             (exit 2 if unsigned or invalid)
-  expunge revert <log-id> [--dry-run] [--remove-unlogged] [--no-backup] [--recycle]
+  installscope revert <log-id> [--dry-run] [--remove-unlogged] [--no-backup] [--recycle]
                           [--close-programs] [--restart-explorer] [--keep-log]
                                             Undo an installation precisely
-  expunge export <log-id> <html|json|reg|ps1|xml> <output-file>
-  expunge repackage <log-id> <folder> [--no-setup]
+  installscope export <log-id> <html|json|reg|ps1|xml> <output-file>
+  installscope repackage <log-id> <folder> [--no-setup]
                                             A silent installer for the recorded
                                             installation: one Setup.exe plus a
                                             folder with install.ps1, install.reg
                                             and uninstall.ps1
-  expunge merge <log-id> <log-id>... [--name NAME]
+  installscope merge <log-id> <log-id>... [--name NAME]
                                             Combine logs into a new one (e.g. a
                                             program and its update)
-  expunge learn-noise [--seconds N] [--apply] [--json]
+  installscope learn-noise [--seconds N] [--apply] [--json]
                                             Take two snapshots N seconds apart
                                             (default 60) and list what changed
                                             on its own; --apply adds it to the
                                             exclusions
-  expunge transfer export <out.expunge> <program>...
+  installscope transfer export <out.expunge> <program>...
                                             Pack programs (by name) with their files
                                             and settings to move to another PC
-  expunge transfer check <package>          Check a package against this PC
-  expunge transfer import <package> [--overwrite]
+  installscope transfer check <package>          Check a package against this PC
+  installscope transfer import <package> [--overwrite]
                                             Restore a package (undo from backups)
-  expunge export <log-id> portable <launcher.ini>
+  installscope export <log-id> portable <launcher.ini>
                                             PortableApps.com Launcher settings
                                             for what the log recorded
-  expunge portable-build <installer> --name NAME [--version V] [--publisher P]
+  installscope portable-build <installer> --name NAME [--version V] [--publisher P]
                  [--category C] [--silent] [--out DIR] [--here] [--defaults]
                  [--no-prompt] [--no-compile]
                                             Capture an installation in Windows
@@ -67,38 +67,38 @@ USAGE:
                                             and build a PortableApps.com package
                                             with its launcher and .paf.exe
                                             installer
-  expunge add-program <folder|program.exe> [--name NAME]
+  installscope add-program <folder|program.exe> [--name NAME]
                                             List a program Windows doesn't know
                                             (e.g. portable) so it can be analyzed
                                             and uninstalled
-  expunge components <log-id> [--json] [--ask-model] [--strike]
+  installscope components <log-id> [--json] [--ask-model] [--strike]
                                             Installer Decrapifier: the services,
                                             tasks and autoruns an installation
                                             added, judged; --strike removes the
                                             bloat (backed up)
-  expunge orphans [--json]                  List registrations left by removed
+  installscope orphans [--json]                  List registrations left by removed
                                             programs (pointing to missing files)
-  expunge uninstall <name>... [--silent] [--leftovers safe|none] [--dry-run]
+  installscope uninstall <name>... [--silent] [--leftovers safe|none] [--dry-run]
                                             Uninstall programs one after another,
                                             then remove safe leftovers (backed up)
-  expunge clean [--categories a,b] [--list] [--dry-run]
+  installscope clean [--categories a,b] [--list] [--dry-run]
                                             Clean junk (default: the safe kinds)
-  expunge schedule-clean daily|weekly|monthly|off [--categories a,b]
+  installscope schedule-clean daily|weekly|monthly|off [--categories a,b]
                                             Clean junk automatically
-  expunge startup [--json]                  List startup programs
-  expunge startup enable|disable <name>     Turn a startup program on or off
-  expunge watch                             Background auto-monitoring (started
+  installscope startup [--json]                  List startup programs
+  installscope startup enable|disable <name>     Turn a startup program on or off
+  installscope watch                             Background auto-monitoring (started
                                             at sign-in when turned on in Settings)
-  expunge check-clean <log-id>              Check that nothing recorded in a log
+  installscope check-clean <log-id>              Check that nothing recorded in a log
                                             is still on the PC (exit 2 if so)
-  expunge restore-point [list]              List System Restore points
-  expunge restore-point create [DESCRIPTION]
-  expunge restore-point delete <number>
-  expunge restore-point rollback <number> --yes
+  installscope restore-point [list]              List System Restore points
+  installscope restore-point create [DESCRIPTION]
+  installscope restore-point delete <number>
+  installscope restore-point rollback <number> --yes
                                             Restart Windows into a restore point
-  expunge backups                           List backups
-  expunge restore <backup-id>               Undo a removal from its backup
-  expunge --version | --help
+  installscope backups                           List backups
+  installscope restore <backup-id>               Undo a removal from its backup
+  installscope --version | --help
 
   Any command that takes snapshots accepts --profile NAME to use a saved
   monitoring profile (Settings > Monitoring scope).
@@ -107,9 +107,9 @@ USAGE:
 Exit codes: 0 success, 1 error, 2 finished with failures / findings.
 
 Typical CI use (installer QA):
-  expunge monitor --name MyApp --no-prompt --json -- dist\\MyApp-Setup.exe /S
-  expunge revert <log-id> --keep-log
-  expunge check-clean <log-id>";
+  installscope monitor --name MyApp --no-prompt --json -- dist\\MyApp-Setup.exe /S
+  installscope revert <log-id> --keep-log
+  installscope check-clean <log-id>";
 
 fn arg_value(args: &[String], flag: &str) -> Option<String> {
     args.iter()
@@ -120,9 +120,9 @@ fn arg_value(args: &[String], flag: &str) -> Option<String> {
 /// Find one program by name: exact (ignoring case) first, then a unique
 /// partial match.
 fn pick_program<'a>(
-    progs: &'a [expunge_core::programs::InstalledProgram],
+    progs: &'a [installscope_core::programs::InstalledProgram],
     name: &str,
-) -> anyhow::Result<&'a expunge_core::programs::InstalledProgram> {
+) -> anyhow::Result<&'a installscope_core::programs::InstalledProgram> {
     if let Some(p) = progs.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
         return Ok(p);
     }
@@ -153,14 +153,16 @@ fn has(args: &[String], flag: &str) -> bool {
     args.iter().any(|a| a == flag)
 }
 
-/// `expunge portable-build`: capture an installation and build a
+/// `installscope portable-build`: capture an installation and build a
 /// PortableApps.com package.
 fn portable_build(args: &[String], reg: &dyn Registry) -> anyhow::Result<i32> {
-    use expunge_core::pafbuild::{self, AppDetails, Job};
+    use installscope_core::pafbuild::{self, AppDetails, Job};
     let installer = args
         .get(1)
         .filter(|a| !a.starts_with("--"))
-        .ok_or_else(|| anyhow::anyhow!("usage: expunge portable-build <installer> --name NAME"))?;
+        .ok_or_else(|| {
+            anyhow::anyhow!("usage: installscope portable-build <installer> --name NAME")
+        })?;
     let installer =
         std::fs::canonicalize(installer).map_err(|e| anyhow::anyhow!("{installer}: {e}"))?;
     let installer = installer
@@ -210,7 +212,7 @@ fn portable_build(args: &[String], reg: &dyn Registry) -> anyhow::Result<i32> {
         let (log, pkg) = pafbuild::capture(&job, reg, &report, &ask, &Progress::default())?;
         st.save_log(&log)?;
         eprintln!(
-            "The installation was recorded as install log {}; remove it with: expunge revert {}",
+            "The installation was recorded as install log {}; remove it with: installscope revert {}",
             log.id, log.id
         );
         for w in &pkg.warnings {
@@ -218,7 +220,10 @@ fn portable_build(args: &[String], reg: &dyn Registry) -> anyhow::Result<i32> {
         }
         (PathBuf::from(&pkg.dir), pkg.app_id)
     } else {
-        let work = st.root.join("builder").join(expunge_core::util::new_id());
+        let work = st
+            .root
+            .join("builder")
+            .join(installscope_core::util::new_id());
         pafbuild::start_sandbox(&job, &work)?;
         eprintln!("Windows Sandbox is starting. Follow the steps in the sandbox window.");
         let mut last = String::new();
@@ -244,7 +249,7 @@ fn portable_build(args: &[String], reg: &dyn Registry) -> anyhow::Result<i32> {
             eprintln!("note: {w}");
         }
         if let Ok(b) = std::fs::read(work.join("install-log.json")) {
-            if let Ok(log) = expunge_core::json::compat::from_slice::<InstallLog>(&b) {
+            if let Ok(log) = installscope_core::json::compat::from_slice::<InstallLog>(&b) {
                 let _ = st.save_log(&log);
             }
         }
@@ -278,7 +283,7 @@ fn portable_build(args: &[String], reg: &dyn Registry) -> anyhow::Result<i32> {
 /// `--profile NAME` (any command): use a saved monitoring profile.
 static PROFILE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
-fn load_settings(st: &Store) -> expunge_core::settings::Settings {
+fn load_settings(st: &Store) -> installscope_core::settings::Settings {
     let mut s = st.load_settings();
     if let Some(p) = PROFILE.get() {
         if !s.use_profile(p) {
@@ -296,7 +301,7 @@ fn save_new_log(
     store: &Store,
     name: &str,
     installer: &str,
-    mut changes: expunge_core::model::ChangeSet,
+    mut changes: installscope_core::model::ChangeSet,
 ) -> anyhow::Result<InstallLog> {
     let settings = load_settings(store);
     filter_changes(
@@ -305,9 +310,9 @@ fn save_new_log(
         &settings.effective_file_exclusions(),
     );
     let mut log = InstallLog {
-        id: expunge_core::util::new_id(),
+        id: installscope_core::util::new_id(),
         name: name.to_string(),
-        created: expunge_core::util::now_string(),
+        created: installscope_core::util::now_string(),
         installer: installer.to_string(),
         ..Default::default()
     };
@@ -342,7 +347,7 @@ fn save_new_log(
 fn snapshot_now(
     reg: &dyn Registry,
     store: &Store,
-) -> anyhow::Result<expunge_core::model::Snapshot> {
+) -> anyhow::Result<installscope_core::model::Snapshot> {
     let settings = load_settings(store);
     let p = Progress::default();
     eprintln!("Taking snapshot…");
@@ -363,8 +368,8 @@ fn snapshot_now(
     Ok(s)
 }
 
-fn log_summary_json(l: &InstallLog) -> expunge_core::json::Value {
-    expunge_core::json!({
+fn log_summary_json(l: &InstallLog) -> installscope_core::json::Value {
+    installscope_core::json!({
         "id": l.id,
         "name": l.name,
         "publisher": l.publisher,
@@ -396,7 +401,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
     let reg = platform::system_registry();
     match cmd {
         "--help" | "-h" | "help" => println!("{HELP}"),
-        "--version" | "-V" => println!("Expunge {}", expunge_core::APP_VERSION),
+        "--version" | "-V" => println!("InstallScope {}", installscope_core::APP_VERSION),
         "snapshot" => {
             let out = args
                 .get(1)
@@ -409,7 +414,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
         "diff" => {
             let (a, b) = (args.get(1), args.get(2));
             let (Some(a), Some(b)) = (a, b) else {
-                anyhow::bail!("usage: expunge diff <before> <after>")
+                anyhow::bail!("usage: installscope diff <before> <after>")
             };
             let before = load_snapshot(&PathBuf::from(a))?;
             let after = load_snapshot(&PathBuf::from(b))?;
@@ -418,7 +423,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             let mut log = save_new_log(&st, &name, "", diff(&before, &after))?;
             // Used by background monitoring (`watch`), which records here.
             if has(&args, "--auto") {
-                log.tags = vec![expunge_core::autowatch::TAG.to_string()];
+                log.tags = vec![installscope_core::autowatch::TAG.to_string()];
                 log.notes = "Recorded automatically by background monitoring.".into();
                 st.save_log(&log)?;
                 eprintln!("Recorded {}", log.name);
@@ -429,7 +434,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
         }
         "monitor" => {
             let sep = args.iter().position(|a| a == "--").ok_or_else(|| {
-                anyhow::anyhow!("usage: expunge monitor [--name N] -- <installer> [args]")
+                anyhow::anyhow!("usage: installscope monitor [--name N] -- <installer> [args]")
             })?;
             let installer: Vec<String> = args[sep + 1..].to_vec();
             if installer.is_empty() {
@@ -439,7 +444,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             let st = store()?;
             if let Some(p) = st.pending() {
                 anyhow::bail!(
-                    "monitoring of {} is already in progress; finish it in Expunge first",
+                    "monitoring of {} is already in progress; finish it in InstallScope first",
                     if p.name.is_empty() {
                         "an installation".to_string()
                     } else {
@@ -451,9 +456,9 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             // Marks the installation as monitored, so background monitoring
             // leaves it alone; cleared however this command ends.
             st.save_pending(
-                &expunge_core::store::PendingSession {
+                &installscope_core::store::PendingSession {
                     name: name.clone(),
-                    started: expunge_core::util::now_string(),
+                    started: installscope_core::util::now_string(),
                     installer: installer[0].clone(),
                     trial: false,
                 },
@@ -522,7 +527,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                     .iter()
                     .map(|l| {
                         let st = l.changes.stats();
-                        expunge_core::json!({
+                        installscope_core::json!({
                             "id": l.id, "name": l.name, "publisher": l.publisher,
                             "version": l.version, "created": l.created,
                             "group": l.group, "tags": l.tags,
@@ -530,7 +535,10 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                         })
                     })
                     .collect();
-                println!("{}", expunge_core::json::compat::to_string_pretty(&items)?);
+                println!(
+                    "{}",
+                    installscope_core::json::compat::to_string_pretty(&items)?
+                );
             } else {
                 for l in &logs {
                     let st = l.changes.stats();
@@ -554,7 +562,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
         }
         "tag" => {
             let id = args.get(1).ok_or_else(|| {
-                anyhow::anyhow!("usage: expunge tag <log-id> [--group G] [--tags a,b]")
+                anyhow::anyhow!("usage: installscope tag <log-id> [--group G] [--tags a,b]")
             })?;
             let st = store()?;
             let mut log = st.load_log(id)?;
@@ -562,7 +570,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 log.group = g.trim().to_string();
             }
             if let Some(t) = arg_value(&args, "--tags") {
-                log.tags = expunge_core::model::parse_tags(&t);
+                log.tags = installscope_core::model::parse_tags(&t);
             }
             st.save_log(&log)?;
             println!(
@@ -602,11 +610,13 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                         .iter()
                         .map(|p| programs::log_for(&logs, p).map(|l| l.changes.clone()))
                         .collect();
-                    let c =
-                        expunge_core::transfer::collect(&chosen, &changes, reg.as_ref(), &|s| {
-                            eprintln!("  {s}")
-                        });
-                    let m = expunge_core::transfer::export(
+                    let c = installscope_core::transfer::collect(
+                        &chosen,
+                        &changes,
+                        reg.as_ref(),
+                        &|s| eprintln!("  {s}"),
+                    );
+                    let m = installscope_core::transfer::export(
                         &c,
                         reg.as_ref(),
                         &PathBuf::from(out),
@@ -628,11 +638,11 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                         args.get(2)
                             .ok_or_else(|| anyhow::anyhow!("missing package"))?,
                     );
-                    let m = expunge_core::transfer::read_manifest(&pkg)?;
-                    let c = expunge_core::transfer::check(
+                    let m = installscope_core::transfer::read_manifest(&pkg)?;
+                    let c = installscope_core::transfer::check(
                         &m,
                         reg.as_ref(),
-                        &expunge_core::transfer::Vars::current(),
+                        &installscope_core::transfer::Vars::current(),
                     );
                     println!("From {} ({}), {}", m.computer, m.user, m.created);
                     for p in &m.programs {
@@ -658,7 +668,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                         &st.backups_dir(),
                         &format!("Transfer: {}", names.join(", ")),
                     )?;
-                    let res = expunge_core::transfer::restore(
+                    let res = installscope_core::transfer::restore(
                         &pkg,
                         reg.as_ref(),
                         &mut bw,
@@ -670,10 +680,10 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                     for r in res.iter().filter(|r| !r.ok) {
                         eprintln!("failed: {} — {}", r.description, r.message);
                     }
-                    println!("Restored. Undo with: expunge restore {}", b.id);
+                    println!("Restored. Undo with: installscope restore {}", b.id);
                     return Ok(if failed == 0 { 0 } else { 2 });
                 }
-                _ => anyhow::bail!("usage: expunge transfer export|check|import …"),
+                _ => anyhow::bail!("usage: installscope transfer export|check|import …"),
             }
         }
         "uninstall" => {
@@ -702,7 +712,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 out
             };
             if names.is_empty() {
-                anyhow::bail!("name at least one program (see `expunge programs`)");
+                anyhow::bail!("name at least one program (see `installscope programs`)");
             }
             let silent_mode = has(&args, "--silent");
             let dry = has(&args, "--dry-run");
@@ -723,9 +733,9 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                         continue;
                     }
                 };
-                let engine = expunge_core::silent::detect(&p);
+                let engine = installscope_core::silent::detect(&p);
                 let cmd = if silent_mode {
-                    expunge_core::silent::silent_command(&p, engine)
+                    installscope_core::silent::silent_command(&p, engine)
                 } else {
                     p.uninstall_command(false)
                 };
@@ -747,9 +757,9 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                     std::thread::sleep(std::time::Duration::from_secs(5));
                 }
                 let code = platform::spawn_command_line(&cmd)?.wait();
-                match expunge_core::silent::exit_meaning(engine, code) {
-                    expunge_core::silent::ExitMeaning::RebootRequired => reboot = true,
-                    expunge_core::silent::ExitMeaning::Success => {}
+                match installscope_core::silent::exit_meaning(engine, code) {
+                    installscope_core::silent::ExitMeaning::RebootRequired => reboot = true,
+                    installscope_core::silent::ExitMeaning::Success => {}
                     m => {
                         eprintln!("  the uninstaller reported {m:?} (exit code {code})");
                     }
@@ -766,14 +776,14 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 if leftovers == "none" {
                     continue;
                 }
-                let mut plan = expunge_core::leftovers::find_leftovers(
+                let mut plan = installscope_core::leftovers::find_leftovers(
                     &p,
                     reg.as_ref(),
-                    &expunge_core::leftovers::LeftoverScope::default(),
+                    &installscope_core::leftovers::LeftoverScope::default(),
                 );
                 // Unattended: only items labelled Safe.
                 for i in &mut plan.items {
-                    if expunge_core::revert::risk(i) != expunge_core::revert::Risk::Safe {
+                    if installscope_core::revert::risk(i) != installscope_core::revert::Risk::Safe {
                         i.selected = false;
                     }
                 }
@@ -788,7 +798,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 let b = w.finish()?;
                 let ok = results.iter().filter(|r| r.ok).count();
                 println!(
-                    "  removed {ok} leftovers (backup {}; restore with: expunge restore {})",
+                    "  removed {ok} leftovers (backup {}; restore with: installscope restore {})",
                     b.id, b.id
                 );
                 if ok < results.len() {
@@ -801,15 +811,15 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             return Ok(if failures > 0 { 2 } else { 0 });
         }
         "clean" => {
-            let cats = expunge_core::cleaner::categories();
+            let cats = installscope_core::cleaner::categories();
             if has(&args, "--list") {
                 for c in &cats {
-                    let r = expunge_core::cleaner::scan(c);
+                    let r = installscope_core::cleaner::scan(c);
                     println!(
                         "{:<20} {:>10}  {}{}",
                         c.id,
                         human_size(r.bytes),
-                        if c.default_on && !expunge_core::cleaner::is_advanced(c.id) {
+                        if c.default_on && !installscope_core::cleaner::is_advanced(c.id) {
                             "default"
                         } else {
                             ""
@@ -831,7 +841,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                     .collect(),
                 None => cats
                     .iter()
-                    .filter(|c| c.default_on && !expunge_core::cleaner::is_advanced(c.id))
+                    .filter(|c| c.default_on && !installscope_core::cleaner::is_advanced(c.id))
                     .map(|c| c.id.to_string())
                     .collect(),
             };
@@ -839,7 +849,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             let mut total = 0u64;
             for id in &wanted {
                 let Some(c) = cats.iter().find(|c| c.id == id) else {
-                    eprintln!("unknown category: {id} (see `expunge clean --list`)");
+                    eprintln!("unknown category: {id} (see `installscope clean --list`)");
                     continue;
                 };
                 if c.needs_admin && !elevated {
@@ -847,9 +857,9 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                     continue;
                 }
                 let r = if has(&args, "--dry-run") {
-                    expunge_core::cleaner::scan(c)
+                    installscope_core::cleaner::scan(c)
                 } else {
-                    expunge_core::cleaner::clean(c)
+                    installscope_core::cleaner::clean(c)
                 };
                 total += r.bytes;
                 if !has(&args, "--scheduled") {
@@ -860,7 +870,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 // Leave a trace for the user in the data folder.
                 let line = format!(
                     "{}  cleaned {}\n",
-                    expunge_core::util::now_string(),
+                    installscope_core::util::now_string(),
                     human_size(total)
                 );
                 let path = st_log_path()?;
@@ -876,16 +886,16 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
         "schedule-clean" => {
             let what = args.get(1).map(|s| s.as_str()).unwrap_or("");
             if what == "off" {
-                expunge_core::schedule::remove()?;
+                installscope_core::schedule::remove()?;
                 println!("Automatic cleaning turned off.");
                 return Ok(0);
             }
             let freq = match what {
-                "daily" => expunge_core::schedule::Frequency::Daily,
-                "weekly" => expunge_core::schedule::Frequency::Weekly,
-                "monthly" => expunge_core::schedule::Frequency::Monthly,
+                "daily" => installscope_core::schedule::Frequency::Daily,
+                "weekly" => installscope_core::schedule::Frequency::Weekly,
+                "monthly" => installscope_core::schedule::Frequency::Monthly,
                 _ => anyhow::bail!(
-                    "usage: expunge schedule-clean daily|weekly|monthly|off [--categories a,b]"
+                    "usage: installscope schedule-clean daily|weekly|monthly|off [--categories a,b]"
                 ),
             };
             let cats: Vec<String> = match arg_value(&args, "--categories") {
@@ -894,18 +904,18 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                     .map(|s| s.trim().to_string())
                     .filter(|s| !s.is_empty())
                     .collect(),
-                None => expunge_core::cleaner::categories()
+                None => installscope_core::cleaner::categories()
                     .iter()
-                    .filter(|c| c.default_on && !expunge_core::cleaner::is_advanced(c.id))
+                    .filter(|c| c.default_on && !installscope_core::cleaner::is_advanced(c.id))
                     .map(|c| c.id.to_string())
                     .collect(),
             };
             let refs: Vec<&str> = cats.iter().map(|s| s.as_str()).collect();
-            expunge_core::schedule::set(&refs, freq, platform::is_elevated())?;
+            installscope_core::schedule::set(&refs, freq, platform::is_elevated())?;
             println!("Junk will be cleaned {} ({}).", what, cats.join(", "));
         }
         "startup" => {
-            let entries = expunge_core::startup::list_startup(reg.as_ref());
+            let entries = installscope_core::startup::list_startup(reg.as_ref());
             match args.get(1).map(|s| s.as_str()) {
                 Some(op @ ("enable" | "disable")) => {
                     let name = args
@@ -915,7 +925,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                         .iter()
                         .find(|e| e.name.eq_ignore_ascii_case(name))
                         .ok_or_else(|| anyhow::anyhow!("no startup program called {name}"))?;
-                    if op == "disable" && expunge_core::startup::is_essential(e) {
+                    if op == "disable" && installscope_core::startup::is_essential(e) {
                         anyhow::bail!("{} is needed by Windows, security software or hardware and can't be disabled", e.name);
                     }
                     let st = store()?;
@@ -923,7 +933,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                         &st.backups_dir(),
                         &format!("Startup: {} {}", op, e.name),
                     )?;
-                    expunge_core::startup::set_enabled(
+                    installscope_core::startup::set_enabled(
                         reg.as_ref(),
                         e,
                         op == "enable",
@@ -936,14 +946,17 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                     if has(&args, "--json") {
                         let items: Vec<_> = entries
                             .iter()
-                            .map(|e| expunge_core::json!({
+                            .map(|e| installscope_core::json!({
                                 "name": e.name, "command": e.command, "location": e.location,
                                 "enabled": e.enabled, "all_users": e.all_users, "missing": e.missing,
                             }))
                             .collect();
-                        println!("{}", expunge_core::json::compat::to_string_pretty(&items)?);
+                        println!(
+                            "{}",
+                            installscope_core::json::compat::to_string_pretty(&items)?
+                        );
                     } else {
-                        let boot = expunge_core::boot::read();
+                        let boot = installscope_core::boot::read();
                         if let Some(ms) = boot.as_ref().and_then(|b| b.last_boot_ms) {
                             println!("Last startup took {:.0} s.", ms as f64 / 1000.0);
                         }
@@ -974,7 +987,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             let base_path = st.snapshots_dir().join("auto-baseline.snap");
             let after_path = st.snapshots_dir().join("auto-after.snap");
             let poll = std::time::Duration::from_secs(30);
-            // Snapshots and comparisons run in a short-lived copy of Expunge:
+            // Snapshots and comparisons run in a short-lived copy of InstallScope:
             // building a snapshot of every monitored place can take a
             // gigabyte or more, and this process stays running for days.
             // The memory goes back to Windows when the copy exits.
@@ -1011,7 +1024,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             let usage_every = std::time::Duration::from_secs(300);
             let rebaseline_every = std::time::Duration::from_secs(24 * 3600);
             let mut next_usage = std::time::Instant::now() + usage_every;
-            let mut keys = expunge_core::autowatch::uninstall_keys(reg.as_ref());
+            let mut keys = installscope_core::autowatch::uninstall_keys(reg.as_ref());
             let mut base_time = std::time::Instant::now();
             let mut stale = false;
             loop {
@@ -1025,13 +1038,13 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 };
                 let event = watch.wait(Some(timeout))?;
                 if std::time::Instant::now() >= next_usage {
-                    expunge_core::usage::sample_and_save(&st.root, 290);
+                    installscope_core::usage::sample_and_save(&st.root, 290);
                     next_usage = std::time::Instant::now() + usage_every;
                 }
                 // Manual monitoring records this installation itself.
                 if st.pending().is_some() {
                     stale = true;
-                    keys = expunge_core::autowatch::uninstall_keys(reg.as_ref());
+                    keys = installscope_core::autowatch::uninstall_keys(reg.as_ref());
                     continue;
                 }
                 if event == platform::WatchEvent::Timeout
@@ -1040,8 +1053,8 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 {
                     continue;
                 }
-                let now = expunge_core::autowatch::uninstall_keys(reg.as_ref());
-                let new = expunge_core::autowatch::added(&keys, &now);
+                let now = installscope_core::autowatch::uninstall_keys(reg.as_ref());
+                let new = installscope_core::autowatch::added(&keys, &now);
                 if new.is_empty() {
                     if now != keys {
                         // Something was uninstalled: start from a fresh baseline.
@@ -1052,7 +1065,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                         && !platform::installer_busy()
                     {
                         take_baseline(&st)?;
-                        keys = expunge_core::autowatch::uninstall_keys(reg.as_ref());
+                        keys = installscope_core::autowatch::uninstall_keys(reg.as_ref());
                         base_time = std::time::Instant::now();
                         stale = false;
                     }
@@ -1064,7 +1077,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 let mut last = now;
                 loop {
                     let ev = watch.wait(Some(std::time::Duration::from_secs(20)))?;
-                    let again = expunge_core::autowatch::uninstall_keys(reg.as_ref());
+                    let again = installscope_core::autowatch::uninstall_keys(reg.as_ref());
                     let settled = ev == platform::WatchEvent::Timeout
                         && again == last
                         && !platform::installer_busy();
@@ -1088,23 +1101,23 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             // Installer Decrapifier on the command line.
             let id = args.get(1).ok_or_else(|| {
                 anyhow::anyhow!(
-                    "usage: expunge components <log-id> [--json] [--ask-model] [--strike]"
+                    "usage: installscope components <log-id> [--json] [--ask-model] [--strike]"
                 )
             })?;
             let st = store()?;
             let mut log = st.load_log(id)?;
-            let ctx = expunge_core::decrap::context_for(&log);
-            let mut comps = expunge_core::decrap::components(
+            let ctx = installscope_core::decrap::context_for(&log);
+            let mut comps = installscope_core::decrap::components(
                 &log.changes,
                 &ctx,
-                &expunge_core::decrap::read_task_command,
+                &installscope_core::decrap::read_task_command,
             );
             if has(&args, "--ask-model") {
                 let s = load_settings(&st);
                 if s.local_model_url.is_empty() {
                     anyhow::bail!("no local model is set (Settings > Installer Decrapifier)");
                 }
-                let n = expunge_core::llm::judge_unknowns(
+                let n = installscope_core::llm::judge_unknowns(
                     &s.local_model_url,
                     &s.local_model_name,
                     &log.name,
@@ -1114,9 +1127,12 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 eprintln!("The local model judged {n} component(s).");
             }
             if has(&args, "--json") {
-                println!("{}", expunge_core::json::compat::to_string_pretty(&comps)?);
+                println!(
+                    "{}",
+                    installscope_core::json::compat::to_string_pretty(&comps)?
+                );
             } else {
-                println!("{}", expunge_core::decrap::summary(&log.name, &comps));
+                println!("{}", installscope_core::decrap::summary(&log.name, &comps));
                 for c in &comps {
                     println!(
                         "[{}] {:<24} {} — {}",
@@ -1135,7 +1151,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 }
             }
             if has(&args, "--strike") {
-                let chosen: Vec<&expunge_core::decrap::Component> = comps
+                let chosen: Vec<&installscope_core::decrap::Component> = comps
                     .iter()
                     .filter(|c| c.verdict.strike_by_default())
                     .collect();
@@ -1146,8 +1162,12 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                         &st.backups_dir(),
                         &format!("Strike background items of {}", log.name),
                     )?;
-                    let results =
-                        expunge_core::decrap::strike(&mut log, &chosen, reg.as_ref(), Some(&mut w));
+                    let results = installscope_core::decrap::strike(
+                        &mut log,
+                        &chosen,
+                        reg.as_ref(),
+                        Some(&mut w),
+                    );
                     let b = w.finish()?;
                     for r in &results {
                         println!(
@@ -1158,7 +1178,10 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                         );
                     }
                     st.save_log(&log)?;
-                    println!("Backup: {} (restore with: expunge restore {})", b.id, b.id);
+                    println!(
+                        "Backup: {} (restore with: installscope restore {})",
+                        b.id, b.id
+                    );
                     if results.iter().any(|r| !r.ok) {
                         return Ok(2);
                     }
@@ -1168,7 +1191,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
         "check-clean" => {
             let id = args
                 .get(1)
-                .ok_or_else(|| anyhow::anyhow!("usage: expunge check-clean <log-id>"))?;
+                .ok_or_else(|| anyhow::anyhow!("usage: installscope check-clean <log-id>"))?;
             let log = store()?.load_log(id)?;
             let left = residue(&log.changes, reg.as_ref());
             if left.items.is_empty() {
@@ -1179,21 +1202,21 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             return Ok(2);
         }
         "orphans" => {
-            let plan = expunge_core::orphans::scan_system(reg.as_ref());
+            let plan = installscope_core::orphans::scan_system(reg.as_ref());
             if has(&args, "--json") {
                 let items: Vec<_> = plan
                     .items
                     .iter()
                     .map(|i| {
-                        expunge_core::json!({
+                        installscope_core::json!({
                             "category": i.action.category(),
                             "kind": i.note,
                             "action": i.action.describe(),
-                            "risk": format!("{:?}", expunge_core::revert::risk(i)),
+                            "risk": format!("{:?}", installscope_core::revert::risk(i)),
                         })
                     })
                     .collect();
-                println!("{}", expunge_core::json::Value::Array(items));
+                println!("{}", installscope_core::json::Value::Array(items));
             } else if plan.items.is_empty() {
                 println!("No leftovers of removed programs found.");
             } else {
@@ -1209,11 +1232,11 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
         }
         "repackage" | "silent-package" => {
             let (Some(id), Some(dir)) = (args.get(1), args.get(2)) else {
-                anyhow::bail!("usage: expunge repackage <log-id> <folder> [--no-setup]")
+                anyhow::bail!("usage: installscope repackage <log-id> <folder> [--no-setup]")
             };
             let st = store()?;
             let log = st.load_log(id)?;
-            let s = expunge_core::repackage::repackage(
+            let s = installscope_core::repackage::repackage(
                 &log,
                 reg.as_ref(),
                 &PathBuf::from(dir),
@@ -1228,8 +1251,8 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 s.values
             );
             if !has(&args, "--no-setup") {
-                let tc = expunge_core::patools::ensure(&st.root, &|p| eprintln!("{p}…"))?;
-                let setup = expunge_core::patools::build_silent_setup(
+                let tc = installscope_core::patools::ensure(&st.root, &|p| eprintln!("{p}…"))?;
+                let setup = installscope_core::patools::build_silent_setup(
                     &tc,
                     &s.folder,
                     &log.name,
@@ -1246,7 +1269,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 .take_while(|a| !a.starts_with("--"))
                 .collect();
             if ids.len() < 2 {
-                anyhow::bail!("usage: expunge merge <log-id> <log-id>... [--name NAME]");
+                anyhow::bail!("usage: installscope merge <log-id> <log-id>... [--name NAME]");
             }
             let st = store()?;
             let logs = ids
@@ -1254,7 +1277,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 .map(|id| st.load_log(id))
                 .collect::<anyhow::Result<Vec<_>>>()?;
             let refs: Vec<&InstallLog> = logs.iter().collect();
-            let merged = expunge_core::merge::merge_logs(
+            let merged = installscope_core::merge::merge_logs(
                 &refs,
                 &arg_value(&args, "--name").unwrap_or_default(),
             );
@@ -1268,7 +1291,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             );
         }
         "restore-point" | "restore-points" => {
-            use expunge_core::restore;
+            use installscope_core::restore;
             match args.get(1).map(String::as_str).unwrap_or("list") {
                 "list" => {
                     let p = restore::protection();
@@ -1290,20 +1313,20 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                     let d = args
                         .get(2)
                         .cloned()
-                        .unwrap_or_else(|| "Expunge manual restore point".into());
+                        .unwrap_or_else(|| "InstallScope manual restore point".into());
                     restore::create_restore_point(&d)?;
                     println!("Created restore point: {d}");
                 }
                 "delete" => {
                     let n: u32 = args.get(2).and_then(|x| x.parse().ok()).ok_or_else(|| {
-                        anyhow::anyhow!("usage: expunge restore-point delete <number>")
+                        anyhow::anyhow!("usage: installscope restore-point delete <number>")
                     })?;
                     restore::delete(n)?;
                     println!("Deleted restore point {n}");
                 }
                 "rollback" => {
                     let n: u32 = args.get(2).and_then(|x| x.parse().ok()).ok_or_else(|| {
-                        anyhow::anyhow!("usage: expunge restore-point rollback <number> --yes")
+                        anyhow::anyhow!("usage: installscope restore-point rollback <number> --yes")
                     })?;
                     if !has(&args, "--yes") {
                         anyhow::bail!("Windows restarts immediately to restore point {n}; add --yes to confirm");
@@ -1318,8 +1341,8 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
         "pa-capture" => {
             let job = args
                 .get(1)
-                .ok_or_else(|| anyhow::anyhow!("usage: expunge pa-capture <job.json>"))?;
-            expunge_core::pafbuild::run_job_file(std::path::Path::new(job))?;
+                .ok_or_else(|| anyhow::anyhow!("usage: installscope pa-capture <job.json>"))?;
+            installscope_core::pafbuild::run_job_file(std::path::Path::new(job))?;
         }
         "portable-build" => return portable_build(&args, reg.as_ref()),
         "learn-noise" => {
@@ -1333,7 +1356,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             let after = snapshot_now(reg.as_ref(), &st)?;
             let mut settings = load_settings(&st);
             let roots: Vec<String> = settings.file_roots.iter().map(|r| r.path.clone()).collect();
-            let l = expunge_core::noise::learn(
+            let l = installscope_core::noise::learn(
                 &diff(&before, &after),
                 &roots,
                 &settings.registry_roots,
@@ -1343,7 +1366,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             if has(&args, "--json") {
                 println!(
                     "{}",
-                    expunge_core::json!({ "registry": l.registry, "files": l.files })
+                    installscope_core::json!({ "registry": l.registry, "files": l.files })
                 );
             } else if l.is_empty() {
                 println!("Nothing changed on its own.");
@@ -1353,58 +1376,69 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 }
             }
             if has(&args, "--apply") && !l.is_empty() {
-                let date = expunge_core::time::DateTime::now_local().ymd();
-                expunge_core::noise::append_learned(
+                let date = installscope_core::time::DateTime::now_local().ymd();
+                installscope_core::noise::append_learned(
                     &mut settings.registry_exclusions,
                     &l.registry,
                     &date,
                 );
-                expunge_core::noise::append_learned(&mut settings.file_exclusions, &l.files, &date);
+                installscope_core::noise::append_learned(
+                    &mut settings.file_exclusions,
+                    &l.files,
+                    &date,
+                );
                 st.save_settings(&settings)?;
                 eprintln!("Added to the exclusions.");
             }
         }
         "verify" => {
             let file = args.get(1).ok_or_else(|| anyhow::anyhow!("missing file"))?;
-            let tr = expunge_core::trust::check_file(file);
+            let tr = installscope_core::trust::check_file(file);
             match &tr {
-                expunge_core::trust::Trust::Signed { signer } => {
+                installscope_core::trust::Trust::Signed { signer } => {
                     println!("Signed by {signer} (valid)")
                 }
-                expunge_core::trust::Trust::Invalid { signer, reason } => {
+                installscope_core::trust::Trust::Invalid { signer, reason } => {
                     println!("Signature problem: {reason} {signer}")
                 }
                 other => println!("{}", other.label()),
             }
-            return Ok(if matches!(tr, expunge_core::trust::Trust::Signed { .. }) {
-                0
-            } else {
-                2
-            });
+            return Ok(
+                if matches!(tr, installscope_core::trust::Trust::Signed { .. }) {
+                    0
+                } else {
+                    2
+                },
+            );
         }
         "programs" if has(&args, "--json") => {
             let list = programs::list_programs(reg.as_ref(), has(&args, "--all"));
             if has(&args, "--trust") {
-                let v: Vec<expunge_core::json::Value> = list
+                let v: Vec<installscope_core::json::Value> = list
                     .iter()
                     .map(|p| {
-                        use expunge_core::json::ToJson;
+                        use installscope_core::json::ToJson;
                         let mut j = p.to_json();
                         j.set(
                             "signature",
-                            expunge_core::trust::check_program(p, reg.as_ref()).to_json(),
+                            installscope_core::trust::check_program(p, reg.as_ref()).to_json(),
                         );
                         j
                     })
                     .collect();
-                println!("{}", expunge_core::json::compat::to_string_pretty(&v)?);
+                println!("{}", installscope_core::json::compat::to_string_pretty(&v)?);
             } else {
-                println!("{}", expunge_core::json::compat::to_string_pretty(&list)?);
+                println!(
+                    "{}",
+                    installscope_core::json::compat::to_string_pretty(&list)?
+                );
             }
         }
         "add-program" => {
             let path = args.get(1).ok_or_else(|| {
-                anyhow::anyhow!("usage: expunge add-program <folder|program.exe> [--name NAME]")
+                anyhow::anyhow!(
+                    "usage: installscope add-program <folder|program.exe> [--name NAME]"
+                )
             })?;
             let p = programs::add_manual(
                 &store()?.root,
@@ -1412,7 +1446,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 &arg_value(&args, "--name").unwrap_or_default(),
             )?;
             println!(
-                "Added {} ({}); uninstall it with: expunge uninstall \"{}\"",
+                "Added {} ({}); uninstall it with: installscope uninstall \"{}\"",
                 p.name, p.install_location, p.name
             );
         }
@@ -1424,12 +1458,12 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             }
             for p in all {
                 if with_trust {
-                    let tr = expunge_core::trust::check_program(&p, reg.as_ref());
+                    let tr = installscope_core::trust::check_program(&p, reg.as_ref());
                     let sig = match &tr {
-                        expunge_core::trust::Trust::Signed { signer } => {
+                        installscope_core::trust::Trust::Signed { signer } => {
                             format!("signed: {signer}")
                         }
-                        expunge_core::trust::Trust::Invalid { reason, .. } => {
+                        installscope_core::trust::Trust::Invalid { reason, .. } => {
                             format!("INVALID: {reason}")
                         }
                         other => other.label().to_lowercase(),
@@ -1476,7 +1510,10 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             }
             if let Some(w) = writer {
                 let b = w.finish()?;
-                println!("Backup: {} (restore with: expunge restore {})", b.id, b.id);
+                println!(
+                    "Backup: {} (restore with: installscope restore {})",
+                    b.id, b.id
+                );
             }
             let failed = results.iter().filter(|r| !r.ok).count();
             if !opts.dry_run && failed == 0 && !has(&args, "--keep-log") {
@@ -1487,7 +1524,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
         "export" => {
             let (Some(id), Some(fmt), Some(out)) = (args.get(1), args.get(2), args.get(3)) else {
                 anyhow::bail!(
-                    "usage: expunge export <log-id> <html|json|reg|ps1|xml|portable> <output-file>"
+                    "usage: installscope export <log-id> <html|json|reg|ps1|xml|portable> <output-file>"
                 )
             };
             let log = store()?.load_log(id)?;
@@ -1495,13 +1532,13 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 "html" => report::to_html(&log),
                 "reg" => report::to_reg_undo(&log),
                 "ps1" => report::to_ps1(&log),
-                "json" => expunge_core::json::compat::to_string_pretty(&log)?,
+                "json" => installscope_core::json::compat::to_string_pretty(&log)?,
                 "xml" => report::to_xml(&log),
                 "portable" | "ini" => {
-                    expunge_core::portable::launcher_ini(
+                    installscope_core::portable::launcher_ini(
                         &log.changes,
                         &log.name,
-                        &expunge_core::portable::Folders::current(),
+                        &installscope_core::portable::Folders::current(),
                     )
                     .text
                 }
@@ -1520,7 +1557,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
         }
         "backups" => {
             let list = list_backups(&store()?.backups_dir());
-            let cut: Vec<String> = expunge_core::backup::interrupted(&list)
+            let cut: Vec<String> = installscope_core::backup::interrupted(&list)
                 .iter()
                 .map(|b| b.id.clone())
                 .collect();
@@ -1541,7 +1578,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             }
             if !cut.is_empty() {
                 eprintln!(
-                    "{} operation(s) were interrupted before finishing. Undo with `expunge restore <backup-id>`.",
+                    "{} operation(s) were interrupted before finishing. Undo with `installscope restore <backup-id>`.",
                     cut.len()
                 );
             }

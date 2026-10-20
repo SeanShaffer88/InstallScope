@@ -53,8 +53,8 @@ jobs:
           $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1
           [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\cert.pfx", [Convert]::FromBase64String($env:CODESIGN_PFX))
           try {
-            foreach ($f in 'target/release/expunge.exe', 'target/aarch64-pc-windows-msvc/release/expunge.exe') {
-              & $signtool.FullName sign /f "$env:RUNNER_TEMP\cert.pfx" /p $env:CODESIGN_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /d Expunge $f
+            foreach ($f in 'target/release/installscope.exe', 'target/aarch64-pc-windows-msvc/release/installscope.exe') {
+              & $signtool.FullName sign /f "$env:RUNNER_TEMP\cert.pfx" /p $env:CODESIGN_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /d InstallScope $f
               if ($LASTEXITCODE -ne 0) { throw "signing $f failed" }
             }
           } finally { Remove-Item "$env:RUNNER_TEMP\cert.pfx" -Force }
@@ -91,21 +91,21 @@ jobs:
         run: |
           $v = "${{ steps.ver.outputs.version }}"
           New-Item -ItemType Directory dist, dist/portable | Out-Null
-          Copy-Item target/release/expunge.exe dist/portable/Expunge.exe
+          Copy-Item target/release/installscope.exe dist/portable/InstallScope.exe
           Copy-Item LICENSE dist/portable/LICENSE.txt
           Copy-Item README.md dist/portable/README.md
           New-Item dist/portable/portable -ItemType File | Out-Null
           Copy-Item pa-tools dist/portable/tools -Recurse
-          Compress-Archive -Path dist/portable/* -DestinationPath "dist/Expunge-$v-portable.zip"
+          Compress-Archive -Path dist/portable/* -DestinationPath "dist/InstallScope-$v-portable.zip"
           # Arm64 portable build (Snapdragon and other Arm PCs).
           New-Item -ItemType Directory dist/portable-arm64 | Out-Null
-          Copy-Item target/aarch64-pc-windows-msvc/release/expunge.exe dist/portable-arm64/Expunge.exe
+          Copy-Item target/aarch64-pc-windows-msvc/release/installscope.exe dist/portable-arm64/InstallScope.exe
           Copy-Item LICENSE dist/portable-arm64/LICENSE.txt
           Copy-Item README.md dist/portable-arm64/README.md
           New-Item dist/portable-arm64/portable -ItemType File | Out-Null
           Copy-Item pa-tools dist/portable-arm64/tools -Recurse
-          Compress-Archive -Path dist/portable-arm64/* -DestinationPath "dist/Expunge-$v-arm64-portable.zip"
-          makensis "-DVERSION=$v" "-DEXE=..\target\release\expunge.exe" "-DOUTDIR=..\dist" "-DTOOLS=..\pa-tools\PortableApps.comLauncher" installer\expunge.nsi
+          Compress-Archive -Path dist/portable-arm64/* -DestinationPath "dist/InstallScope-$v-arm64-portable.zip"
+          makensis "-DVERSION=$v" "-DEXE=..\target\release\installscope.exe" "-DOUTDIR=..\dist" "-DTOOLS=..\pa-tools\PortableApps.comLauncher" installer\installscope.nsi
           Get-ChildItem dist -File | ForEach-Object {
             "$((Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower())  $($_.Name)"
           } | Set-Content dist/SHA256SUMS.txt
@@ -117,8 +117,8 @@ jobs:
           $signtool = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*\x64\signtool.exe" | Sort-Object FullName | Select-Object -Last 1
           [IO.File]::WriteAllBytes("$env:RUNNER_TEMP\cert.pfx", [Convert]::FromBase64String($env:CODESIGN_PFX))
           try {
-            Get-ChildItem dist -Filter 'Expunge-Setup-*.exe' | ForEach-Object {
-              & $signtool.FullName sign /f "$env:RUNNER_TEMP\cert.pfx" /p $env:CODESIGN_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /d "Expunge Setup" $_.FullName
+            Get-ChildItem dist -Filter 'InstallScope-Setup-*.exe' | ForEach-Object {
+              & $signtool.FullName sign /f "$env:RUNNER_TEMP\cert.pfx" /p $env:CODESIGN_PASSWORD /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /d "InstallScope Setup" $_.FullName
               if ($LASTEXITCODE -ne 0) { throw "signing $($_.Name) failed" }
             }
           } finally { Remove-Item "$env:RUNNER_TEMP\cert.pfx" -Force }
@@ -133,12 +133,12 @@ jobs:
           $v = "${{ steps.ver.outputs.version }}"
           $log = Get-Content CHANGELOG.md -Raw
           $m = [regex]::Match($log, "(?ms)^## \[$([regex]::Escape($v))\].*?(?=^## \[|\z)")
-          $notes = if ($m.Success) { $m.Value } else { "Expunge $v" }
+          $notes = if ($m.Success) { $m.Value } else { "InstallScope $v" }
           $notes | Set-Content dist/NOTES.md
 
       # Optional: set the repository secret VIRUSTOTAL_API_KEY to scan every
       # download before it is published. Detections don't stop the release
-      # (tools like Expunge are often flagged by mistake); they are listed as
+      # (tools like InstallScope are often flagged by mistake); they are listed as
       # warnings so they can be reported as false positives, and the release
       # notes link to each file's report.
       - name: Scan the downloads with VirusTotal
@@ -147,7 +147,7 @@ jobs:
         run: |
           $headers = @{ 'x-apikey' = $env:VIRUSTOTAL_API_KEY }
           $lines = @('', '### VirusTotal', '', '| File | Detections | Report |', '|---|---|---|')
-          foreach ($f in Get-ChildItem dist -File -Include 'Expunge-Setup-*.exe', 'Expunge-*-portable.zip' -Recurse) {
+          foreach ($f in Get-ChildItem dist -File -Include 'InstallScope-Setup-*.exe', 'InstallScope-*-portable.zip' -Recurse) {
             $sha = (Get-FileHash $f.FullName -Algorithm SHA256).Hash.ToLower()
             $url = 'https://www.virustotal.com/api/v3/files'
             if ($f.Length -gt 32MB) { $url = (Invoke-RestMethod -Headers $headers https://www.virustotal.com/api/v3/files/upload_url).data }
@@ -172,10 +172,10 @@ jobs:
         with:
           tag_name: v${{ steps.ver.outputs.version }}
           target_commitish: ${{ github.sha }}
-          name: Expunge ${{ steps.ver.outputs.version }}
+          name: InstallScope ${{ steps.ver.outputs.version }}
           make_latest: true
           body_path: dist/NOTES.md
           files: |
-            dist/Expunge-Setup-*.exe
-            dist/Expunge-*-portable.zip
+            dist/InstallScope-Setup-*.exe
+            dist/InstallScope-*-portable.zip
             dist/SHA256SUMS.txt

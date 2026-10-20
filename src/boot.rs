@@ -187,7 +187,7 @@ pub fn task_xml(program: &str, args: &str, user: &str, delay_secs: u32) -> Strin
     format!(
         r#"<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <RegistrationInfo><Description>Started later by Expunge (delayed start).</Description></RegistrationInfo>
+  <RegistrationInfo><Description>Started later by InstallScope (delayed start).</Description></RegistrationInfo>
   <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>{user}</UserId><Delay>PT{delay_secs}S</Delay></LogonTrigger></Triggers>
   <Principals><Principal id="Author"><UserId>{user}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
   <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Priority>7</Priority></Settings>
@@ -240,7 +240,7 @@ pub fn delay(
         .map(|d| format!("{d}\\{}", crate::platform::user_name()))
         .unwrap_or_else(|_| crate::platform::user_name());
     let xml = task_xml(&program, &args, &user, delay_secs);
-    let file = std::env::temp_dir().join(format!("expunge-delay-{}.xml", std::process::id()));
+    let file = std::env::temp_dir().join(format!("installscope-delay-{}.xml", std::process::id()));
     // Task Scheduler expects UTF-16 with a byte-order mark.
     let mut bytes = vec![0xFF, 0xFE];
     for u in xml.encode_utf16() {

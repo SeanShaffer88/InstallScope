@@ -138,6 +138,46 @@ pub fn find_orphans(reg: &dyn Registry, ix: &DeepIndex, check: &Checker) -> Plan
         }
     };
 
+    // A non-MSI uninstall registration is considered stale only when both
+    // its declared install directory and its uninstaller are clearly gone.
+    for (root, source) in crate::programs::UNINSTALL_ROOTS {
+        for subkey in reg.subkeys(root) {
+            let path = format!("{root}\\{subkey}");
+            let Some(key) = reg.read_key(&path) else {
+                continue;
+            };
+            let Some(program) = crate::programs::InstalledProgram::from_key(&key, source) else {
+                continue;
+            };
+            if program.is_msi
+                || program.system_component
+                || program.no_remove
+                || program.is_hidden(&key)
+                || program.name.is_empty()
+                || program.install_location.is_empty()
+                || !check.missing(&program.install_location)
+            {
+                continue;
+            }
+            let uninstallers = [
+                program.uninstall_string.as_str(),
+                program.quiet_uninstall_string.as_str(),
+            ];
+            let has_uninstaller = uninstallers.iter().any(|command| !command.is_empty());
+            let uninstallers_missing = uninstallers
+                .iter()
+                .filter(|command| !command.is_empty())
+                .all(|command| check.missing(command));
+            if has_uninstaller && uninstallers_missing {
+                push(
+                    &mut plan,
+                    Action::DeleteKey { path },
+                    "Uninstall registration",
+                );
+            }
+        }
+    }
+
     // COM classes, type libraries, file types, "Open with" and verbs.
     // A class can register both servers; it is orphaned only if every one
     // of its targets is missing.
@@ -418,7 +458,7 @@ mod tests {
             KeyData::new("HKCU\\Environment")
                 .with(RegValue::string(
                     "Path",
-                    "C:\\Program Files\\Here;C:\\Tools\\GoneSdk\\bin;%EXPUNGE_TEST_UNSET%\\bin",
+                    "C:\\Program Files\\Here;C:\\Tools\\GoneSdk\\bin;%INSTALLSCOPE_TEST_UNSET%\\bin",
                 ))
                 .with(RegValue::string("GONE_HOME", "C:\\Tools\\GoneSdk")),
         );
@@ -455,6 +495,100 @@ mod tests {
         assert!(!has("{44444444"), "{got:#?}");
         assert!(!has("{55555555"), "{got:#?}");
         assert!(!has("{rule2}"), "{got:#?}");
-        assert!(!has("%EXPUNGE_TEST_UNSET%"), "{got:#?}");
+        assert!(!has("%INSTALLSCOPE_TEST_UNSET%"), "{got:#?}");
+    }
+
+    #[test]
+    fn finds_only_clearly_stale_non_msi_uninstall_entries() {
+        let reg = MemRegistry::new();
+        let root = crate::programs::UNINSTALL_ROOTS[2].0;
+        reg.put(
+            KeyData::new(&format!("{root}\\GoneApp"))
+                .with(RegValue::string("DisplayName", "Gone App"))
+                .with(RegValue::string(
+                    "InstallLocation",
+                    "C:\\Program Files\\GoneApp",
+                ))
+                .with(RegValue::string(
+                    "UninstallString",
+                    "\"C:\\Program Files\\GoneApp\\uninstall.exe\" /quiet",
+                )),
+        );
+        reg.put(
+            KeyData::new(&format!("{root}\\PresentApp"))
+                .with(RegValue::string("DisplayName", "Present App"))
+                .with(RegValue::string(
+                    "InstallLocation",
+                    "C:\\Program Files\\PresentApp",
+                ))
+                .with(RegValue::string(
+                    "UninstallString",
+                    "\"C:\\Program Files\\PresentApp\\uninstall.exe\"",
+                )),
+        );
+        reg.put(
+            KeyData::new(&format!("{root}\\AlternateUninstaller"))
+                .with(RegValue::string("DisplayName", "Alternate Uninstaller"))
+                .with(RegValue::string(
+                    "InstallLocation",
+                    "C:\\Program Files\\GoneAlternate",
+                ))
+                .with(RegValue::string(
+                    "UninstallString",
+                    "C:\\Tools\\uninstall-helper.exe /remove",
+                ))
+                .with(RegValue::string(
+                    "QuietUninstallString",
+                    "C:\\Program Files\\GoneAlternate\\quiet-uninstall.exe /quiet",
+                )),
+        );
+        reg.put(
+            KeyData::new(&format!("{root}\\SystemComponent"))
+                .with(RegValue::string("DisplayName", "Windows Component"))
+                .with(RegValue::string("InstallLocation", "C:\\Windows\\system32"))
+                .with(RegValue::string(
+                    "UninstallString",
+                    "C:\\Windows\\system32\\uninstall.exe",
+                ))
+                .with(RegValue::dword("SystemComponent", 1)),
+        );
+        reg.put(
+            KeyData::new(&format!("{root}\\MsiProduct"))
+                .with(RegValue::string("DisplayName", "MSI Product"))
+                .with(RegValue::string(
+                    "InstallLocation",
+                    "C:\\Program Files\\MsiProduct",
+                ))
+                .with(RegValue::string(
+                    "UninstallString",
+                    "MsiExec.exe /X{11111111-1111-1111-1111-111111111111}",
+                ))
+                .with(RegValue::dword("WindowsInstaller", 1)),
+        );
+
+        let exists = |path: &str| {
+            path.eq_ignore_ascii_case("C:\\Program Files\\PresentApp")
+                || path.eq_ignore_ascii_case("C:\\Program Files\\PresentApp\\uninstall.exe")
+                || path.eq_ignore_ascii_case("C:\\Tools\\uninstall-helper.exe")
+        };
+        let ix = DeepIndex::build(&reg, None);
+        let plan = find_orphans(&reg, &ix, &Checker::new(&exists, "C:\\Windows"));
+        let stale = plan.items.iter().find(|item| {
+            matches!(&item.action, Action::DeleteKey { path } if path == &format!("{root}\\GoneApp"))
+        });
+        assert!(stale.is_some(), "{:#?}", plan.items);
+        assert!(stale.unwrap().selected);
+        assert!(!plan.items.iter().any(|item| {
+            matches!(&item.action, Action::DeleteKey { path } if path.ends_with("\\PresentApp"))
+        }));
+        assert!(!plan.items.iter().any(|item| {
+            matches!(&item.action, Action::DeleteKey { path } if path.ends_with("\\AlternateUninstaller"))
+        }));
+        assert!(!plan.items.iter().any(|item| {
+            matches!(&item.action, Action::DeleteKey { path } if path.ends_with("\\SystemComponent"))
+        }));
+        assert!(!plan.items.iter().any(|item| {
+            matches!(&item.action, Action::DeleteKey { path } if path.ends_with("\\MsiProduct"))
+        }));
     }
 }

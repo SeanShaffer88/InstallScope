@@ -4,8 +4,8 @@ use super::app::{App, Tab};
 use super::theme;
 use super::widgets::*;
 use egui::RichText;
-use expunge_core::i18n::{t, tf};
-use expunge_core::model::human_size;
+use installscope_core::i18n::{t, tf};
+use installscope_core::model::human_size;
 
 fn stat_tile(
     ui: &mut egui::Ui,
@@ -67,7 +67,7 @@ impl App {
         egui::CentralPanel::default().frame(theme::content_frame()).show(ctx, |ui| {
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                 if !self.elevated {
-                    theme::warning_banner(ui, t("Expunge is not running as Administrator. Some removals will fail. Use \"Run as Administrator\" in the left column."));
+                    theme::warning_banner(ui, t("InstallScope is not running as Administrator. Some removals will fail. Use \"Run as Administrator\" in the left column."));
                     ui.add_space(10.0);
                 }
                 self.interrupted_ui(ui);
@@ -144,7 +144,7 @@ impl App {
                         ui,
                         "🔍",
                         "Find leftovers of removed programs",
-                        "Registrations, file types, PATH entries, firewall rules and tasks pointing to files that are gone",
+                        "Includes clearly stale uninstall entries and other registrations pointing to missing files",
                     ) {
                         self.scan_orphans();
                     }
@@ -162,7 +162,7 @@ impl App {
 
                 // "What are the top 5 space-wasters I haven't opened in 6 months?"
                 if !self.programs.usage.is_empty() {
-                    let mut wasters: Vec<(expunge_core::programs::InstalledProgram, u64, i64)> = self
+                    let mut wasters: Vec<(installscope_core::programs::InstalledProgram, u64, i64)> = self
                         .programs
                         .list
                         .iter()
@@ -194,12 +194,12 @@ impl App {
                                         self.programs.filter.clear();
                                         self.tab = Tab::Programs;
                                     }
-                                    small_muted(ui, format!("{} · {}", expunge_core::model::human_size(*size), tf("not opened for {n} months", &[("n", (days / 30).to_string())])));
+                                    small_muted(ui, format!("{} · {}", installscope_core::model::human_size(*size), tf("not opened for {n} months", &[("n", (days / 30).to_string())])));
                                 });
                             }
                             ui.add_space(4.0);
                             ui.horizontal(|ui| {
-                                small_muted(ui, tf("{size} in total", &[("size", expunge_core::model::human_size(total))]));
+                                small_muted(ui, tf("{size} in total", &[("size", installscope_core::model::human_size(total))]));
                                 if ui.button(t("Review and uninstall…")).clicked() {
                                     let chosen: Vec<_> = wasters.iter().map(|w| w.0.clone()).collect();
                                     self.start_uninstall(chosen, false);

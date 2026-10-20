@@ -8,8 +8,8 @@ use super::widgets::*;
 use super::Job;
 use egui::RichText;
 use egui_extras::{Column, TableBuilder};
-use expunge_core::i18n::{t, tf};
-use expunge_core::shellext::{self, Kind, MenuEntry};
+use installscope_core::i18n::{t, tf};
+use installscope_core::shellext::{self, Kind, MenuEntry};
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum ShellView {
@@ -25,7 +25,7 @@ pub struct ShellState {
     pub loaded: bool,
     pub entries: Option<Vec<MenuEntry>>,
     pub job: Option<Job<Vec<MenuEntry>>>,
-    pub deep_job: Option<Job<expunge_core::revert::Plan>>,
+    pub deep_job: Option<Job<installscope_core::revert::Plan>>,
     pub view: ShellView,
     pub filter: String,
 }
@@ -86,16 +86,27 @@ impl App {
         };
         let machine = self.elevated;
         let mut w = if self.settings.backup_enabled() {
-            expunge_core::backup::BackupWriter::new(&self.store.backups_dir(), &title).ok()
+            match installscope_core::backup::BackupWriter::new(&self.store.backups_dir(), &title) {
+                Ok(writer) => Some(writer),
+                Err(error) => {
+                    self.set_status(format!(
+                        "✖ {title}: could not create a backup; no change was made: {error:#}"
+                    ));
+                    self.reload_backups();
+                    return;
+                }
+            }
         } else {
             None
         };
-        let r = shellext::set_enabled(self.reg.as_ref(), &e, on, machine, w.as_mut());
+        let mut r = shellext::set_enabled(self.reg.as_ref(), &e, on, machine, w.as_mut());
         if let Some(w) = w {
             if w.is_empty() {
                 w.discard();
-            } else {
-                let _ = w.finish();
+            } else if let Err(error) = w.finish() {
+                r = Err(anyhow::anyhow!(
+                    "the change may have completed, but its backup could not be finalized: {error:#}"
+                ));
             }
         }
         match r {
@@ -160,7 +171,7 @@ impl App {
                         .clicked()
                     {
                         let reg = self.reg.clone();
-                        self.shell.deep_job = Some(Job::spawn(ctx, move |_| expunge_core::orphans::scan_system(reg.as_ref())));
+                        self.shell.deep_job = Some(Job::spawn(ctx, move |_| installscope_core::orphans::scan_system(reg.as_ref())));
                     }
                     if broken > 0 && theme::primary_button(ui, tf("Remove {n} broken…", &[("n", broken.to_string())])).clicked() {
                         let plan = shellext::orphan_plan(&all);
