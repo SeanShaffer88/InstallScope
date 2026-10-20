@@ -43,6 +43,9 @@ pub enum Confirm {
     RestoreExtension(String),
     ResetSettings,
     CancelMonitoring,
+    /// Discard the install log under review in Monitor Review: the only
+    /// record of what the install changed is deleted, unsaved.
+    DiscardReview,
     /// Turn an optional Windows feature on (true) or off.
     /// Run one deep (Windows) cleanup.
     DeepClean(installscope_core::slimmer::DeepItem),
@@ -88,6 +91,7 @@ impl Confirm {
                 | Confirm::DeleteStartup(_)
                 | Confirm::DeleteTask(_)
                 | Confirm::ResetSettings
+                | Confirm::DiscardReview
                 | Confirm::DeepClean(_)
                 | Confirm::RestoreTo(_)
                 | Confirm::DeleteRestorePoint(_)
@@ -389,6 +393,13 @@ impl App {
                 self.save_settings();
             }
             Confirm::CancelMonitoring => {
+                self.monitor.cancel(&self.store);
+            }
+            Confirm::DiscardReview => {
+                // The same cancel the Discard button used to run
+                // directly: the reviewed log was never saved, so
+                // dropping the session deletes the only record of the
+                // install (and clears the pending "before" snapshot).
                 self.monitor.cancel(&self.store);
             }
         }
@@ -1632,6 +1643,7 @@ mod confirm_tests {
         assert!(!Confirm::DeleteTask(0).always_confirm());
         assert!(!Confirm::ResetSettings.always_confirm());
         assert!(!Confirm::CancelMonitoring.always_confirm());
+        assert!(!Confirm::DiscardReview.always_confirm());
         assert!(!Confirm::SetProtection(false).always_confirm());
         assert!(!Confirm::SetProtection(true).always_confirm());
         assert!(!Confirm::DeleteRestorePoint(1).always_confirm());
@@ -1647,6 +1659,7 @@ mod confirm_tests {
             Confirm::DeleteStartup(0),
             Confirm::DeleteTask(0),
             Confirm::ResetSettings,
+            Confirm::DiscardReview,
             Confirm::DeepClean(DeepItem::RestorePoints),
             Confirm::RestoreTo(1),
             Confirm::DeleteRestorePoint(1),
