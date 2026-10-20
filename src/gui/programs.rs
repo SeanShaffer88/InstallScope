@@ -1317,7 +1317,7 @@ impl App {
             flow.logs_to_delete = logs;
             flow.names = names;
             flow.plan.info.extend(w.notes.clone());
-            self.removal = Some(flow);
+            self.open_removal(flow);
             self.wizard = None;
             self.programs.checked.clear();
             self.programs.needs_refresh = true;
