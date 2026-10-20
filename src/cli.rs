@@ -14,139 +14,210 @@ use installscope_core::snapshot::{
 };
 use installscope_core::store::Store;
 use installscope_core::{programs, report};
+use std::io::IsTerminal;
 use std::path::PathBuf;
 
-const HELP: &str = "\
-InstallScope — Windows Install, Uninstall & Developer Tools
-Copyright (C) 2026 Sean Shaffer. GPLv3: free software, no warranty.
-
-USAGE:
-  installscope                                   Start the graphical interface
-  installscope monitor [--name NAME] -- <installer> [args...]
-                                            Snapshot, run the installer, wait,
-                                            snapshot again, save an install log
-  installscope snapshot <file.snap>              Save a snapshot of the system
-  installscope diff <before.snap> <after.snap> [--name NAME]
-                                            Compare two snapshots, save a log
-  installscope logs [--group G] [--tag T] [--json]
-                                            List saved install logs
-  installscope tag <log-id> [--group G] [--tags a,b]
-                                            Set a log's group and tags
-  installscope programs [--all] [--trust] [--json]
-                                            List installed programs (--trust adds
-                                            each program's digital signature)
-  installscope verify <file>                     Check a file's digital signature
-                                            (exit 2 if unsigned or invalid)
-  installscope revert <log-id> [--dry-run] [--remove-unlogged] [--no-backup] [--recycle]
-                          [--close-programs] [--restart-explorer] [--keep-log]
-                                            Undo an installation precisely
-  installscope rewind <log-id> --list         App Rewind (early prototype): the
-                                            recorded states of one program
-  installscope rewind <log-id> --capture [--before]
-                                            Record the program's current file
-                                            contents as a state (--before records
-                                            them as the log's before-state)
-  installscope rewind <log-id> --to <state> [--dry-run]
-                                            Rewind one program to a recorded
-                                            state; --dry-run prints the plan,
-                                            including anything that cannot be
-                                            restored. Without --dry-run the
-                                            rewind runs after --yes, takes a
-                                            backup of the current state first,
-                                            and exits 2 when the state is only
-                                            partly restorable
-  installscope export <log-id> <html|json|reg|ps1|xml> <output-file>
-  installscope repackage <log-id> <folder> [--no-setup]
-                                            A silent installer for the recorded
-                                            installation: one Setup.exe plus a
-                                            folder with install.ps1, install.reg
-                                            and uninstall.ps1
-  installscope merge <log-id> <log-id>... [--name NAME]
-                                            Combine logs into a new one (e.g. a
-                                            program and its update)
-  installscope learn-noise [--seconds N] [--apply] [--json]
-                                            Take two snapshots N seconds apart
-                                            (default 60) and list what changed
-                                            on its own; --apply adds it to the
-                                            exclusions
-  installscope transfer export <out.installscope> <program>...
-                                            Pack programs (by name) with their files
-                                            and settings to move to another PC
-  installscope transfer check <package>          Check a package against this PC
-  installscope transfer import <package> [--overwrite]
-                                            Restore a package (undo from backups)
-  installscope export <log-id> portable <launcher.ini>
-                                            PortableApps.com Launcher settings
-                                            for what the log recorded
-  installscope portable-build <installer> --name NAME [--version V] [--publisher P]
-                 [--category C] [--silent] [--out DIR] [--here] [--defaults]
-                 [--no-prompt] [--no-compile]
-                                            Capture an installation in Windows
-                                            Sandbox (or on this PC with --here)
-                                            and build a PortableApps.com package
-                                            with its launcher and .paf.exe
-                                            installer
-  installscope add-program <folder|program.exe> [--name NAME]
-                                            List a program Windows doesn't know
-                                            (e.g. portable) so it can be analyzed
-                                            and uninstalled
-  installscope components <log-id> [--json] [--ask-model] [--strike]
-                                            Installer Decrapifier: the services,
-                                            tasks and autoruns an installation
-                                            added, judged; --strike removes the
-                                            bloat (backed up)
-  installscope orphans [--json]                  List registrations left by removed
-                                            programs (pointing to missing files)
-  installscope uninstall <name>... [--silent] [--leftovers safe|none] [--dry-run]
-                                            Uninstall programs one after another,
-                                            then remove safe leftovers (backed up)
-  installscope clean [--categories a,b] [--list] [--dry-run]
-                                            Clean junk (default: the safe kinds)
-  installscope schedule-clean daily|weekly|monthly|off [--categories a,b]
-                                            Clean junk automatically
-  installscope startup [--json]                  List startup programs
-  installscope startup enable|disable <name>     Turn a startup program on or off
-  installscope history [--since YYYY-MM-DD] [--json]
-                                            Record new changes, then list the
-                                            recorded ones (installs, updates,
-                                            removals, autostart changes)
-  installscope slowdown [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--json]
-                                            What changed in the period, ranked
-                                            by measured startup impact where
-                                            Windows has it
-  installscope gatekeeper [--json]               Review new autostart entries
-  installscope gatekeeper scan                   Run one detection pass
-  installscope gatekeeper allow <id>             Keep an entry, mark it reviewed
-  installscope gatekeeper remove <id>            Back up and remove an entry
-  installscope gatekeeper enable|disable         Turn the Gatekeeper on or off
-  installscope watch                             Background auto-monitoring (started
-                                            at sign-in when turned on in Settings)
-  installscope check-clean <log-id>              Check that nothing recorded in a log
-                                            is still on the PC (exit 2 if so)
-  installscope restore-point [list]              List System Restore points
-  installscope restore-point create [DESCRIPTION]
-  installscope restore-point delete <number>
-  installscope restore-point rollback <number> --yes
-                                            Restart Windows into a restore point
-  installscope backups                           List backups
-  installscope restore <backup-id>               Undo a removal from its backup
-  installscope --version | --help
-
-  Any command that takes snapshots accepts --profile NAME to use a saved
-  monitoring profile (Settings > Monitoring scope).
-  monitor and diff also accept --json to print the saved log's summary.
-
-Exit codes: 0 success, 1 error, 2 finished with failures / findings.
-
-Typical CI use (installer QA):
-  installscope monitor --name MyApp --no-prompt --json -- dist\\MyApp-Setup.exe /S
-  installscope revert <log-id> --keep-log
-  installscope check-clean <log-id>";
+mod help;
+use help::{COMMAND_HELP, HELP};
 
 fn arg_value(args: &[String], flag: &str) -> Option<String> {
     args.iter()
         .position(|a| a == flag)
         .and_then(|i| args.get(i + 1).cloned())
+}
+
+/// What an invocation does to the PC. Drives two things: the
+/// not-elevated warning (read-only commands never warn — warning about a
+/// listing trains users to ignore it) and the confirmation discipline
+/// for destructive commands.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum CmdClass {
+    /// Prints information only; never writes, never prompts.
+    ReadOnly,
+    /// Writes InstallScope data, files the user named, settings or
+    /// backed-up, one-step-reversible changes. Never prompts.
+    Mutating,
+    /// Removes, deletes, uninstalls or overwrites system state, or is
+    /// hard to undo. Must be confirmed (see `confirm_destructive`).
+    Destructive,
+}
+
+fn classify(cmd: &str, args: &[String]) -> CmdClass {
+    use CmdClass::*;
+    let sub = args.get(1).map(String::as_str).unwrap_or("");
+    match cmd {
+        "--help" | "-h" | "help" | "--version" | "-V" => ReadOnly,
+        "logs" | "programs" | "verify" | "orphans" | "check-clean" | "backups" => ReadOnly,
+        // Writes snapshots, logs, packages, settings or bookkeeping.
+        "snapshot" | "diff" | "monitor" | "tag" | "merge" | "export" | "repackage"
+        | "silent-package" | "learn-noise" | "add-program" | "history" | "slowdown" | "watch"
+        | "pa-capture" | "portable-build" | "schedule-clean" => Mutating,
+        "revert" | "uninstall" => {
+            if has(args, "--dry-run") {
+                ReadOnly
+            } else {
+                Destructive
+            }
+        }
+        "clean" => {
+            if has(args, "--scheduled") {
+                // The Task Scheduler entry point: the schedule the user
+                // set is the standing instruction, so it never prompts.
+                Mutating
+            } else if has(args, "--list") || has(args, "--dry-run") {
+                ReadOnly
+            } else {
+                Destructive
+            }
+        }
+        "components" => {
+            if has(args, "--strike") {
+                Destructive
+            } else {
+                ReadOnly
+            }
+        }
+        "restore" => Destructive,
+        "transfer" => match sub {
+            "check" => ReadOnly,
+            "import" => Destructive,
+            _ => Mutating,
+        },
+        "rewind" => {
+            if has(args, "--list") {
+                ReadOnly
+            } else if has(args, "--capture") {
+                Mutating
+            } else if has(args, "--to") {
+                if has(args, "--dry-run") {
+                    ReadOnly
+                } else {
+                    Destructive
+                }
+            } else {
+                Mutating
+            }
+        }
+        "restore-point" | "restore-points" => match sub {
+            "delete" | "rollback" => Destructive,
+            "create" => Mutating,
+            _ => ReadOnly,
+        },
+        "startup" => match sub {
+            // Backed up, and the inverse subcommand undoes it.
+            "enable" | "disable" => Mutating,
+            _ => ReadOnly,
+        },
+        "gatekeeper" => match sub {
+            "remove" => Destructive,
+            "scan" | "allow" | "enable" | "disable" => Mutating,
+            _ => ReadOnly,
+        },
+        _ => Mutating,
+    }
+}
+
+/// The confirmation decision for a destructive invocation, as a pure
+/// function so the discipline is testable without a terminal.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Gate {
+    /// `--yes` was given: proceed silently.
+    Proceed,
+    /// Interactive terminal: ask, with a description of what will happen.
+    Prompt,
+    /// No terminal and no `--yes`: refuse, changing nothing.
+    Refuse,
+}
+
+fn gate_decision(yes: bool, interactive: bool) -> Gate {
+    if yes {
+        Gate::Proceed
+    } else if interactive {
+        Gate::Prompt
+    } else {
+        Gate::Refuse
+    }
+}
+
+fn stdin_interactive() -> bool {
+    std::io::stdin().is_terminal()
+}
+
+/// A typed answer counts as yes only when it plainly says so.
+fn answer_yes(line: &str) -> bool {
+    let a = line.trim().to_lowercase();
+    a == "yes" || a == "y"
+}
+
+/// The confirmation discipline for destructive commands, matching the
+/// `--yes` convention `rewind` and `restore-point rollback` started:
+/// `--yes` proceeds; an interactive terminal is told exactly what will
+/// happen (`what`) and must type "yes"; anything else refuses. Returns
+/// whether to proceed. Callers return exit code 1 when this is false.
+fn confirm_destructive(args: &[String], what: &str) -> bool {
+    match gate_decision(has(args, "--yes"), stdin_interactive()) {
+        Gate::Proceed => true,
+        Gate::Prompt => {
+            eprintln!("{what}");
+            eprint!("Type \"yes\" to continue: ");
+            {
+                use std::io::Write;
+                let _ = std::io::stderr().flush();
+            }
+            let mut line = String::new();
+            match std::io::stdin().read_line(&mut line) {
+                Ok(_) if answer_yes(&line) => true,
+                _ => {
+                    eprintln!("Cancelled; nothing was changed.");
+                    false
+                }
+            }
+        }
+        Gate::Refuse => {
+            eprintln!(
+                "Refusing to run without confirmation: there is no interactive \
+                 terminal to ask in. Review what this command does \
+                 (`installscope {} --help`), then re-run with --yes if you mean it.",
+                args.first().map(String::as_str).unwrap_or("")
+            );
+            false
+        }
+    }
+}
+
+fn help_for(cmd: &str) -> Option<&'static str> {
+    let key = match cmd {
+        "restore-points" => "restore-point",
+        "silent-package" => "repackage",
+        other => other,
+    };
+    COMMAND_HELP
+        .iter()
+        .find(|(name, _)| *name == key)
+        .map(|(_, text)| *text)
+}
+
+/// Help requested by this invocation, if any: `installscope <command>
+/// --help` / `-h` (only before a `--` separator, whose right side
+/// belongs to another program), or `installscope help <command>`.
+/// Checked before anything runs, so help never warns, prompts or
+/// touches the system — and a flag can no longer be mistaken for an
+/// argument (P1-24: `revert --help` used to be parsed as a log id).
+fn requested_help(args: &[String]) -> Option<&'static str> {
+    let cmd = args.first().map(String::as_str)?;
+    if cmd == "help" {
+        return args.get(1).and_then(|topic| help_for(topic));
+    }
+    help_for(cmd)?;
+    let wants = args[1..]
+        .iter()
+        .take_while(|a| a.as_str() != "--")
+        .any(|a| a == "--help" || a == "-h");
+    if wants {
+        help_for(cmd)
+    } else {
+        None
+    }
 }
 
 /// Find one program by name: exact (ignoring case) first, then a unique
@@ -476,12 +547,35 @@ pub fn run(args: Vec<String>) -> i32 {
 }
 
 fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
-    let cmd = args.first().map(String::as_str).unwrap_or("--help");
-    if !matches!(cmd, "--help" | "-h" | "help" | "--version" | "-V") && !platform::is_elevated() {
-        eprintln!("warning: not running as Administrator; system-wide changes may fail.");
+    // Per-command help comes before everything else: it must not warn,
+    // prompt or touch the system, and it exits 0.
+    if let Some(help) = requested_help(&args) {
+        println!("{help}");
+        return Ok(0);
     }
+    let cmd = args.first().map(String::as_str).unwrap_or("--help");
     if let Some(p) = arg_value(&args, "--profile") {
         let _ = PROFILE.set(p);
+    }
+    let class = classify(cmd, &args);
+    // The not-elevated warning only helps where something will actually
+    // be written; on read-only commands it just trains users to ignore
+    // it (audit P2-2).
+    if class != CmdClass::ReadOnly && !platform::is_elevated() {
+        eprintln!("warning: not running as Administrator; system-wide changes may fail.");
+    }
+    // A destructive invocation with no terminal to ask in and no --yes
+    // refuses up front, before anything is loaded or changed.
+    if class == CmdClass::Destructive
+        && gate_decision(has(&args, "--yes"), stdin_interactive()) == Gate::Refuse
+    {
+        eprintln!(
+            "`installscope {cmd}` changes this PC and cannot ask for confirmation \
+             without an interactive terminal.\nNothing was changed. Run it in a \
+             terminal to be asked, or add --yes in a script once you have reviewed \
+             what it will do (see `installscope {cmd} --help`)."
+        );
+        return Ok(1);
     }
     let reg = platform::system_registry();
     match cmd {
@@ -490,7 +584,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
         "snapshot" => {
             let out = args
                 .get(1)
-                .ok_or_else(|| anyhow::anyhow!("missing output file"))?;
+                .ok_or_else(|| anyhow::anyhow!("usage: installscope snapshot <file.snap>"))?;
             let st = store()?;
             let s = snapshot_now(reg.as_ref(), &st)?;
             save_snapshot(&PathBuf::from(out), &s)?;
@@ -670,9 +764,11 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             let st = store()?;
             match sub {
                 "export" => {
-                    let out = args
-                        .get(2)
-                        .ok_or_else(|| anyhow::anyhow!("missing output file"))?;
+                    let out = args.get(2).ok_or_else(|| {
+                        anyhow::anyhow!(
+                            "usage: installscope transfer export <out.installscope> <program>..."
+                        )
+                    })?;
                     let wanted: Vec<String> = args
                         .iter()
                         .skip(3)
@@ -719,10 +815,9 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                     );
                 }
                 "check" | "import" => {
-                    let pkg = PathBuf::from(
-                        args.get(2)
-                            .ok_or_else(|| anyhow::anyhow!("missing package"))?,
-                    );
+                    let pkg = PathBuf::from(args.get(2).ok_or_else(|| {
+                        anyhow::anyhow!("usage: installscope transfer check|import <package>")
+                    })?);
                     let m = installscope_core::transfer::read_manifest(&pkg)?;
                     let c = installscope_core::transfer::check(
                         &m,
@@ -749,6 +844,21 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                         return Ok(if c.problems.is_empty() { 0 } else { 2 });
                     }
                     let names: Vec<String> = m.programs.iter().map(|p| p.name.clone()).collect();
+                    let what = format!(
+                        "This imports {} onto this PC: {} program(s) are written with \
+                         their files and settings{}. A backup is taken first, so the \
+                         import can be undone with `installscope restore <backup-id>`.",
+                        pkg.display(),
+                        names.len(),
+                        if has(&args, "--overwrite") {
+                            ", replacing files that already exist"
+                        } else {
+                            ""
+                        }
+                    );
+                    if !confirm_destructive(&args, &what) {
+                        return Ok(1);
+                    }
                     let mut bw = BackupWriter::new(
                         &st.backups_dir(),
                         &format!("Transfer: {}", names.join(", ")),
@@ -803,6 +913,18 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             let dry = has(&args, "--dry-run");
             let leftovers = arg_value(&args, "--leftovers").unwrap_or_else(|| "safe".into());
             let st = store()?;
+            if !dry {
+                let what = format!(
+                    "This uninstalls: {}. Each program's own uninstaller runs — what \
+                     an uninstaller itself changes is not backed up and cannot be \
+                     undone. Safe leftovers found afterwards are removed with a \
+                     backup (undo with `installscope restore <backup-id>`).",
+                    names.join(", ")
+                );
+                if !confirm_destructive(&args, &what) {
+                    return Ok(1);
+                }
+            }
             let mut failures = 0;
             let mut reboot = false;
             for name in &names {
@@ -934,6 +1056,18 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             // The Cleaner page's protected list applies here too, so a
             // protected path survives manual and scheduled cleans alike.
             let protect = load_settings(&store()?).cleaner_protect;
+            if !has(&args, "--dry-run") && !has(&args, "--scheduled") {
+                let what = format!(
+                    "This permanently deletes junk files in these categories: {}. \
+                     Cleaned files are not backed up and InstallScope cannot \
+                     restore them. Paths on the Cleaner page's Protected list \
+                     are kept.",
+                    wanted.join(", ")
+                );
+                if !confirm_destructive(&args, &what) {
+                    return Ok(1);
+                }
+            }
             let mut total = 0u64;
             for id in &wanted {
                 let Some(c) = cats.iter().find(|c| c.id == id) else {
@@ -1192,6 +1326,21 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                         anyhow::anyhow!("usage: installscope gatekeeper remove <id>")
                     })?;
                     let mut q = Queue::load(&st)?;
+                    let label = q
+                        .items
+                        .iter()
+                        .find(|i| i.id.as_str() == id.as_str())
+                        .map(|i| i.entry.name.clone())
+                        .unwrap_or_else(|| id.clone());
+                    let what = format!(
+                        "This removes the autostart entry \u{201c}{label}\u{201d}. \
+                         A backup is taken first, so it can be restored with \
+                         `installscope restore <backup-id>` (the id is printed \
+                         when it finishes)."
+                    );
+                    if !confirm_destructive(&args, &what) {
+                        return Ok(1);
+                    }
                     let (item, backup_id) =
                         gk::remove_entry(&mut q, id, reg.as_ref(), &st.backups_dir())?;
                     q.save(&st)?;
@@ -1404,6 +1553,17 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 if chosen.is_empty() {
                     println!("Nothing to strike.");
                 } else {
+                    let what = format!(
+                        "This strikes {} component(s) of {}: the services, tasks and \
+                         autoruns judged as bloat are removed. A backup is taken \
+                         first, so they can be restored with \
+                         `installscope restore <backup-id>`.",
+                        chosen.len(),
+                        log.name
+                    );
+                    if !confirm_destructive(&args, &what) {
+                        return Ok(1);
+                    }
                     let mut w = BackupWriter::new(
                         &st.backups_dir(),
                         &format!("Strike background items of {}", log.name),
@@ -1735,8 +1895,15 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 }
                 "delete" => {
                     let n: u32 = args.get(2).and_then(|x| x.parse().ok()).ok_or_else(|| {
-                        anyhow::anyhow!("usage: installscope restore-point delete <number>")
+                        anyhow::anyhow!("usage: installscope restore-point delete <number> [--yes]")
                     })?;
+                    let what = format!(
+                        "This deletes System Restore point {n} for good; Windows \
+                         can no longer roll back to it."
+                    );
+                    if !confirm_destructive(&args, &what) {
+                        return Ok(1);
+                    }
                     restore::delete(n)?;
                     println!("Deleted restore point {n}");
                 }
@@ -1744,8 +1911,14 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                     let n: u32 = args.get(2).and_then(|x| x.parse().ok()).ok_or_else(|| {
                         anyhow::anyhow!("usage: installscope restore-point rollback <number> --yes")
                     })?;
-                    if !has(&args, "--yes") {
-                        anyhow::bail!("Windows restarts immediately to restore point {n}; add --yes to confirm");
+                    let what = format!(
+                        "Windows restarts right away and rolls system files and \
+                         settings back to restore point {n}. Programs installed \
+                         after that point may stop working; System Restore does \
+                         not touch your documents."
+                    );
+                    if !confirm_destructive(&args, &what) {
+                        return Ok(1);
                     }
                     restore::restore_to(n)?;
                 }
@@ -1808,7 +1981,9 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             }
         }
         "verify" => {
-            let file = args.get(1).ok_or_else(|| anyhow::anyhow!("missing file"))?;
+            let file = args
+                .get(1)
+                .ok_or_else(|| anyhow::anyhow!("usage: installscope verify <file>"))?;
             let tr = installscope_core::trust::check_file(file);
             match &tr {
                 installscope_core::trust::Trust::Signed { signer } => {
@@ -1891,9 +2066,12 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             }
         }
         "revert" => {
-            let id = args
-                .get(1)
-                .ok_or_else(|| anyhow::anyhow!("missing log id"))?;
+            let id = args.get(1).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "usage: installscope revert <log-id> [--dry-run] [--yes] \
+                     (see `installscope revert --help`)"
+                )
+            })?;
             let st = store()?;
             let log = st.load_log(id)?;
             let mut plan = build_plan(&log.changes, reg.as_ref());
@@ -1924,6 +2102,25 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 restart_explorer: has(&args, "--restart-explorer"),
                 close_programs: has(&args, "--close-programs"),
             };
+            if !opts.dry_run {
+                let what = format!(
+                    "This removes everything the installation of \u{201c}{}\u{201d} \
+                     added: {} item(s) from install log {id}.{}",
+                    log.name,
+                    plan.selected(),
+                    if has(&args, "--no-backup") {
+                        " No backup will be taken (--no-backup), so this cannot \
+                         be undone."
+                    } else {
+                        " A backup is taken first, so it can be undone with \
+                         `installscope restore <backup-id>` (the id is printed \
+                         when it finishes)."
+                    }
+                );
+                if !confirm_destructive(&args, &what) {
+                    return Ok(1);
+                }
+            }
             let mut writer = if has(&args, "--no-backup") || opts.dry_run {
                 None
             } else {
@@ -1958,9 +2155,11 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             return Ok(if failed > 0 { 2 } else { 0 });
         }
         "rewind" => {
-            let id = args
-                .get(1)
-                .ok_or_else(|| anyhow::anyhow!("missing log id"))?;
+            let id = args.get(1).ok_or_else(|| {
+                anyhow::anyhow!(
+                    "usage: installscope rewind <log-id> --list | --capture | --to <state>"
+                )
+            })?;
             let st = store()?;
             let budget = load_settings(&st).rewind_budget_bytes;
             let log = st.load_log(id)?;
@@ -2063,12 +2262,18 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             if dry {
                 return Ok(if plan.complete() { 0 } else { 2 });
             }
-            if !has(&args, "--yes") {
-                anyhow::bail!(
-                    "a rewind changes files and registry settings; review the plan above \
-                     and add --yes to run it. A backup of the current state is taken \
-                     first, so the rewind is undoable."
-                );
+            if !confirm_destructive(
+                &args,
+                &format!(
+                    "This rewinds \u{201c}{}\u{201d} to the recorded state {state}: \
+                     files and registry settings are put back as recorded (the \
+                     plan above shows anything that cannot be restored). A backup \
+                     of the current state is taken first, so the rewind itself \
+                     can be undone.",
+                    log.name
+                ),
+            ) {
+                return Ok(1);
             }
             // Always backed up: a rewind is itself undoable, never destructive.
             let outcome = execute_rewind(
@@ -2178,9 +2383,17 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             }
         }
         "restore" => {
-            let id = args
-                .get(1)
-                .ok_or_else(|| anyhow::anyhow!("missing backup id"))?;
+            let id = args.get(1).ok_or_else(|| {
+                anyhow::anyhow!("usage: installscope restore <backup-id> [--yes]")
+            })?;
+            let what = format!(
+                "This restores backup {id}: the files and registry settings it \
+                 holds are put back, replacing what is on this PC now. The \
+                 restore itself takes no new backup."
+            );
+            if !confirm_destructive(&args, &what) {
+                return Ok(1);
+            }
             let results = restore_backup(&store()?.backups_dir(), id, reg.as_ref())?;
             let failed = results.iter().filter(|r| !r.ok).count();
             for r in &results {
@@ -2200,3 +2413,6 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
     }
     Ok(0)
 }
+
+#[cfg(test)]
+mod tests;
