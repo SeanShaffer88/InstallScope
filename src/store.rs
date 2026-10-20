@@ -75,6 +75,10 @@ impl Store {
     pub fn history_path(&self) -> PathBuf {
         crate::history::HistoryStore::path(&self.root)
     }
+    /// Autostart Gatekeeper state: the baseline and the review queue.
+    pub fn gatekeeper_path(&self) -> PathBuf {
+        self.root.join("gatekeeper.json")
+    }
 
     pub fn snapshots_dir(&self) -> PathBuf {
         self.root.join("snapshots")
