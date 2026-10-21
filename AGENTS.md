@@ -4,6 +4,17 @@ The Windows Desktop Software Project Policy below is the authoritative
 engineering and product-quality guidance for this repository. Apply it to
 planning, implementation, verification, and release work.
 
+## Universal quality requirement (2026-10-21)
+
+Sean's standing direction for all programs we create: every aspect, feature,
+and tool must be as complete, comprehensive, reliable, accessible, honest,
+polished, and easy to use as practical. Apply this to current and future work.
+Treat “fail-proof” as a reliability goal, never an absolute guarantee.
+A feature is not complete merely because its happy path compiles: verify normal,
+invalid, interrupted, failure and recovery paths proportionately; explain limits,
+protect user data, support accessibility, and keep documentation accurate.
+Do not disguise placeholders or unverified behavior as finished functionality.
+
 ## Confirmed InstallScope decisions
 
 - Project documentation must not mention competitor software, except software

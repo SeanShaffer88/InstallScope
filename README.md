@@ -443,6 +443,15 @@ Its dark/red app shell and sidebar follow the product screenshots; Programs is t
 
 Already shipped features are what's documented above. Planned work — **not available yet** — includes: full parity for the native Win32 interface (including restore-point integration in the preview), a browser extension inventory with reversible disable/restore, published setup/archive compatibility tiers, a guided setup-package project wizard, an in-app Disposable Runner, a read-only volume shadow copy browser, a temporary scratch volume, and developer-workflow exports. These appear in the interface only as disabled **Planned** entries, if at all. See [ROADMAP.md](ROADMAP.md) for scope, priorities, and safety boundaries.
 
+### Reusable portable package SDK
+
+Developers embedding package creation can use the native Rust
+[Portable Builder Kit](crates/portable-builder-kit/README.md). It provides static
+preflight and verified build-artifact selection without adding a Python runtime.
+InstallScope uses it to reject failed external tools and stale or ambiguous
+installer output. These checks do not certify full format compliance or runtime
+portability; the SDK README records verification boundaries and release gates.
+
 ## Contributing
 
 Ideas and pull requests are welcome; see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines. To help translate, see [Translating](docs/TRANSLATING.md).

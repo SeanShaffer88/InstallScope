@@ -1300,22 +1300,6 @@ pub struct Compiled {
     pub paf: Option<PathBuf>,
 }
 
-fn newest_paf(dir: &Path, since: std::time::SystemTime) -> Option<PathBuf> {
-    std::fs::read_dir(dir)
-        .ok()?
-        .filter_map(|e| e.ok())
-        .filter(|e| {
-            e.file_name()
-                .to_string_lossy()
-                .to_lowercase()
-                .ends_with(".paf.exe")
-        })
-        .filter_map(|e| Some((e.metadata().ok()?.modified().ok()?, e.path())))
-        .filter(|(m, _)| *m >= since)
-        .max_by_key(|(m, _)| *m)
-        .map(|(_, p)| p)
-}
-
 /// Run the Launcher Generator (makes `AppID.exe`) and then the Installer
 /// (makes `AppID_version.paf.exe` next to the package folder). Both tools
 /// build without questions when given the package folder.
@@ -1326,6 +1310,13 @@ pub fn compile(
     data_root: &Path,
     report: &dyn Fn(&str),
 ) -> Result<Compiled> {
+    portable_builder_kit::validate_app_id(app_id)?;
+    let metadata_id = portable_builder_kit::package_app_id(pkg_dir)?;
+    if metadata_id != app_id {
+        return Err(anyhow!(
+            "package AppID does not match the requested launcher"
+        ));
+    }
     let mut out = Compiled::default();
     let quote = |p: &Path| format!("\"{}\"", p.display());
     // The launcher: compiled from the official PortableApps.com Launcher
@@ -1338,12 +1329,18 @@ pub fn compile(
         }
         (Err(_), Some(g)) => {
             report("Making the launcher");
-            let _ = std::fs::remove_file(pkg_dir.join(format!("{app_id}.exe")));
-            platform::spawn_command_line(&format!("{} {}", quote(g), quote(pkg_dir)))?.wait();
+            let exe = pkg_dir.join(format!("{app_id}.exe"));
+            if exe.try_exists()? {
+                std::fs::remove_file(&exe).context("close the old launcher and try again")?;
+            }
+            let code =
+                platform::spawn_command_line(&format!("{} {}", quote(g), quote(pkg_dir)))?.wait();
+            portable_builder_kit::require_success("PortableApps.com Launcher Generator", code)?;
             let exe = pkg_dir.join(format!("{app_id}.exe"));
             if !exe.is_file() {
                 return Err(anyhow!("the Launcher Generator didn't make {app_id}.exe"));
             }
+            portable_builder_kit::validate_executable(&exe)?;
             out.launcher = Some(exe);
         }
         (Err(e), None) => return Err(anyhow!("{e}")),
@@ -1353,13 +1350,18 @@ pub fn compile(
     // InstallScope's own.
     report("Making the installer");
     if let Some(i) = &tools.installer {
-        let start = std::time::SystemTime::now() - std::time::Duration::from_secs(2);
-        platform::spawn_command_line(&format!("{} {}", quote(i), quote(pkg_dir)))?.wait();
         let parent = pkg_dir.parent().unwrap_or(pkg_dir);
-        out.paf = newest_paf(parent, start).or_else(|| newest_paf(pkg_dir, start));
-        if out.paf.is_none() {
-            return Err(anyhow!("the PortableApps.com Installer didn't make a .paf.exe; open it and build the package to see why"));
-        }
+        let hash = |path: &Path| -> std::io::Result<[u8; 32]> {
+            crate::util::sha256_reader(std::fs::File::open(path)?)
+        };
+        let watch = portable_builder_kit::ArtifactWatch::capture(
+            &[parent.to_path_buf(), pkg_dir.to_path_buf()],
+            app_id,
+            &hash,
+        )?;
+        let code =
+            platform::spawn_command_line(&format!("{} {}", quote(i), quote(pkg_dir)))?.wait();
+        out.paf = Some(watch.finish(code, &hash)?.path);
     } else {
         let tc = toolchain.map_err(|e| anyhow!("{e}"))?;
         let work = data_root.join("tools").join("work");
@@ -1371,6 +1373,24 @@ pub fn compile(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compilation_rejects_mismatched_metadata_before_tool_acquisition() {
+        let temp = crate::util::tempdir().unwrap();
+        let root = temp.path();
+        std::fs::create_dir_all(root.join("App/AppInfo")).unwrap();
+        let details = AppDetails {
+            name: "Demo".into(),
+            ..Default::default()
+        };
+        std::fs::write(root.join("App/AppInfo/appinfo.ini"), appinfo_ini(&details)).unwrap();
+        let data = root.join("unused-data-root");
+        let result = compile(root, "OtherPortable", &PaTools::default(), &data, &|_| {
+            panic!("must not acquire tools")
+        });
+        assert!(result.unwrap_err().to_string().contains("does not match"));
+        assert!(!data.exists());
+    }
 
     fn dir(p: &str) -> FileEntry {
         FileEntry {

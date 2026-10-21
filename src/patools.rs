@@ -32,9 +32,10 @@ pub struct Toolchain {
 }
 
 fn sha256_file(p: &Path) -> Option<String> {
-    let bytes = std::fs::read(p).ok()?;
+    let file = std::fs::File::open(p).ok()?;
     Some(
-        crate::util::sha256(&bytes)
+        crate::util::sha256_reader(file)
+            .ok()?
             .iter()
             .map(|b| format!("{b:02x}"))
             .collect(),

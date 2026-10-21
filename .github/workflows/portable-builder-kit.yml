@@ -1,0 +1,31 @@
+name: Portable Builder Kit
+on:
+  push:
+    paths: ['crates/portable-builder-kit/**', 'src/pafbuild.rs', 'src/patools.rs', 'src/util.rs', '.github/workflows/portable-builder-kit.yml']
+  pull_request:
+    paths: ['crates/portable-builder-kit/**', 'src/pafbuild.rs', 'src/patools.rs', 'src/util.rs', '.github/workflows/portable-builder-kit.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  sdk:
+    name: Rust SDK (${{ matrix.os }}, Rust ${{ matrix.rust }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        rust: ['1.85.0', stable]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ matrix.rust }}
+          components: rustfmt, clippy
+      - name: Format
+        run: cargo fmt --manifest-path crates/portable-builder-kit/Cargo.toml -- --check
+      - name: Contracts and examples
+        run: cargo test --manifest-path crates/portable-builder-kit/Cargo.toml --all-targets --locked
+      - name: Lint
+        run: cargo clippy --manifest-path crates/portable-builder-kit/Cargo.toml --all-targets --locked -- -D warnings

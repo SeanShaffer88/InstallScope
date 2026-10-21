@@ -991,19 +991,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "installscope"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "eframe",
- "egui",
- "egui_extras",
- "wgpu",
- "windows-sys 0.59.0",
- "winresource",
-]
-
-[[package]]
 name = "fastrand"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1496,6 +1483,20 @@ checksum = "cc4e190f5d26ca7051642629da2c52fc03bde85a03197c99408dcd291734c855"
 dependencies = [
  "equivalent",
  "hashbrown 0.17.1",
+]
+
+[[package]]
+name = "installscope"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "eframe",
+ "egui",
+ "egui_extras",
+ "portable-builder-kit",
+ "wgpu",
+ "windows-sys 0.59.0",
+ "winresource",
 ]
 
 [[package]]
@@ -2279,6 +2280,10 @@ checksum = "10ab3eb7f3becc3a1cbc4f2c6f20267996cfc1a6467a873763411b136a122715"
 dependencies = [
  "portable-atomic",
 ]
+
+[[package]]
+name = "portable-builder-kit"
+version = "0.2.0"
 
 [[package]]
 name = "potential_utf"

@@ -839,6 +839,14 @@ mod tests {
 
 /// SHA-256 of `data` (FIPS 180-4), as 32 bytes.
 pub fn sha256(data: &[u8]) -> [u8; 32] {
+    sha256_reader(std::io::Cursor::new(data)).expect("reading a byte slice cannot fail")
+}
+
+/// SHA-256 of a stream with bounded memory; read errors are never hidden.
+/// Uses the same compression function as `sha256`, not a separate algorithm.
+pub fn sha256_reader(input: impl std::io::Read) -> std::io::Result<[u8; 32]> {
+    use std::io::Read;
+    let mut input = std::io::BufReader::with_capacity(64 * 1024, input);
     const K: [u32; 64] = [
         0x428a2f98, 0x71374491, 0xb5c0fbcf, 0xe9b5dba5, 0x3956c25b, 0x59f111f1, 0x923f82a4,
         0xab1c5ed5, 0xd807aa98, 0x12835b01, 0x243185be, 0x550c7dc3, 0x72be5d74, 0x80deb1fe,
@@ -893,17 +901,35 @@ pub fn sha256(data: &[u8]) -> [u8; 32] {
             *x = x.wrapping_add(y);
         }
     };
-    let mut chunks = data.chunks_exact(64);
-    for block in &mut chunks {
-        compress(block);
+    let mut block = [0u8; 64];
+    let mut used = 0;
+    let mut length = 0u64;
+    loop {
+        match input.read(&mut block[used..]) {
+            Ok(0) => break,
+            Ok(n) => {
+                length = length
+                    .checked_add(n as u64)
+                    .ok_or_else(|| std::io::Error::other("SHA-256 input length overflow"))?;
+                used += n;
+                if used == 64 {
+                    compress(&block);
+                    used = 0;
+                }
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(e),
+        }
     }
     // Padding: 0x80, zeros, then the bit length, in one or two blocks.
-    let rest = chunks.remainder();
     let mut tail = [0u8; 128];
-    tail[..rest.len()].copy_from_slice(rest);
-    tail[rest.len()] = 0x80;
-    let n = if rest.len() < 56 { 64 } else { 128 };
-    tail[n - 8..n].copy_from_slice(&((data.len() as u64) * 8).to_be_bytes());
+    tail[..used].copy_from_slice(&block[..used]);
+    tail[used] = 0x80;
+    let n = if used < 56 { 64 } else { 128 };
+    let bits = length
+        .checked_mul(8)
+        .ok_or_else(|| std::io::Error::other("SHA-256 input too long"))?;
+    tail[n - 8..n].copy_from_slice(&bits.to_be_bytes());
     for block in tail[..n].chunks_exact(64) {
         compress(block);
     }
@@ -911,7 +937,7 @@ pub fn sha256(data: &[u8]) -> [u8; 32] {
     for (o, v) in out.chunks_exact_mut(4).zip(h) {
         o.copy_from_slice(&v.to_be_bytes());
     }
-    out
+    Ok(out)
 }
 
 /// First position of `needle` in `hay` (Boyer-Moore-Horspool; the skip
@@ -1038,5 +1064,96 @@ mod hash_search_tests {
             assert_eq!(find_bytes(hay, needle), naive, "{needle:?}");
         }
         assert_eq!(find_bytes(b"ab", b"abc"), None);
+    }
+}
+
+#[cfg(test)]
+mod streaming_hash_tests {
+    use super::*;
+    use std::io::{self, Read};
+
+    struct Fragmented {
+        bytes: std::io::Cursor<Vec<u8>>,
+        interrupt: bool,
+    }
+    impl Read for Fragmented {
+        fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {
+            if self.interrupt {
+                self.interrupt = false;
+                return Err(io::ErrorKind::Interrupted.into());
+            }
+            let n = out.len().min(7);
+            self.bytes.read(&mut out[..n])
+        }
+    }
+    #[test]
+    fn fragmented_reads_and_padding_boundaries_match() {
+        for n in [0, 1, 55, 56, 63, 64, 65, 127, 128, 129, 65535, 65536, 65537] {
+            let data = vec![0x7f; n];
+            let reader = Fragmented {
+                bytes: std::io::Cursor::new(data.clone()),
+                interrupt: true,
+            };
+            assert_eq!(sha256_reader(reader).unwrap(), sha256(&data));
+        }
+    }
+    #[test]
+    fn stream_padding_matches_independent_hashlib_vectors() {
+        assert_eq!(
+            sha256_reader(std::io::Cursor::new(vec![0x7f; 55])).unwrap(),
+            [
+                28, 23, 180, 3, 197, 157, 100, 206, 188, 43, 137, 140, 90, 236, 210, 221, 109, 151,
+                193, 24, 25, 182, 147, 109, 97, 72, 13, 176, 177, 227, 108, 131
+            ]
+        );
+        assert_eq!(
+            sha256_reader(std::io::Cursor::new(vec![0x7f; 56])).unwrap(),
+            [
+                140, 95, 72, 90, 57, 98, 56, 195, 26, 140, 225, 94, 214, 97, 46, 151, 192, 131,
+                154, 111, 76, 220, 123, 13, 26, 23, 12, 18, 167, 188, 131, 164
+            ]
+        );
+        assert_eq!(
+            sha256_reader(std::io::Cursor::new(vec![0x7f; 63])).unwrap(),
+            [
+                18, 28, 13, 7, 233, 66, 136, 195, 60, 11, 95, 209, 88, 51, 66, 109, 70, 165, 191,
+                221, 244, 212, 167, 136, 55, 225, 16, 8, 226, 153, 245, 78
+            ]
+        );
+        assert_eq!(
+            sha256_reader(std::io::Cursor::new(vec![0x7f; 64])).unwrap(),
+            [
+                224, 32, 85, 25, 246, 188, 222, 66, 8, 253, 94, 154, 236, 231, 47, 81, 142, 180,
+                206, 88, 121, 202, 24, 50, 166, 203, 34, 29, 83, 74, 45, 126
+            ]
+        );
+        assert_eq!(
+            sha256_reader(std::io::Cursor::new(vec![0x7f; 65])).unwrap(),
+            [
+                52, 248, 75, 21, 93, 122, 83, 157, 194, 57, 183, 206, 253, 178, 129, 52, 210, 226,
+                70, 179, 181, 63, 202, 117, 221, 36, 17, 103, 236, 199, 188, 81
+            ]
+        );
+        assert_eq!(
+            sha256_reader(std::io::Cursor::new(vec![0x7f; 65537])).unwrap(),
+            [
+                118, 184, 192, 251, 99, 163, 96, 74, 238, 84, 173, 163, 1, 228, 68, 252, 62, 170,
+                45, 21, 151, 120, 88, 176, 22, 14, 91, 135, 133, 122, 139, 102
+            ]
+        );
+    }
+
+    #[test]
+    fn stream_error_is_propagated() {
+        struct Broken;
+        impl Read for Broken {
+            fn read(&mut self, _: &mut [u8]) -> io::Result<usize> {
+                Err(io::ErrorKind::PermissionDenied.into())
+            }
+        }
+        assert_eq!(
+            sha256_reader(Broken).unwrap_err().kind(),
+            io::ErrorKind::PermissionDenied
+        );
     }
 }
