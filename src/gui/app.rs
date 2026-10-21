@@ -24,6 +24,7 @@ pub enum Tab {
     Builder,
     Shell,
     Debloat,
+    Privacy,
     ExtInv,
     /// Opt-in review queue for programs that start with Windows.
     Gatekeeper,
@@ -57,13 +58,14 @@ pub enum Confirm {
     /// Turn an optional Windows feature on (true) or off.
     /// Run one deep (Windows) cleanup.
     DeepClean(installscope_core::slimmer::DeepItem),
-    /// Apply the ticked Anti-Telemetry changes.
     /// Remove the ticked pre-installed apps, deprovisioning the named
     /// Store apps for new user accounts at the same time.
     DeprovisionBloat(
         Vec<String>,
         Vec<installscope_core::programs::InstalledProgram>,
     ),
+    /// Apply or clear one documented Windows privacy registry value.
+    PrivacyChange(installscope_core::privacy::Control, bool),
     SetProtection(bool),
     RestoreTo(u32),
     DeleteRestorePoint(u32),
@@ -71,10 +73,8 @@ pub enum Confirm {
 
 impl Confirm {
     /// Actions that always ask, even when the user turned confirmations off
-    /// in Advanced mode: restoring the whole PC (with a restart), deleting a
-    /// backup, deep cleaning, and deprovisioning are hard or impossible to
-    /// undo, so the "Ask before deleting things" setting must not silence
-    /// them.
+    /// in Advanced mode: consequential system settings, restoring the whole PC,
+    /// deleting a backup, deep cleaning, and deprovisioning.
     pub fn always_confirm(&self) -> bool {
         matches!(
             self,
@@ -84,13 +84,12 @@ impl Confirm {
                 | Confirm::DeleteBackup(_)
                 | Confirm::DeepClean(_)
                 | Confirm::DeprovisionBloat(_, _)
+                | Confirm::PrivacyChange(_, _)
         )
     }
 
-    /// Actions whose confirm button must not start focused in the dialog,
-    /// so a stray Enter cannot run them: anything that deletes, restores,
-    /// restarts, cleans, resets, or deprovisions. The dialog starts on
-    /// Cancel for these; benign actions keep starting on the confirm button.
+    /// Actions whose confirm button must not start focused in the dialog, so a
+    /// stray Enter cannot run a destructive or consequential system change.
     pub fn is_destructive(&self) -> bool {
         matches!(
             self,
@@ -109,6 +108,7 @@ impl Confirm {
                 | Confirm::RestoreTo(_)
                 | Confirm::DeleteRestorePoint(_)
                 | Confirm::DeprovisionBloat(_, _)
+                | Confirm::PrivacyChange(_, _)
                 // Turning System Protection off makes Windows delete every
                 // existing restore point; turning it on is harmless.
                 | Confirm::SetProtection(false)
@@ -405,6 +405,9 @@ impl App {
                 // wizard discards them unrun (see Wizard::deprovision).
                 self.start_uninstall_with_deprovision(programs, names);
                 self.debloat.items = None;
+            }
+            Confirm::PrivacyChange(control, limit) => {
+                self.apply_privacy_change(control, limit);
             }
             Confirm::ResetSettings => {
                 let lang = self.settings.language.clone();
@@ -773,6 +776,19 @@ impl App {
                         }
                         if theme::nav_item_with_hint(
                             ui,
+                            "◉",
+                            &t("Windows Privacy"),
+                            self.tab == Tab::Privacy,
+                            None,
+                            Some(&t("Review documented privacy settings and back up each change")),
+                        )
+                        .clicked()
+                        {
+                            self.tab = Tab::Privacy;
+                            self.on_tab_opened(ctx, Tab::Privacy);
+                        }
+                        if theme::nav_item_with_hint(
+                            ui,
                             "🧩",
                             &t("Browser extensions"),
                             self.tab == Tab::ExtInv,
@@ -902,6 +918,10 @@ impl App {
             Tab::Debloat => (
                 "Bloatware Shield",
                 "Remove the trials, promotions and pre-installed apps that came with this PC",
+            ),
+            Tab::Privacy => (
+                "Windows Privacy",
+                "Review a few documented privacy settings, with exact-state backups",
             ),
             Tab::ExtInv => (
                 "Browser extensions",
@@ -1294,6 +1314,11 @@ fn page_help(tab: Tab) -> &'static [&'static str] {
         Tab::Debloat => &[
             "New PCs come with antivirus trials, sponsored games, promotions and maker apps. The Bloatware Shield finds them, including the Store apps that ordinary uninstallers skip.",
             "Recommended items are ticked; optional maker tools are not. Drivers, audio and hotkey tools and Windows' own parts are never listed. Removal goes through the usual review, and everything is backed up first, unless you have turned backups off in Settings.",
+        ],
+        Tab::Privacy => &[
+            "This page controls three documented Windows settings: the Windows advertising ID, recommendations tailored from diagnostic data, and typing/inking personalization.",
+            "Each row reads the current registry value and shows whether it is set to limit or allow collection, absent, or unrecognized. This is a registry observation, not proof Windows enforced the setting. Applying or clearing a value always creates a backup first; restore it from Backups.",
+            "These changes affect only the listed setting. They do not disable required diagnostic data, stop all data collection, block network traffic, or disable security and update services. Windows version, edition, and organization policy may affect behavior.",
         ],
         Tab::ExtInv => &[
             "This page lists every extension installed in the supported Chromium-based and Firefox-based browsers, grouped by browser and profile.",
@@ -1714,6 +1739,7 @@ impl eframe::App for App {
             Tab::Builder => self.ui_builder(ctx),
             Tab::Shell => self.ui_shell(ctx),
             Tab::Debloat => self.ui_debloat(ctx),
+            Tab::Privacy => self.ui_privacy(ctx),
             Tab::ExtInv => self.ui_extinv(ctx),
             Tab::Gatekeeper => self.ui_gatekeeper(ctx),
             Tab::Slowdown => self.ui_slowdown(ctx),
@@ -1742,13 +1768,17 @@ mod confirm_tests {
     use installscope_core::slimmer::DeepItem;
 
     #[test]
-    fn only_the_irreversible_actions_always_confirm() {
+    fn consequential_actions_always_confirm() {
         assert!(Confirm::RestoreTo(1).always_confirm());
         assert!(Confirm::SaveCleanupReport.always_confirm());
         assert!(Confirm::DeleteCleanupReport.always_confirm());
         assert!(Confirm::DeleteBackup("b".into()).always_confirm());
         assert!(Confirm::DeepClean(DeepItem::ComponentStore).always_confirm());
         assert!(Confirm::DeprovisionBloat(vec!["a".into()], vec![]).always_confirm());
+        assert!(
+            Confirm::PrivacyChange(installscope_core::privacy::Control::AdvertisingId, true)
+                .always_confirm()
+        );
         // Everything else follows the user's confirmation setting.
         assert!(!Confirm::DeleteLog("l".into()).always_confirm());
         assert!(!Confirm::RestoreBackup("b".into()).always_confirm());
@@ -1782,6 +1812,10 @@ mod confirm_tests {
             Confirm::RestoreTo(1),
             Confirm::DeleteRestorePoint(1),
             Confirm::DeprovisionBloat(vec!["a".into()], vec![]),
+            Confirm::PrivacyChange(
+                installscope_core::privacy::Control::TypingPersonalization,
+                false,
+            ),
             // Turning protection off deletes every restore point.
             Confirm::SetProtection(false),
         ] {
