@@ -31,6 +31,10 @@ planning, implementation, verification, and release work.
 - Continue to honor existing safety behavior: review and back up destructive
   changes, use least privilege, and keep processing local unless the user
   approves a specific networked capability.
+- Keep the user-provided debloat/privacy reference review in
+  `docs/REFERENCE-REVIEW.md` current. Treat projects and scripts there as
+  leads, not policy or compatibility authority; verify behavior against
+  current official Windows documentation and the target Windows builds.
 
 # Windows Desktop Software Project Policy
 

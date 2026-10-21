@@ -99,6 +99,7 @@ InstallScope is organized into pages, each with its own job. Every page has buil
 | Portable-app packaging | Portable packaging |
 | Silent redeployment package from a recorded install | Install logs > **Create Setup Package…** |
 | Removal of bundled trial and promotion software | Bloatware Shield |
+| Reviewed Windows privacy settings with per-change backups | Windows Privacy page |
 | Context-menu management | Right-click menu page |
 | Reviewing new startup entries (opt-in) | Autostart Gatekeeper page |
 | Plain-language questions about your programs | **Ask InstallScope** (Ctrl+K) |
@@ -308,6 +309,12 @@ Remove what came with the PC but you never asked for.
 - **Recommended and optional:** trials, ads and promotions are ticked; maker tools some people use, such as support assistants, are listed but left unticked. Drivers, audio and hotkey tools and Windows' own parts are never listed.
 - **Also for new accounts:** stop Windows from installing the removed Store apps for user accounts created later.
 - **Reviewed and reversible:** programs are uninstalled one after another and their leftovers go through the usual review, with everything backed up.
+
+### Windows Privacy
+
+Review three documented Windows settings: the Windows advertising ID, recommendations tailored from diagnostic data, and typing/inking personalization. The typing/inking control handles both registry values Microsoft documents, together. Each row reads the current registry value, explains the effect and tradeoff, and shows whether the value is set to limit or allow collection, absent, mixed, or unrecognized. The badge reports those registry values; it cannot prove Windows enforced them. Changes are always confirmed and backed up before writing; restore the exact previous values from **Backups**.
+
+The advertising ID control applies to the whole PC and requires Administrator rights. The other two apply to the current Windows account. Windows version and edition, or an organization-managed policy, can affect behavior. These controls do not disable required diagnostic data or block network traffic. See Microsoft's documentation for [advertising ID and typing/inking settings](https://learn.microsoft.com/en-us/windows/privacy/manage-connections-from-windows-operating-system-components-to-microsoft-services), [tailored experiences](https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-experience), and [typing and inking policy](https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-textinput).
 
 ### Right-click menu
 

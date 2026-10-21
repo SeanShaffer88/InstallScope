@@ -44,6 +44,7 @@ pub mod png;
 pub mod portability;
 pub mod portable;
 pub mod prescreen;
+pub mod privacy;
 pub mod programs;
 pub mod refcount;
 pub mod repackage;

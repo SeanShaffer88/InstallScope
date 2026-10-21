@@ -21,6 +21,7 @@ mod monitor;
 mod native_programs;
 mod plan;
 mod precheck;
+mod privacy_ui;
 mod programs;
 mod restore_ui;
 mod settings_tab;
