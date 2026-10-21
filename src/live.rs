@@ -66,7 +66,6 @@ fn push(shared: &Mutex<Shared>, kind: LiveKind, path: String) {
             track_path(&mut s, LiveKind::Removed, key);
         }
         LiveKind::Registry => {
-            s.coverage.registry_notifications += 1;
             track_path(&mut s, LiveKind::Registry, key);
         }
     }
@@ -124,6 +123,11 @@ fn track_path(shared: &mut Shared, kind: LiveKind, key: String) {
             shared.seen_registry.insert(key);
         }
     }
+}
+
+#[cfg_attr(not(windows), allow(dead_code))]
+fn record_registry_notification(shared: &Mutex<Shared>) {
+    shared.lock().unwrap().coverage.registry_notifications += 1;
 }
 
 #[cfg_attr(not(windows), allow(dead_code))]
@@ -249,6 +253,7 @@ impl LiveWatcher {
                             watcher_ready(&sh, &watched_root, false);
                         },
                         || {
+                            record_registry_notification(&sh);
                             // At most one notice per second per area.
                             if last.elapsed() >= std::time::Duration::from_secs(1) {
                                 last = std::time::Instant::now();
@@ -362,6 +367,24 @@ mod tests {
         let s = shared.lock().unwrap();
         assert_eq!(s.coverage.file_buffer_overflows, 2);
         assert_eq!(s.coverage.warnings.len(), 1);
+    }
+
+    #[test]
+    fn registry_notifications_are_counted_before_display_throttling() {
+        let shared = Mutex::new(Shared {
+            events: VecDeque::new(),
+            coverage: crate::model::MonitoringCoverage::default(),
+            seen_added: HashSet::new(),
+            seen_changed: HashSet::new(),
+            seen_removed: HashSet::new(),
+            seen_registry: HashSet::new(),
+        });
+        record_registry_notification(&shared);
+        record_registry_notification(&shared);
+        push(&shared, LiveKind::Registry, r"HKCU\Software\Example".into());
+        let s = shared.lock().unwrap();
+        assert_eq!(s.coverage.registry_notifications, 2);
+        assert_eq!(unique_counts(&s), (0, 0, 0, 1));
     }
 
     #[cfg(windows)]
