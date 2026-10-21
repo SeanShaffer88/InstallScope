@@ -198,7 +198,7 @@ impl App {
             queue.save(&store).map_err(|e| format!("{e:#}"))?;
             let message = tf(
                 "Removed \"{name}\". Its backup is on the Backups page ({backup}), so this can be undone.",
-                &[("name", item.entry.name), ("backup", backup.id)],
+                &[("name", item.entry.name), ("backup", backup)],
             );
             Ok((message, queue))
         }));
