@@ -58,6 +58,51 @@ impl From<io::Error> for ToolError {
     }
 }
 
+/// Resolve an absolute tool/working path without unnecessarily exposing Windows
+/// verbatim prefixes to legacy compilers. A conventional spelling is used only
+/// below MAX_PATH and when resolving it identifies the same canonical path.
+/// This does not authenticate the file or provide filesystem race containment.
+pub fn resolve_tool_path(path: impl AsRef<std::path::Path>) -> io::Result<PathBuf> {
+    let canonical = std::fs::canonicalize(path)?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::{OsStrExt, OsStringExt};
+        let wide: Vec<u16> = canonical.as_os_str().encode_wide().collect();
+        let prefix: Vec<u16> = r"\\?\".encode_utf16().collect();
+        let unc: Vec<u16> = r"\\?\UNC\".encode_utf16().collect();
+        let conventional = if wide.starts_with(&unc) {
+            let mut value = vec![b'\\' as u16, b'\\' as u16];
+            value.extend_from_slice(&wide[8..]);
+            Some(value)
+        } else if wide.starts_with(&prefix) && wide.get(5) == Some(&(b':' as u16)) {
+            Some(wide[4..].to_vec())
+        } else {
+            None
+        };
+        if let Some(value) = conventional.filter(|v| v.len() < 260) {
+            let candidate = PathBuf::from(OsString::from_wide(&value));
+            let safe = |name: &std::ffi::OsStr| {
+                name.to_str()
+                    .is_some_and(|s| super::validate_component(s).is_ok())
+            };
+            let ordinary = candidate.components().all(|part| match part {
+                std::path::Component::Normal(name) => safe(name),
+                std::path::Component::Prefix(prefix) => match prefix.kind() {
+                    std::path::Prefix::Disk(_) => true,
+                    std::path::Prefix::UNC(server, share) => safe(server) && safe(share),
+                    _ => false,
+                },
+                std::path::Component::RootDir => true,
+                _ => false,
+            });
+            if ordinary && std::fs::canonicalize(&candidate).ok().as_ref() == Some(&canonical) {
+                return Ok(candidate);
+            }
+        }
+    }
+    Ok(canonical)
+}
+
 /// Polls cancellation at most every 50 ms between operating-system calls.
 /// A cancellation already requested prevents process creation. On success,
 /// Windows descendants have also finished; failed jobs terminate descendants.
@@ -75,10 +120,10 @@ pub fn run_tool(
         return Err(ToolError::Cancelled);
     }
     let mut request = request.clone();
-    request.executable = std::fs::canonicalize(&request.executable)?;
+    request.executable = resolve_tool_path(&request.executable)?;
     super::plain_file(&request.executable)?;
     if let Some(dir) = &request.working_directory {
-        let dir = std::fs::canonicalize(dir)?;
+        let dir = resolve_tool_path(dir)?;
         if !dir.is_dir() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,

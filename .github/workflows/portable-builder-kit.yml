@@ -73,7 +73,10 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory compiler-diagnostics -Force | Out-Null
-          Get-ChildItem "$env:RUNNER_TEMP/paf-official-tools" -Recurse -Filter '*Log*' -File -ErrorAction SilentlyContinue | ForEach-Object {
+          @(
+            "$env:RUNNER_TEMP/paf-official-tools/Launcher/Data/PortableApps.comLauncherGeneratorLog.txt",
+            "$env:RUNNER_TEMP/paf-official-tools/Installer/Data/PortableApps.comInstallerLog.txt"
+          ) | Get-Item -ErrorAction SilentlyContinue | ForEach-Object {
             Write-Host "Official tool log: $($_.FullName)"
             Get-Content $_.FullName | Select-Object -Last 80
             Copy-Item $_.FullName (Join-Path compiler-diagnostics ($_.Directory.Parent.Name + '-' + $_.Name))

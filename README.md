@@ -505,9 +505,13 @@ new workspace folder. Source files stay untouched; cancellation or changed input
 leave clearly reported incomplete output. A project snapshot and source-hash report
 are kept beside the prepared package.
 
-Official-tool execution/log capture, archive import, prepared-folder reconnection
-on reopen and installable artifact export remain pending in this wizard. The
-separate capture workflow requires the official packaging tools. See
+Opening the original preparation snapshot can reconnect its folder after checking
+recorded application hashes, generated configurations and the completion marker.
+Review exact official build commands before execution. Build-attempt support keeps
+an invocation journal and available changed compiler logs; execution remains gated
+pending the official frontend lifecycle result. Archive import and a complete
+final validation/export flow remain pending. The separate capture workflow
+requires the official packaging tools. See
 [wizard status, references and limits](docs/paf-wizard.md).
 
 ### Reusable portable package SDK

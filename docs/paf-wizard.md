@@ -109,11 +109,11 @@ New wizard screen text is currently English; localization is pending.
 
 | Reference | Classification/use |
 |---|---|
-| [Current Format specification](https://portableapps.com/development/portableapps.com_format), Directory Layout, appinfo.ini and Icons sections | Official format: package layout, metadata and icon filenames/sizes/depths. Current indexed heading is 3.9 (2026-03-02). |
+| [Current Format specification](https://portableapps.com/development/portableapps.com_format), Directory Layout, appinfo.ini and Icons sections | Official format: package layout, metadata and icon filenames/sizes/depths. Directly retrieved on 2026-10-21: format history identifies 3.9 (2026-03-02). |
 | [Launcher configuration](https://portableapps.com/manuals/PortableApps.comLauncher/ref/launcher.ini/index.html) | Official tool behavior: App/AppInfo/Launcher configuration basename matches the launcher. |
 | [Launch section](https://portableapps.com/manuals/PortableApps.comLauncher/ref/launcher.ini/launch.html) | Official tool behavior: executable relative to App and optional arguments. |
 | [Launcher quick start](https://github.com/PortableApps/Launcher/blob/master/Other/Source/Manual/intro/quickstart.rst) | Official tool workflow; check applicability to the installed release. |
-| [Official development index](https://portableapps.com/development) and [PortableApps.com SourceForge distributions](https://sourceforge.net/projects/portableapps/files/PortableApps.com%20Installer/) | Release discovery. The SourceForge listing shows Installer 3.9.22 (2026-10-12), newer than the cached website index's 3.9.18. Launcher 2.2.9 and Template 3.9.2 are also listed in their distribution folders. Direct website retrieval was restricted; listings do not attest installed binaries. |
+| [Official development index](https://portableapps.com/development) and [PortableApps.com SourceForge distributions](https://sourceforge.net/projects/portableapps/files/PortableApps.com%20Installer/) | Release discovery. The SourceForge listing shows Installer 3.9.22 (2026-10-12), newer than the cached website index's 3.9.18. Launcher 2.2.9 and Template 3.9.2 are also listed in their distribution folders. Direct official Installer-page retrieval subsequently confirmed 3.9.22 and its SHA-256; listings alone do not attest installed binaries. |
 | [Official AppConfigs](https://github.com/PortableApps/AppConfigs) | Example-specific conventions, not universal requirements; individual code/licenses need review before reuse. |
 | [Microsoft BITMAPINFOHEADER](https://learn.microsoft.com/windows/win32/api/wingdi/ns-wingdi-bitmapinfoheader) and [RFC 1950](https://www.rfc-editor.org/rfc/rfc1950) | Underlying image/container behavior, not additional PAF requirements. |
 | Snapshot schema, source mapping, resource limits, hash review, reserved staging folders | Proposed wizard features/safeguards. No certification or format extension. |
@@ -190,7 +190,11 @@ both selected executable paths in a worker. The review shows each process's
 executable, single package-directory argument, working directory, ten-minute
 limit and output search locations. Selected tool contents are hashed and checked
 again before execution; this detects changes, not publisher authenticity.
-Recognized custom NSIS entry points need fresh consent for each attempt. This
+Recognized custom NSIS entry points need fresh consent for each attempt, including
+`App/AppInfo/Launcher/Custom.nsh`, `Debug.nsh`, the legacy Launcher equivalents
+and `Other/Source/PortableApps.comInstallerCustom.nsh`. Launcher 2.2.9
+`Other/Source/Debug.nsh` includes the package Debug.nsh; `GeneratorWizard.nsi`
+migrates the legacy path. These are tool behaviors, not mandatory format files. This
 check is not a full include/script audit.
 
 Build-attempt support retains a new `build-<id>` directory outside the package.
@@ -201,3 +205,13 @@ log. Missing, unchanged, linked, oversized or changing logs produce separate
 capture warnings. The official log paths are shared by that tool installation;
 close concurrent builds before using it. No completeness or authenticity claim
 is made for these logs. Partial output and earlier attempts are retained.
+
+### Current integration checkpoint
+
+The verified 3.9.22/2.2.9 CI attempt reached the official Generator but failed
+at `!include LangFile.nsh`, despite that file being present in the distribution.
+The logged script path carried a verbatim Windows prefix introduced by process
+canonicalization. The adapter now uses conventional Windows spellings for short,
+ordinary paths only when they resolve to the same canonical path; special/long
+paths retain their existing spelling. Official source/binaries are unchanged.
+The correction requires another real-tool run before enabling wizard execution.

@@ -30,16 +30,18 @@ pub struct Attempt {
     pub logs: Vec<PathBuf>,
     pub warnings: Vec<String>,
 }
-fn digest(path: &Path) -> Result<[u8; 32]> {
+fn digest(path: &Path, cancel: &dyn Fn() -> bool) -> Result<[u8; 32]> {
     let size = fs::metadata(path)?.len();
     if size > 256 * 1024 * 1024 {
         return Err(anyhow!(
             "Selected tool exceeds the wizard's 256 MiB executable limit"
         ));
     }
-    Ok(crate::util::sha256_reader(
-        File::open(path)?.take(size + 1),
-    )?)
+    let digest = pafbuild::build_hash_limit(path, size + 1, cancel)?;
+    if fs::metadata(path)?.len() != size {
+        return Err(anyhow!("Selected tool or log changed while hashing"));
+    }
+    Ok(digest)
 }
 impl Review {
     pub fn create(
@@ -56,8 +58,8 @@ impl Review {
         };
         let requests = pafbuild::official_build_requests(&verified.package, &tools)?;
         let hashes = [
-            digest(&requests[0].executable)?,
-            digest(&requests[1].executable)?,
+            digest(&requests[0].executable, cancel)?,
+            digest(&requests[1].executable, cancel)?,
         ];
         let mut custom_code = Vec::new();
         for path in pafbuild::official_custom_code(&verified.package) {
@@ -213,7 +215,7 @@ fn log_stamp(path: &Path) -> Result<(std::time::SystemTime, [u8; 32])> {
             "Log is not a regular file within the capture limit"
         ));
     }
-    Ok((m.modified()?, digest(path)?))
+    Ok((m.modified()?, digest(path, &|| false)?))
 }
 
 fn capture_log(

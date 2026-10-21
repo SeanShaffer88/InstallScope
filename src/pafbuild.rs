@@ -1372,9 +1372,7 @@ pub fn compile_with_cancel(
     report("Making the installer");
     if let Some(i) = &tools.installer {
         let parent = pkg_dir.parent().unwrap_or(pkg_dir);
-        let hash = |path: &Path| -> std::io::Result<[u8; 32]> {
-            crate::util::sha256_reader(std::fs::File::open(path)?)
-        };
+        let hash = |path: &Path| -> std::io::Result<[u8; 32]> { build_hash(path, cancel) };
         let watch = portable_builder_kit::ArtifactWatch::capture(
             &[parent.to_path_buf(), pkg_dir.to_path_buf()],
             app_id,
@@ -1394,11 +1392,13 @@ pub fn compile_with_cancel(
 
 /// Custom entry points recognized by the official-tool documentation, including
 /// the legacy Launcher path. Presence is a consent gate, not a complete script audit.
-pub fn official_custom_code(pkg_dir: &Path) -> [PathBuf; 3] {
+pub fn official_custom_code(pkg_dir: &Path) -> [PathBuf; 5] {
     [
         "App/AppInfo/Launcher/Custom.nsh",
+        "App/AppInfo/Launcher/Debug.nsh",
         "Other/Source/PortableApps.comInstallerCustom.nsh",
         "Other/Source/PortableApps.comLauncherCustom.nsh",
+        "Other/Source/PortableApps.comLauncherDebug.nsh",
     ]
     .map(|p| pkg_dir.join(p))
 }
@@ -1437,9 +1437,7 @@ pub fn compile_official_with_cancel(
             "Package AppID does not match the requested launcher"
         ));
     }
-    let hash = |path: &Path| -> std::io::Result<[u8; 32]> {
-        crate::util::sha256_reader(std::fs::File::open(path)?)
-    };
+    let hash = |path: &Path| -> std::io::Result<[u8; 32]> { build_hash(path, cancel) };
     let launcher = pkg_dir.join(format!("{app_id}.exe"));
     let stamp = |path: &Path| -> Result<Option<(std::time::SystemTime, [u8; 32])>> {
         if !path.try_exists()? {
@@ -1470,6 +1468,35 @@ pub fn compile_official_with_cancel(
     })
 }
 
+/// Hash build inputs/output with cancellation between bounded reader buffers.
+pub(crate) fn build_hash(path: &Path, cancel: &dyn Fn() -> bool) -> std::io::Result<[u8; 32]> {
+    build_hash_limit(path, u64::MAX, cancel)
+}
+pub(crate) fn build_hash_limit(
+    path: &Path,
+    limit: u64,
+    cancel: &dyn Fn() -> bool,
+) -> std::io::Result<[u8; 32]> {
+    struct Reader<'a> {
+        file: std::io::Take<std::fs::File>,
+        cancel: &'a dyn Fn() -> bool,
+    }
+    impl std::io::Read for Reader<'_> {
+        fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+            if (self.cancel)() {
+                return Err(std::io::Error::other(
+                    "Build cancelled while checking file contents",
+                ));
+            }
+            std::io::Read::read(&mut self.file, bytes)
+        }
+    }
+    crate::util::sha256_reader(Reader {
+        file: std::io::Read::take(std::fs::File::open(path)?, limit),
+        cancel,
+    })
+}
+
 /// Exact shell-free requests used by the official frontend adapter. Read-only.
 /// Tool selection is user supplied; PE checks do not authenticate the publisher.
 pub fn official_build_requests(
@@ -1493,9 +1520,9 @@ fn package_tool_request(
     tool: &Path,
     package: &Path,
 ) -> Result<portable_builder_kit::process::ToolRequest> {
-    let tool = std::fs::canonicalize(tool)?;
+    let tool = portable_builder_kit::process::resolve_tool_path(tool)?;
     portable_builder_kit::validate_executable(&tool)?;
-    let package = std::fs::canonicalize(package)?;
+    let package = portable_builder_kit::process::resolve_tool_path(package)?;
     if !package.is_dir() {
         return Err(anyhow!("Package must be a directory"));
     }
@@ -1536,16 +1563,59 @@ mod tests {
             ..Default::default()
         };
         for request in official_build_requests(&package, &tools).unwrap() {
-            assert_eq!(request.executable, std::fs::canonicalize(&tool).unwrap());
+            assert_eq!(
+                std::fs::canonicalize(&request.executable).unwrap(),
+                std::fs::canonicalize(&tool).unwrap()
+            );
             assert_eq!(
                 request.arguments,
-                vec![std::fs::canonicalize(&package).unwrap().into_os_string()]
+                vec![portable_builder_kit::process::resolve_tool_path(&package)
+                    .unwrap()
+                    .into_os_string()]
             );
             assert_eq!(
                 request.working_directory,
                 request.executable.parent().map(Path::to_path_buf)
             );
             assert_eq!(request.timeout.as_secs(), 600);
+        }
+    }
+
+    #[test]
+    fn output_hashing_can_be_cancelled_between_buffers() {
+        let temp = crate::util::tempdir().unwrap();
+        let file = temp.path().join("output.paf.exe");
+        std::fs::write(&file, vec![42; 256 * 1024]).unwrap();
+        let calls = std::cell::Cell::new(0);
+        let result = build_hash(&file, &|| {
+            calls.set(calls.get() + 1);
+            calls.get() > 1
+        });
+        assert!(result.unwrap_err().to_string().contains("cancelled"));
+        assert_eq!(calls.get(), 2);
+    }
+
+    #[test]
+    fn official_build_requires_consent_for_debug_and_legacy_code() {
+        let temp = crate::util::tempdir().unwrap();
+        for path in official_custom_code(temp.path()) {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(&path, b"; custom NSIS code").unwrap();
+            let error = compile_official_with_cancel(
+                temp.path(),
+                "ExamplePortable",
+                &PaTools::default(),
+                false,
+                &|_| {},
+                &|| false,
+            )
+            .unwrap_err();
+            assert!(
+                error.to_string().contains("Custom NSIS"),
+                "{}: {error}",
+                path.display()
+            );
+            std::fs::remove_file(path).unwrap();
         }
     }
 

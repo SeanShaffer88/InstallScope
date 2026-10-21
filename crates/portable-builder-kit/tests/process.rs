@@ -159,3 +159,22 @@ fn parent_exit_does_not_abandon_windows_descendants() {
     assert!(matches!(run_tool(&r, &|| false), Err(ToolError::TimedOut)));
     assert_process_stopped(&pid);
 }
+
+#[cfg(windows)]
+#[test]
+fn normal_windows_tool_paths_do_not_leak_verbatim_prefixes() {
+    let exe = PathBuf::from(env!("CARGO_BIN_EXE_pafkit-test-tool"));
+    let resolved = resolve_tool_path(&exe).unwrap();
+    assert_eq!(
+        fs::canonicalize(&resolved).unwrap(),
+        fs::canonicalize(&exe).unwrap()
+    );
+    assert!(!resolved.to_string_lossy().starts_with(r"\\?\"));
+    let fixture = Fixture::new();
+    let directory = resolve_tool_path(&fixture.0).unwrap();
+    assert!(!directory.to_string_lossy().starts_with(r"\\?\"));
+    assert_eq!(
+        fs::canonicalize(directory).unwrap(),
+        fs::canonicalize(&fixture.0).unwrap()
+    );
+}
