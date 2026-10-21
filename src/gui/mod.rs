@@ -13,6 +13,7 @@ mod difftree_ui;
 mod extinv_ui;
 #[cfg(windows)]
 mod filedialog;
+mod gatekeeper_ui;
 mod lab;
 mod logs;
 mod monitor;

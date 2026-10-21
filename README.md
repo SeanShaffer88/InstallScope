@@ -100,6 +100,7 @@ InstallScope is organized into pages, each with its own job. Every page has buil
 | Silent redeployment package from a recorded install | Install logs > **Create Setup Package…** |
 | Removal of bundled trial and promotion software | Bloatware Shield |
 | Context-menu management | Right-click menu page |
+| Reviewing new startup entries (opt-in) | Autostart Gatekeeper page |
 | Plain-language questions about your programs | **Ask InstallScope** (Ctrl+K) |
 | Automation and scripting | Command line (below) |
 
@@ -191,6 +192,15 @@ Choose what starts with Windows.
 - **Services and scheduled tasks** (Advanced mode), with Windows' own entries hidden unless you ask for them.
 - **Other autostarts** (Advanced mode): Winlogon, Active Setup, program replacements (IFEO), AppInit DLLs, Explorer extensions, icon overlays, browser helper objects, boot-time programs, and WMI subscriptions. Entries whose file is gone are flagged.
 - **Protection:** entries that Windows, security software, or hardware need can't be switched off in Simple mode, and deleted entries are backed up.
+
+### Autostart Gatekeeper (opt-in)
+
+Watches for programs that add themselves to Windows startup.
+
+- **Off until you turn it on**, on its own page or in Settings (Advanced). Turning it on never blocks an installer or removes anything.
+- **A review queue:** a scan compares Run and RunOnce values and Startup-folder shortcuts with a saved baseline, and anything new or changed waits for you. **Keep** leaves it exactly as it is; **Remove** asks first, backs it up, and can be undone from the Backups page.
+- **Honest attribution:** each entry names the install log that explains it, with the evidence, or says the origin is unknown. The Installer Decrapifier's verdict and reasons are shown alongside.
+- **You choose when it looks:** scans run when you click *Scan now* (F5) or run `installscope gatekeeper scan`. Nothing runs in the background, and the navigation shows how many entries are waiting. Services and scheduled tasks stay on the Startup page.
 
 ### Cleaner (junk cleaner)
 
