@@ -133,6 +133,19 @@ impl CanaryVerdict {
     }
 }
 
+/// Keep only findings that appeared in the second pass. Matching the complete
+/// finding avoids repeating a pre-existing missing target in a before/after
+/// check. A new finding means it appeared during the interval; it does not
+/// prove which concurrent operation caused it.
+pub fn new_findings(before: &CanaryVerdict, after: &CanaryVerdict) -> Vec<CanaryFinding> {
+    after
+        .findings
+        .iter()
+        .filter(|finding| !before.findings.contains(finding))
+        .cloned()
+        .collect()
+}
+
 fn check_targets(
     verdict: &mut CanaryVerdict,
     seen: &mut BTreeSet<(CanaryCheck, String)>,
@@ -393,6 +406,30 @@ mod tests {
             name: name.to_string(),
             target: t.to_string(),
         }
+    }
+
+    #[test]
+    fn before_after_delta_omits_existing_findings_and_keeps_new_ones() {
+        let existing = CanaryFinding {
+            check: CanaryCheck::Autostart,
+            item: "Updater".into(),
+            message: "Its target is gone".into(),
+        };
+        let new = CanaryFinding {
+            check: CanaryCheck::ShellExtension,
+            item: "Preview handler".into(),
+            message: "Its DLL is gone".into(),
+        };
+        let before = CanaryVerdict {
+            findings: vec![existing.clone()],
+            ..Default::default()
+        };
+        let after = CanaryVerdict {
+            findings: vec![existing, new.clone()],
+            ..Default::default()
+        };
+        assert_eq!(new_findings(&before, &after), vec![new]);
+        assert!(new_findings(&after, &after).is_empty());
     }
 
     #[test]
