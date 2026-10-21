@@ -586,6 +586,42 @@ mod tests {
         (temp, p)
     }
     #[test]
+    fn build_review_detects_changed_tools_and_requires_custom_code_consent() {
+        let (_temp, mut p) = fixture();
+        let tool = Path::new(&p.source).join("example.exe");
+        p.generator = tool.to_string_lossy().into_owned();
+        p.installer = p.generator.clone();
+        let prepared = StagePlan::create(&p, &|| false, &|_| {})
+            .unwrap()
+            .prepare(&|| false, &|_| {})
+            .unwrap();
+        let review = crate::pafbuildsession::Review::create(&prepared, &p, &|| false).unwrap();
+        assert!(review.run(false, &|| true, &|_| {}).is_err());
+        let mut bytes = fs::read(&tool).unwrap();
+        bytes[80] ^= 1;
+        fs::write(&tool, bytes).unwrap();
+        assert!(review
+            .run(false, &|| false, &|_| {})
+            .unwrap_err()
+            .to_string()
+            .contains("changed"));
+        let custom = prepared.package.join("App/AppInfo/Launcher/Custom.nsh");
+        fs::write(custom, b"; must be reviewed").unwrap();
+        let review = crate::pafbuildsession::Review::create(&prepared, &p, &|| false).unwrap();
+        assert!(review
+            .run(false, &|| false, &|_| {})
+            .unwrap_err()
+            .to_string()
+            .contains("permit"));
+        assert!(!fs::read_dir(prepared.record.parent().unwrap())
+            .unwrap()
+            .any(|e| e
+                .unwrap()
+                .file_name()
+                .to_string_lossy()
+                .starts_with("build-")));
+    }
+    #[test]
     fn reconnects_only_complete_unchanged_preparation() {
         let (_temp, p) = fixture();
         let output = StagePlan::create(&p, &|| false, &|_| {})

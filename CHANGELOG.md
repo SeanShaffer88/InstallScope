@@ -7,6 +7,7 @@ All notable changes to InstallScope are documented here. The format follows
 ## [Unreleased]
 
 ### Guided PAF projects
+- Added read-only official build-command review and retained-attempt support with tool-change checks, an invocation journal and bounded copies of changed official compiler logs. Wizard execution remains gated pending the official frontend lifecycle result.
 - Reopening the original preparation snapshot now reconnects completed output after checking its marker, bounded report, generated configurations and recorded application hashes. Changed output restores answers with a warning; no tools execute automatically.
 - Added reviewed source staging with explicit file mappings, original-file preservation, source/destination separation, link/name/collision checks, cancellable streaming copies and SHA-256 verification against reviewed contents. New output never overwrites an existing folder; failures keep labeled partial output. A project snapshot and preparation report accompany the new package.
 - Added bounded static-PNG icon import, an exact 128-pixel preview, documented PNG variants and ICO frames including 8-bit and 32-bit compatibility images. The shared PNG reader now validates the zlib Adler-32 checksum as well as chunk CRCs. Arbitrary official-Installer artwork customization remains unverified and is not offered.

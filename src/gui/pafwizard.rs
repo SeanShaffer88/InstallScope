@@ -1,5 +1,4 @@
-//! Guided project planning and configuration preview. Package execution is gated
-//! until the official-tool adapter has been verified against the current tools.
+//! Guided project planning, preparation and reviewed official-tool builds.
 use super::{a11y, theme, widgets::*};
 use egui::{RichText, Ui};
 use installscope_core::pafproject::{Component, Finding, Project, FORMAT_SOURCE, STEPS};
@@ -27,6 +26,7 @@ pub struct Wizard {
     error: Option<String>,
     message: String,
     io_job: Option<super::Job<ProjectIo>>,
+    io_cancellable: bool,
     confirm_close: bool,
     allow_close: bool,
     check_job: Option<super::Job<(Project, Vec<Finding>)>>,
@@ -39,6 +39,12 @@ pub struct Wizard {
     prepare_job: Option<super::Job<Result<Prepared, String>>>,
     prepared: Option<Prepared>,
     stage_status: Arc<Mutex<String>>,
+    build_review_job:
+        Option<super::Job<Result<installscope_core::pafbuildsession::Review, String>>>,
+    build_review: Option<installscope_core::pafbuildsession::Review>,
+    build_job: Option<super::Job<Result<installscope_core::pafbuildsession::Attempt, String>>>,
+    build_attempt: Option<installscope_core::pafbuildsession::Attempt>,
+    allow_custom_code: bool,
 }
 fn text(ui: &mut Ui, label: &str, value: &mut String, explanation: &str) {
     let label = ui.label(label);
@@ -85,6 +91,17 @@ impl Wizard {
     pub fn ui(&mut self, ui: &mut Ui) {
         self.poll_io();
         self.poll_preparation();
+        self.poll_build();
+        if let Some(job) = &self.build_job {
+            ui.heading("Building with the official tools");
+            ui.spinner();
+            ui.label(self.stage_status.lock().unwrap().as_str());
+            ui.label("Official tool windows may appear. Preparation and partial build output are retained. Cancelling stops the supervised Windows process tree; review output before retrying.");
+            if a11y::explain(ui.add_enabled(!job.progress.cancelled(),egui::Button::new("Cancel build")),"Request cancellation and stop the supervised compiler process tree. Retain logs and package files for diagnosis.").clicked() { job.cancel(); }
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(100));
+            return;
+        }
         if let Some(result) = self.icon_job.as_ref().and_then(|j| j.poll()) {
             self.icon_job = None;
             match result {
@@ -125,10 +142,15 @@ impl Wizard {
         if self.io_job.is_some() {
             ui.spinner();
             ui.label("Reading or saving project… Original source files are untouched.");
+            if self.io_cancellable {
+                if let Some(job) = &self.io_job {
+                    if a11y::explain(ui.add_enabled(!job.progress.cancelled(),egui::Button::new("Cancel opening project")),"Stop reopening and retain the current answers. Checks stop between file reads; blocking filesystem calls can delay cancellation.").clicked(){job.cancel();}
+                }
+            }
             return;
         }
         let ctx = ui.ctx().clone();
-        ui.label("Plan and review a PortableApps.com package, convert its icon, and prepare files in a new workspace folder. Original sources are not edited or executed. Official build/log capture and installer-artwork customization are still pending in this wizard.");
+        ui.label("Plan and review a PortableApps.com package, convert its icon, and prepare files in a new workspace folder. Original sources are not edited or executed. Review official tool commands before building. Installer-artwork customization is still pending.");
         ui.horizontal_wrapped(|ui| {
             if a11y::explain(ui.button("New project"),"Start a new project with unanswered permissions. Unsaved answers require confirmation before replacement.").clicked() {
                 if self.project!=self.saved {self.pending=Some(PendingProject::New);} else {self.reset();}
@@ -140,7 +162,7 @@ impl Wizard {
             }
             if a11y::explain(ui.button("Save snapshot…"),"Save all answers and the current step to a new JSON file. Existing files are never overwritten; use a new filename for each revision.").clicked() {
                 if let Some(p)=save_file("Save project snapshot",&format!("portable-project-{}.json",installscope_core::util::new_id()),"Project","json") {
-                    let project=self.project.clone();
+                    let project=self.project.clone();self.io_cancellable=false;
                     self.io_job=Some(super::Job::spawn(&ctx,move |_| project.save_new(&p).map(|_|(p,project,None)).map_err(|e|format!("{e:#}"))));
                 }
             }
@@ -372,7 +394,7 @@ impl Wizard {
                             ui.label("Answers changed after this plan. Create a new review plan before copying files.");
                         }
                     }
-                    ui.label("Official build execution and compiler log capture are not connected to this wizard yet. There is no fallback installer.");
+                    ui.label("After preparing, review the official build commands below. Official tools may replace generated files inside this working copy; originals remain separate.");
                 }
                 _ => {
                     ui.label("Manual test record. Tick only tests you actually performed on the built package; this wizard does not run them yet.");
@@ -390,7 +412,7 @@ impl Wizard {
                             p.tests.retain(|s|s!=item);if done {p.tests.push(item.to_string());}
                         }
                     }
-                    ui.label("Save a project snapshot to retain drafts, notes and test records. Prepared folders are not installable artifacts; build and testing remain separate. An installable package and validation report are not exported yet.");
+                    ui.label("Save a project snapshot to retain drafts, notes and test records. Prepared folders become installable artifacts only after a successful build; testing remains separate. Build results and available logs appear below. The manual test record is not a complete automated validation report.");
                 }
             }
         });
@@ -437,7 +459,11 @@ impl Wizard {
             {
                 installscope_core::platform::shell_open(&prepared.package.to_string_lossy());
             }
+            if let Some(root) = prepared.record.parent() {
+                if a11y::explain(ui.button("Open project records and previous builds"),"Open the project folder containing its preparation report and retained build-attempt directories. No build output is executed.").clicked(){installscope_core::platform::shell_open(&root.to_string_lossy());}
+            }
         }
+        self.build_panel(ui);
         let findings = self.project.findings();
         for f in findings.iter().filter(|f| f.step == step) {
             ui.label(
@@ -483,6 +509,13 @@ impl Wizard {
         self.plan = None;
         self.plan_texture = None;
         self.prepared = None;
+        if let Some(job) = &self.build_review_job {
+            job.cancel();
+        }
+        self.build_review_job = None;
+        self.build_review = None;
+        self.build_attempt = None;
+        self.allow_custom_code = false;
         self.icon_preview = None;
         self.pending = None;
         self.checked = None;
@@ -538,6 +571,13 @@ impl Wizard {
                     self.message =
                         "Project snapshot ready. No source files or tools were executed.".into();
                     if let Some(restored) = restored {
+                        if let Some(job) = &self.build_review_job {
+                            job.cancel();
+                        }
+                        self.build_review_job = None;
+                        self.build_review = None;
+                        self.build_attempt = None;
+                        self.allow_custom_code = false;
                         self.prepared = None;
                         match restored {
                             Ok(Some(prepared)) => {
@@ -557,9 +597,13 @@ impl Wizard {
     pub fn guard_close(&mut self, ctx: &egui::Context) {
         self.poll_io();
         self.poll_preparation();
+        self.poll_build();
         if ctx.input(|i| i.viewport().close_requested())
             && !self.allow_close
-            && (self.project != self.saved || self.io_job.is_some() || self.prepare_job.is_some())
+            && (self.project != self.saved
+                || self.io_job.is_some()
+                || self.prepare_job.is_some()
+                || self.build_job.is_some())
         {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.confirm_close = true;
@@ -567,22 +611,147 @@ impl Wizard {
         if self.confirm_close {
             egui::Window::new("Unsaved package project").collapsible(false).resizable(false).show(ctx,|ui| {
                 ui.label("The package project has unsaved answers. Keep working and save a snapshot, or close and discard the in-memory changes. Saved files are unaffected.");
-                if self.io_job.is_some() || self.prepare_job.is_some() { ui.label("A project read/save or preparation is still finishing. Wait for it before closing; preparation can be cancelled from the wizard."); }
+                if self.io_job.is_some() || self.prepare_job.is_some() || self.build_job.is_some() { ui.label("A project operation or build is still finishing. Wait for it before closing; preparation and builds can be cancelled from the wizard."); }
                 if a11y::explain(ui.button("Keep working"),"Return to InstallScope and retain all answers. Use Save snapshot in Guided PAF project to save them.").clicked() {self.confirm_close=false;}
-                if a11y::explain(ui.add_enabled(self.io_job.is_none() && self.prepare_job.is_none(),egui::Button::new("Close and discard unsaved answers")),"Close InstallScope and discard the unsaved project answers. Existing project snapshots and original application files remain unchanged.").clicked() {
+                if a11y::explain(ui.add_enabled(self.io_job.is_none() && self.prepare_job.is_none() && self.build_job.is_none(),egui::Button::new("Close and discard unsaved answers")),"Close InstallScope and discard the unsaved project answers. Existing project snapshots and original application files remain unchanged.").clicked() {
                     self.allow_close=true;self.confirm_close=false;ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             });
         }
     }
+    fn poll_build(&mut self) {
+        if let Some(result) = self.build_review_job.as_ref().and_then(|j| j.poll()) {
+            self.build_review_job = None;
+            self.allow_custom_code = false;
+            match result {
+                Ok(review) => {
+                    self.build_review = Some(review);
+                    self.error = None;
+                }
+                Err(e) => self.error = Some(e),
+            }
+        }
+        if let Some(result) = self.build_job.as_ref().and_then(|j| j.poll()) {
+            self.build_job = None;
+            match result {
+                Ok(attempt) => {
+                    self.build_attempt = Some(attempt);
+                    self.error = None;
+                }
+                Err(e) => self.error = Some(e),
+            }
+        }
+    }
+    fn build_panel(&mut self, ui: &mut Ui) {
+        let Some(prepared) = &self.prepared else {
+            return;
+        };
+        ui.separator();
+        ui.heading("Review official build");
+        ui.label("Use trusted, privately controlled working folders and installed official tools. Close other builds using those tool folders: the official compiler log paths are shared. No downloads or elevation are requested.");
+        if a11y::explain(ui.add_enabled(self.build_review_job.is_none(),egui::Button::new("Review official build commands")),"Recheck recorded application bytes and configuration, resolve the selected tools, and show their exact process arguments. No tool runs and no files are written.").clicked() {
+            let prepared=prepared.clone();let project=self.project.clone();self.build_review=None;self.allow_custom_code=false;
+            self.build_review_job=Some(super::Job::spawn(ui.ctx(),move |progress| installscope_core::pafbuildsession::Review::create(&prepared,&project,&||progress.cancelled()).map_err(|e|format!("{e:#}"))));
+        }
+        if let Some(job) = &self.build_review_job {
+            ui.spinner();
+            ui.label("Checking prepared files and selected tools…");
+            if a11y::explain(
+                ui.button("Cancel build review"),
+                "Stop the read-only review between filesystem operations.",
+            )
+            .clicked()
+            {
+                job.cancel();
+            }
+        }
+        if let Some(review) = &self.build_review {
+            if review.project != self.project || review.prepared.package != prepared.package {
+                ui.label("Answers or prepared folder changed. Review the build commands again.");
+            } else {
+                for (i, request) in review.requests.iter().enumerate() {
+                    ui.label(format!(
+                        "{}. Executable: {}",
+                        i + 1,
+                        request.executable.display()
+                    ));
+                    for (index, arg) in request.arguments.iter().enumerate() {
+                        ui.label(format!("Argument {}: {}", index + 1, arg.to_string_lossy()));
+                    }
+                    ui.label(format!(
+                        "Working directory: {}",
+                        request.working_directory.as_ref().unwrap().display()
+                    ));
+                    ui.label(format!("Time limit: {} seconds", request.timeout.as_secs()));
+                }
+                ui.label(format!(
+                    "Launcher output: {}",
+                    review
+                        .prepared
+                        .package
+                        .join(format!("{}.exe", self.project.app_id))
+                        .display()
+                ));
+                ui.label(format!(
+                    "Installer search: {} and its parent; one fresh {}_*.paf.exe is required.",
+                    review.prepared.package.display(),
+                    self.project.app_id
+                ));
+                ui.label("The official tools can replace generated launchers, source files and artwork inside this prepared working copy. Tool selection and header/hash checks do not authenticate a publisher. Read errors or changed recorded files stop the attempt.");
+                if !review.custom_code.is_empty() {
+                    for path in &review.custom_code {
+                        ui.label(format!("Custom code: {}", path.display()));
+                    }
+                    a11y::explain(ui.checkbox(&mut self.allow_custom_code,"I reviewed the custom NSIS code and permit it for this build"),"Permit execution of the listed custom build code for one attempt only. Presence detection is not a full script audit; review includes and referenced code yourself.");
+                }
+                // Enable after the official frontend lifecycle gate has passed.
+                let enabled = false
+                    && cfg!(windows)
+                    && (review.custom_code.is_empty() || self.allow_custom_code);
+                if a11y::explain(ui.add_enabled(enabled,egui::Button::new("Build reviewed package")),"Run the two official processes shown above. They may show their own windows and modify the prepared working copy. Keep an invocation journal and available compiler logs in a new build folder; no fallback installer is used.").clicked() {
+                    let review=review.clone();let allow=self.allow_custom_code;self.allow_custom_code=false;self.build_attempt=None;
+                    let status=self.stage_status.clone();*status.lock().unwrap()="Rechecking prepared files before execution…".into();
+                    self.build_job=Some(super::Job::spawn(ui.ctx(),move |progress|review.run(allow,&||progress.cancelled(),&|s|*status.lock().unwrap()=s.to_string()).map_err(|e|format!("{e:#}"))));
+                }
+                ui.label("Build execution is awaiting the official frontend lifecycle verification gate.");
+            }
+        }
+        if let Some(attempt) = &self.build_attempt {
+            match &attempt.result {
+                Ok(compiled) => {
+                    ui.label("Build output detected — portability testing and redistribution review remain required.");
+                    if let Some(path) = &compiled.paf {
+                        ui.label(format!("Installer: {}", path.display()));
+                    }
+                }
+                Err(error) => {
+                    theme::warning_banner(ui, format!("Build stopped: {error}"));
+                }
+            }
+            ui.label(format!("Invocation journal: {}", attempt.journal.display()));
+            for log in &attempt.logs {
+                ui.label(format!("Captured compiler log: {}", log.display()));
+            }
+            for warning in &attempt.warnings {
+                ui.label(format!("Log warning: {warning}"));
+            }
+            if a11y::explain(ui.button("Open build results and logs"),"Open the retained build directory, including failed-attempt diagnostics. No generated installer or launcher is executed.").clicked(){installscope_core::platform::shell_open(&attempt.directory.to_string_lossy());}
+        }
+    }
     fn open(&mut self, ctx: &egui::Context, path: PathBuf) {
+        self.io_cancellable = true;
         self.io_job = Some(super::Job::spawn(ctx, move |progress| {
             Project::load(&path)
-                .map(|p| {
+                .and_then(|p| {
                     let restored =
                         installscope_core::pafstage::reopen(&path, &p, &|| progress.cancelled())
                             .map_err(|e| format!("{e:#}"));
-                    (path, p, Some(restored))
+                    if progress.cancelled() {
+                        return Err(anyhow::anyhow!(
+                            "Project opening cancelled; previous answers retained"
+                        ));
+                    }
+                    Ok((path, p, Some(restored)))
                 })
                 .map_err(|e| format!("{e:#}"))
         }));

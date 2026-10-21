@@ -29,7 +29,8 @@ fn run(exe: &Path, arguments: Vec<std::ffi::OsString>) -> Result<()> {
     #[cfg(windows)]
     let dialog = std::cell::RefCell::new(FixtureDialog {
         executable: std::fs::canonicalize(exe)?,
-        reported: false,
+        reported: String::new(),
+        reports: 0,
     });
     run_tool(
         &ToolRequest {
@@ -58,7 +59,8 @@ fn run(exe: &Path, arguments: Vec<std::ffi::OsString>) -> Result<()> {
 #[cfg(windows)]
 struct FixtureDialog {
     executable: PathBuf,
-    reported: bool,
+    reported: String,
+    reports: usize,
 }
 
 #[cfg(windows)]
@@ -102,6 +104,9 @@ unsafe extern "system" fn fixture_dialog(
         data: isize,
     ) -> i32 {
         let text = &mut *(data as *mut String);
+        if text.len() >= 64 * 1024 {
+            return 0;
+        }
         let mut buffer = [0u16; 4096];
         let mut count = 0usize;
         let delivered = windows_sys::Win32::UI::WindowsAndMessaging::SendMessageTimeoutW(
@@ -121,11 +126,53 @@ unsafe extern "system" fn fixture_dialog(
     }
     let mut text = String::new();
     EnumChildWindows(window, Some(child_text), &mut text as *mut String as isize);
-    if !state.reported {
-        println!("Fixture launcher dialog: {text}");
-        state.reported = true;
+    if state.reported != text && state.reports < 10 {
+        println!("Fixture dialog from {}: {text}", state.executable.display());
+        state.reported = text;
+        state.reports += 1;
     }
     1
+}
+
+fn compile(package: &Path, tools: &PaTools) -> Result<pafbuild::Compiled> {
+    #[cfg(windows)]
+    let dialogs = {
+        let mut states = Vec::new();
+        for path in [
+            tools
+                .launcher_generator
+                .as_ref()
+                .context("Generator missing")?,
+            tools.installer.as_ref().context("Installer missing")?,
+        ] {
+            states.push(FixtureDialog {
+                executable: std::fs::canonicalize(path)?,
+                reported: String::new(),
+                reports: 0,
+            });
+        }
+        std::cell::RefCell::new(states)
+    };
+    let started = std::time::Instant::now();
+    pafbuild::compile_official_with_cancel(
+        package,
+        "ProbePortable",
+        tools,
+        false,
+        &|s| println!("{s}"),
+        &|| {
+            #[cfg(windows)]
+            for state in dialogs.borrow_mut().iter_mut() {
+                unsafe {
+                    windows_sys::Win32::UI::WindowsAndMessaging::EnumWindows(
+                        Some(fixture_dialog),
+                        state as *mut FixtureDialog as isize,
+                    );
+                }
+            }
+            started.elapsed() > Duration::from_secs(120)
+        },
+    )
 }
 
 fn main() -> Result<()> {
@@ -187,14 +234,7 @@ fn main() -> Result<()> {
     for (name, bytes) in installscope_core::pafassets::from_png(&png, &|| false)?.files {
         std::fs::write(package.join("App/AppInfo").join(name), bytes)?;
     }
-    let compiled = pafbuild::compile_official_with_cancel(
-        &package,
-        "ProbePortable",
-        &tools,
-        false,
-        &|s| println!("{s}"),
-        &|| false,
-    )?;
+    let compiled = compile(&package, &tools)?;
     let installer = compiled.paf.context("installer missing")?;
     portable_builder_kit::validate_executable(&installer)?;
     let destination = work.0.join("installed");
@@ -255,14 +295,7 @@ fn main() -> Result<()> {
         package.join("App/AppInfo/appinfo.ini"),
         pafbuild::appinfo_ini(&details),
     )?;
-    let compiled = pafbuild::compile_official_with_cancel(
-        &package,
-        "ProbePortable",
-        &tools,
-        false,
-        &|s| println!("upgrade: {s}"),
-        &|| false,
-    )?;
+    let compiled = compile(&package, &tools)?;
     run(
         &compiled.paf.context("upgrade installer missing")?,
         vec![

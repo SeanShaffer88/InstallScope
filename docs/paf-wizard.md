@@ -1,6 +1,6 @@
 # Guided PortableApps.com package projects
 
-Status: **project planning, icon conversion and reviewed source staging**.
+Status: **project planning, icon conversion, reviewed staging and official build review**.
 The regular PortableApps Forge page offers **Guided PAF project** alongside
 **Installation capture**. The wizard prepares files for the official tools. It is
 not a complete installer builder and introduces no competing package format.
@@ -86,7 +86,7 @@ Changed or incomplete output leaves the answers available with an explanatory
 warning; no tools execute automatically. Standalone snapshots restore answers
 only. These checks do not cover unrecorded extra files, icons, host writes or
 portability, and the companion report is not a signed authenticity record.
-Official build execution/log capture in this wizard remains pending.
+Build review can be resumed after reconnecting the original preparation. Official execution remains gated pending the lifecycle result.
 
 Filesystem checks, hashing, conversion, copying and snapshot I/O use workers.
 Mapping rows are rendered on demand instead of allocating/rendering the entire
@@ -132,9 +132,9 @@ both official frontends. Missing tools stop before compilation/download. Recogni
 custom NSIS entry points need explicit per-attempt consent. The legacy source-build
 API remains for development compatibility, not a desktop fallback.
 
-This wizard still does not extract archives, run official frontends, capture their
-compiler logs, or export an
-installable artifact/final validation report. Complete language-value checking,
+This wizard still does not extract archives or export a complete final validation
+report. Build review is connected; execution remains gated pending official
+frontend lifecycle verification. Complete language-value checking,
 notice-file verification, file/registry redirection assistance and current-tool
 lifecycle verification also remain. Static PE checks establish header signatures,
 not authenticity, a complete loader validation or runtime portability.
@@ -151,18 +151,23 @@ The legacy official-source Launcher plus InstallScope-installer fixture still
 stopped at its first Launcher dialog. It is not evidence that the official
 Installer frontend or this new wizard passed a complete package lifecycle test.
 
-### Verified historical distributions and test baseline
+### Verified distributions and test baseline
 
 For development research, Installer 3.9.18 and Launcher 2.2.9 were downloaded
 from the official PortableApps SourceForge project, SHA-256 checked against the
 [Installer](https://portableapps.com/apps/development/portableapps.com_installer)
 and [Launcher](https://portableapps.com/apps/development/portableapps.com_launcher)
 page values, then extracted without running their self-extractors. The CI fixture
-pins these same hashes and calls the extracted official frontends separately.
-This is a historical regression baseline, not a latest-release or certification
-claim. A configured test is not a passing result.
+calls extracted official frontends separately after verifying pinned publisher hashes.
+The cached web index was stale. Direct retrieval of the official Installer page
+on 2026-10-21 lists 3.9.22 with SHA-256
+`689456f1fb1320c45e82a077afe6b87fb388fd3f75c41d9ee9ce8d45f3966b67`.
+That distribution was independently downloaded, checked against that value and
+extracted for source inspection; its command/log/artwork behavior below matches
+the inspected historical version. CI now pins 3.9.22 and Launcher 2.2.9.
+A configured test is not a passing result or certification.
 
-Inspected Installer 3.9.18 distribution files (tool behavior, not format rules):
+Inspected Installer 3.9.18 and 3.9.22 distribution files (tool behavior, not format rules):
 `Other/Source/InstallerWizard.nsi`, `.onInit` accepts the package directory as
 its command line; `Section Main` writes `Data/PortableApps.comInstallerLog.txt`,
 replaces generated installer source/artwork, and invokes its bundled NSIS.
@@ -177,3 +182,22 @@ Installer code. Its welcome text also describes unmodified use for open-source
 and freeware packages and contacting PortableApps.com for commercial software.
 Treat this as a licensing/trademark question for human/upstream review; this
 project makes no legal conclusion and copies no GPL implementation into MIT code.
+
+### Reviewed build attempts
+
+**Review official build commands** checks the recorded prepared files and resolves
+both selected executable paths in a worker. The review shows each process's
+executable, single package-directory argument, working directory, ten-minute
+limit and output search locations. Selected tool contents are hashed and checked
+again before execution; this detects changes, not publisher authenticity.
+Recognized custom NSIS entry points need fresh consent for each attempt. This
+check is not a full include/script audit.
+
+Build-attempt support retains a new `build-<id>` directory outside the package.
+`build-journal.txt` records requests, tool hashes, progress and result; it is
+explicitly distinct from compiler logs. Changed logs at the inspected official
+Generator/Installer `Data` paths can be copied verbatim, with a 16 MiB limit per
+log. Missing, unchanged, linked, oversized or changing logs produce separate
+capture warnings. The official log paths are shared by that tool installation;
+close concurrent builds before using it. No completeness or authenticity claim
+is made for these logs. Partial output and earlier attempts are retained.

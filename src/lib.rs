@@ -39,6 +39,7 @@ pub mod noise;
 pub mod orphans;
 pub mod pafassets;
 pub mod pafbuild;
+pub mod pafbuildsession;
 pub mod pafproject;
 pub mod pafstage;
 pub mod patools;

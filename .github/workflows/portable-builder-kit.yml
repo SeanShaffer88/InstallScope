@@ -2,9 +2,9 @@ name: Portable Builder Kit
 on:
   push:
     branches: [main]
-    paths: ['crates/portable-builder-kit/**', 'src/pafbuild.rs', 'src/pafproject.rs', 'src/pafassets.rs', 'src/pafstage.rs', 'src/png.rs', 'src/gui/pafwizard.rs', 'src/paf_installer.nsi', 'src/patools.rs', 'src/util.rs', 'src/gui/builder.rs', 'examples/pafkit_smoke.rs', '.github/workflows/portable-builder-kit.yml']
+    paths: ['crates/portable-builder-kit/**', 'src/pafbuild.rs', 'src/pafbuildsession.rs', 'src/pafproject.rs', 'src/pafassets.rs', 'src/pafstage.rs', 'src/png.rs', 'src/gui/pafwizard.rs', 'src/paf_installer.nsi', 'src/patools.rs', 'src/util.rs', 'src/gui/builder.rs', 'examples/pafkit_smoke.rs', '.github/workflows/portable-builder-kit.yml']
   pull_request:
-    paths: ['crates/portable-builder-kit/**', 'src/pafbuild.rs', 'src/pafproject.rs', 'src/pafassets.rs', 'src/pafstage.rs', 'src/png.rs', 'src/gui/pafwizard.rs', 'src/paf_installer.nsi', 'src/patools.rs', 'src/util.rs', 'src/gui/builder.rs', 'examples/pafkit_smoke.rs', '.github/workflows/portable-builder-kit.yml']
+    paths: ['crates/portable-builder-kit/**', 'src/pafbuild.rs', 'src/pafbuildsession.rs', 'src/pafproject.rs', 'src/pafassets.rs', 'src/pafstage.rs', 'src/png.rs', 'src/gui/pafwizard.rs', 'src/paf_installer.nsi', 'src/patools.rs', 'src/util.rs', 'src/gui/builder.rs', 'examples/pafkit_smoke.rs', '.github/workflows/portable-builder-kit.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -39,15 +39,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - name: Fetch and verify historical official test tools
+      - name: Fetch and verify official test tools
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          # Explicit CI-only, known-hash baseline. Not a product downloader or latest-version claim.
+          # Explicit CI-only, publisher-hash baseline checked 2026-10-21. Not a product downloader.
           $root = Join-Path $env:RUNNER_TEMP 'paf-official-tools'
           New-Item -ItemType Directory $root -Force | Out-Null
           $packages = @(
-            @{ Name='Installer'; Version='3.9.18'; Folder='PortableApps.com Installer'; Hash='8dc84002f08ae7bf31dd2f422f6f173b6b8ba2371fd508a9876e13f2eb6ef75a' },
+            @{ Name='Installer'; Version='3.9.22'; Folder='PortableApps.com Installer'; Hash='689456f1fb1320c45e82a077afe6b87fb388fd3f75c41d9ee9ce8d45f3966b67' },
             @{ Name='Launcher'; Version='2.2.9'; Folder='PortableApps.com Launcher'; Hash='7bc93e47b885d5e953fa2082a2e65169ae98128026ac4d747f774a23bd01345b' }
           )
           foreach ($package in $packages) {
@@ -60,7 +60,7 @@ jobs:
             $destination = Join-Path $root $package.Name
             & 7z x $file "-o$destination" -y
             if ($LASTEXITCODE -ne 0) { throw "Extraction failed: $name" }
-            Write-Host "Verified historical baseline: $name SHA256 $($package.Hash)"
+            Write-Host "Verified official test baseline: $name SHA256 $($package.Hash)"
           }
           "PAF_TEST_GENERATOR=$root/Launcher/PortableApps.comLauncherGenerator.exe" >> $env:GITHUB_ENV
           "PAF_TEST_INSTALLER=$root/Installer/PortableApps.comInstaller.exe" >> $env:GITHUB_ENV
