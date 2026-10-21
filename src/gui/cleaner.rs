@@ -12,6 +12,12 @@ use installscope_core::i18n::{t, tf};
 use installscope_core::model::human_size;
 use installscope_core::slimmer::{self, Analysis, DeepItem};
 
+pub(super) struct CleanupRun {
+    freed: Vec<installscope_core::cleaner::ScanResult>,
+    health_checked: bool,
+    new_health_findings: Vec<installscope_core::canary::CanaryFinding>,
+}
+
 pub struct CleanerState {
     pub cats: Vec<(Category, bool, Option<CategoryScan>)>,
     /// Deep cleanup: analysis per item (same order as `DeepItem::ALL`).
@@ -20,8 +26,10 @@ pub struct CleanerState {
     pub deep_run: Option<(DeepItem, Job<Result<(), String>>)>,
     pub deep_restore_point: bool,
     pub scan_job: Option<Job<Vec<CategoryScan>>>,
-    pub clean_job: Option<Job<Vec<installscope_core::cleaner::ScanResult>>>,
+    pub clean_job: Option<Job<CleanupRun>>,
     pub freed: Option<u64>,
+    pub health_checked: Option<bool>,
+    pub new_health_findings: Vec<installscope_core::canary::CanaryFinding>,
     /// Protected-paths editor text (one pattern per line); `None` until
     /// first shown, when it is loaded from the persisted setting.
     pub protect_text: Option<String>,
@@ -48,6 +56,8 @@ impl Default for CleanerState {
             scan_job: None,
             clean_job: None,
             freed: None,
+            health_checked: None,
+            new_health_findings: Vec::new(),
             protect_text: None,
             schedule: None,
             schedule_error: None,
@@ -176,12 +186,44 @@ impl App {
             })
             .collect();
         self.cleaner.clean_job = Some(Job::spawn(&self.ctx, move |_| {
-            jobs.iter()
+            // Compare only registrations observed before cleanup, so pre-existing
+            // broken targets do not appear as cleanup findings. A new finding
+            // may still come from another program changing files concurrently.
+            use installscope_core::{canary, leftovers::DeepIndex, platform};
+            let reg = platform::system_registry();
+            let index = DeepIndex::build(reg.as_ref(), None);
+            let inputs = canary::collect_inputs(
+                reg.as_ref(),
+                &index,
+                &installscope_core::revert::Plan::default(),
+            );
+            let exists = |path: &str| std::path::Path::new(path).exists();
+            let windows_dir = platform::expand_env("%SystemRoot%");
+            let protected = installscope_core::util::protected_dirs();
+            let before = {
+                let checker = installscope_core::orphans::Checker::new(&exists, &windows_dir);
+                canary::run_checks(&inputs, &checker, &protected)
+            };
+            let freed: Vec<installscope_core::cleaner::ScanResult> = jobs
+                .iter()
                 .map(|(c, files)| match files {
                     Some(files) => cleaner::clean_files(c, files),
                     None => cleaner::clean(c),
                 })
-                .collect()
+                .collect();
+            let removed_any = freed.iter().any(|result| result.files > 0);
+            let new_health_findings = if removed_any {
+                let checker = installscope_core::orphans::Checker::new(&exists, &windows_dir);
+                let after = canary::run_checks(&inputs, &checker, &protected);
+                canary::new_findings(&before, &after)
+            } else {
+                Vec::new()
+            };
+            CleanupRun {
+                freed,
+                health_checked: removed_any,
+                new_health_findings,
+            }
         }));
     }
 
@@ -384,8 +426,10 @@ impl App {
         }
         if let Some(r) = self.cleaner.clean_job.as_ref().and_then(|j| j.poll()) {
             self.cleaner.clean_job = None;
-            let freed: u64 = r.iter().map(|s| s.bytes).sum();
+            let freed: u64 = r.freed.iter().map(|s| s.bytes).sum();
             self.cleaner.freed = Some(freed);
+            self.cleaner.health_checked = Some(r.health_checked);
+            self.cleaner.new_health_findings = r.new_health_findings;
             self.set_status(tf("Freed {size}", &[("size", human_size(freed))]));
             self.start_scan();
         }
@@ -465,6 +509,21 @@ impl App {
                 theme::card(ui, |ui| {
                     ui.label(RichText::new(tf("✔ Freed {size}", &[("size", human_size(f))])).color(theme::OK).strong());
                     small_muted(ui, t("Files that were in use were skipped."));
+                    match self.cleaner.health_checked {
+                        Some(true) if self.cleaner.new_health_findings.is_empty() => {
+                            ui.colored_label(theme::OK, t("Before/after health check: no new missing Windows targets detected."));
+                        }
+                        Some(true) => {
+                            ui.colored_label(theme::WARN, t("Before/after health check found new missing Windows targets. This shows a change during cleanup, not proof cleanup caused it:"));
+                            for finding in &self.cleaner.new_health_findings {
+                                ui.colored_label(theme::BAD, format!("{} — {}: {}", finding.check.label(), finding.item, finding.message));
+                            }
+                        }
+                        Some(false) => {
+                            small_muted(ui, t("No comparison result: cleanup removed no files."));
+                        }
+                        None => {}
+                    }
                 });
                 ui.add_space(8.0);
             }
