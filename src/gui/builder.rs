@@ -260,6 +260,10 @@ impl App {
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
                     .show(ui, |ui| {
+                        // The page's explanation line (see a11y::explain):
+                        // the focused control's explanation, for keyboard
+                        // and touch users who never see a hover tooltip.
+                        super::a11y::focus_hint(ui, theme::MUTED);
                         if let Some(e) = self.builder.error.clone() {
                             theme::warning_banner(ui, e);
                             ui.add_space(6.0);
@@ -280,12 +284,20 @@ impl App {
         theme::card(ui, |ui| {
             ui.label(RichText::new(t("1. Installer")).strong());
             ui.horizontal(|ui| {
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.builder.installer)
-                        .hint_text(t("The program's setup file (.exe or .msi)"))
-                        .desired_width(420.0),
+                super::a11y::explain(
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.builder.installer)
+                            .hint_text(t("The program's setup file (.exe or .msi)"))
+                            .desired_width(420.0),
+                    ),
+                    &t("The program's setup file (.exe or .msi): type its path or use Browse. Its kind is detected and shown under this box."),
                 );
-                if ui.button(t("Browse…")).clicked() {
+                if super::a11y::explain(
+                    ui.button(t("Browse…")),
+                    &t("Choose the program's setup file (.exe or .msi)."),
+                )
+                .clicked()
+                {
                     if let Some(p) =
                         pick_file(&t("Choose the installer"), "Installer", &["exe", "msi"])
                     {
@@ -321,9 +333,17 @@ impl App {
             if let Some(k) = self.builder.kind {
                 small_muted(ui, tf("Installer type: {kind}", &[("kind", t(k.label()))]));
                 ui.add_enabled_ui(k.can_be_silent(), |ui| {
-                    ui.checkbox(
-                        &mut self.builder.silent,
-                        t("Install silently (no questions; uses the default choices)"),
+                    let silent_why = if k.can_be_silent() {
+                        t("Installs without showing the installer's questions, using its default choices.")
+                    } else {
+                        t("Unavailable: this kind of installer can't be run silently, so it is installed with its normal questions.")
+                    };
+                    super::a11y::explain(
+                        ui.checkbox(
+                            &mut self.builder.silent,
+                            t("Install silently (no questions; uses the default choices)"),
+                        ),
+                        &silent_why,
                     );
                 });
                 if !k.can_be_silent() {
@@ -339,63 +359,103 @@ impl App {
                 .num_columns(2)
                 .spacing([12.0, 6.0])
                 .show(ui, |ui| {
-                    ui.label(t("Name"));
-                    ui.add(
-                        egui::TextEdit::singleline(&mut d.name)
-                            .hint_text("Notepad++")
-                            .desired_width(320.0),
+                    let name_label = ui.label(t("Name"));
+                    super::a11y::explain(
+                        ui.add(
+                            egui::TextEdit::singleline(&mut d.name)
+                                .hint_text("Notepad++")
+                                .desired_width(320.0),
+                        )
+                        .labelled_by(name_label.id),
+                        &t("The program's name, used for the package's name and folder."),
                     );
                     ui.end_row();
-                    ui.label(t("Version"));
-                    ui.add(
-                        egui::TextEdit::singleline(&mut d.version)
-                            .hint_text(t("Read from the installation when empty"))
-                            .desired_width(320.0),
+                    let version_label = ui.label(t("Version"));
+                    super::a11y::explain(
+                        ui.add(
+                            egui::TextEdit::singleline(&mut d.version)
+                                .hint_text(t("Read from the installation when empty"))
+                                .desired_width(320.0),
+                        )
+                        .labelled_by(version_label.id),
+                        &t("The program's version, shown in the package. Left empty, it is read from the installation during the capture."),
                     );
                     ui.end_row();
-                    ui.label(t("Publisher"));
-                    ui.add(
-                        egui::TextEdit::singleline(&mut d.publisher)
-                            .hint_text(t("Read from the installation when empty"))
-                            .desired_width(320.0),
+                    let publisher_label = ui.label(t("Publisher"));
+                    super::a11y::explain(
+                        ui.add(
+                            egui::TextEdit::singleline(&mut d.publisher)
+                                .hint_text(t("Read from the installation when empty"))
+                                .desired_width(320.0),
+                        )
+                        .labelled_by(publisher_label.id),
+                        &t("The program's publisher, shown in the package. Left empty, it is read from the installation during the capture."),
                     );
                     ui.end_row();
-                    ui.label(t("Packaged by"));
-                    ui.add(
-                        egui::TextEdit::singleline(&mut d.packager)
-                            .hint_text(t("Your name (optional)"))
-                            .desired_width(320.0),
+                    let packager_label = ui.label(t("Packaged by"));
+                    super::a11y::explain(
+                        ui.add(
+                            egui::TextEdit::singleline(&mut d.packager)
+                                .hint_text(t("Your name (optional)"))
+                                .desired_width(320.0),
+                        )
+                        .labelled_by(packager_label.id),
+                        &t("Your name, recorded in the package as who packaged it. Optional, and remembered for next time."),
                     );
                     ui.end_row();
-                    ui.label(t("Category"));
-                    egui::ComboBox::from_id_salt("pa_cat")
+                    let category_label = ui.label(t("Category"));
+                    let combo = egui::ComboBox::from_id_salt("pa_cat")
                         .selected_text(t(&d.category))
                         .show_ui(ui, |ui| {
                             for c in pafbuild::CATEGORIES {
                                 ui.selectable_value(&mut d.category, c.to_string(), t(c));
                             }
                         });
-                    ui.end_row();
-                    ui.label(t("Description"));
-                    ui.add(
-                        egui::TextEdit::singleline(&mut d.description)
-                            .char_limit(512)
-                            .desired_width(420.0),
+                    super::a11y::explain(
+                        combo.response.labelled_by(category_label.id),
+                        &t("The category the package is listed under."),
                     );
                     ui.end_row();
-                    ui.label(t("Homepage"));
-                    ui.add(
-                        egui::TextEdit::singleline(&mut d.homepage)
-                            .hint_text("https://")
-                            .desired_width(420.0),
+                    let description_label = ui.label(t("Description"));
+                    super::a11y::explain(
+                        ui.add(
+                            egui::TextEdit::singleline(&mut d.description)
+                                .char_limit(512)
+                                .desired_width(420.0),
+                        )
+                        .labelled_by(description_label.id),
+                        &t("A short description of the program, written into the package (up to 512 characters)."),
+                    );
+                    ui.end_row();
+                    let homepage_label = ui.label(t("Homepage"));
+                    super::a11y::explain(
+                        ui.add(
+                            egui::TextEdit::singleline(&mut d.homepage)
+                                .hint_text("https://")
+                                .desired_width(420.0),
+                        )
+                        .labelled_by(homepage_label.id),
+                        &t("The program's website, written into the package so its users can visit it."),
                     );
                     ui.end_row();
                     ui.label(t("License"));
                     ui.horizontal_wrapped(|ui| {
-                        ui.checkbox(&mut d.freeware, t("Free"));
-                        ui.checkbox(&mut d.open_source, t("Open source"));
-                        ui.checkbox(&mut d.commercial_use, t("Business use allowed"));
-                        ui.checkbox(&mut d.shareable, t("May be shared"));
+                        super::a11y::explain(
+                            ui.checkbox(&mut d.freeware, t("Free")),
+                            &t("Tick if the program costs nothing to use; recorded in the package's licence information."),
+                        );
+                        super::a11y::explain(
+                            ui.checkbox(&mut d.open_source, t("Open source")),
+                            &t("Tick if the program's source code is openly available; recorded in the package's licence information."),
+                        );
+                        super::a11y::explain(
+                            ui.checkbox(&mut d.commercial_use, t("Business use allowed")),
+                            &t("Tick if the program's licence allows it to be used in a business; recorded in the package's licence information."),
+                        );
+                        super::a11y::explain(
+                            ui.checkbox(&mut d.shareable, t("May be shared")),
+                            &t("Tick if the program's licence allows giving copies to other people; recorded in the package's licence information."),
+                        );
                     });
                     ui.end_row();
                 });
@@ -414,21 +474,35 @@ impl App {
             ui.label(RichText::new(t("3. Where to install it")).strong());
             let available = self.builder.sandbox == Some(true);
             ui.add_enabled_ui(available, |ui| {
-                ui.radio_value(
-                    &mut self.builder.use_sandbox,
-                    true,
-                    t("In Windows Sandbox (recommended: this PC is never touched)"),
+                let sandbox_why = if available {
+                    t("The installer runs inside Windows Sandbox, a throwaway copy of Windows, and the package is collected from there. This PC's files and registry are never touched.")
+                } else {
+                    t("Unavailable: Windows Sandbox isn't turned on (see below).")
+                };
+                super::a11y::explain(
+                    ui.radio_value(
+                        &mut self.builder.use_sandbox,
+                        true,
+                        t("In Windows Sandbox (recommended: this PC is never touched)"),
+                    ),
+                    &sandbox_why,
                 );
             });
             if !available {
                 small_muted(ui, t("Windows Sandbox isn't turned on. It's part of Windows 11 Pro, Enterprise and Education: turn on \"Windows Sandbox\" in Windows Features and restart."));
                 self.builder.use_sandbox = false;
             }
-            ui.radio_value(&mut self.builder.use_sandbox, false, t("On this PC (InstallScope records the installation so you can remove it precisely afterwards)"));
+            super::a11y::explain(
+                ui.radio_value(&mut self.builder.use_sandbox, false, t("On this PC (InstallScope records the installation so you can remove it precisely afterwards)")),
+                &t("The installer runs on this PC while InstallScope records the installation, so the program can be removed precisely afterwards. Starting needs Administrator rights."),
+            );
             ui.add_space(4.0);
-            ui.checkbox(
-                &mut self.builder.include_defaults,
-                t("Use the settings from the first run as the package's default settings"),
+            super::a11y::explain(
+                ui.checkbox(
+                    &mut self.builder.include_defaults,
+                    t("Use the settings from the first run as the package's default settings"),
+                ),
+                &t("Keeps the settings the program has after its first run in the capture as the settings the package starts with."),
             );
             small_muted(ui, t("InstallScope first watches Windows for 30 seconds to learn what changes on its own, so it can leave that out."));
         });
@@ -436,9 +510,18 @@ impl App {
         theme::card(ui, |ui| {
             ui.label(RichText::new(t("4. Package")).strong());
             ui.horizontal(|ui| {
-                ui.label(t("Save to"));
-                ui.add(egui::TextEdit::singleline(&mut self.builder.out_dir).desired_width(380.0));
-                if ui.button(t("Browse…")).clicked() {
+                let save_label = ui.label(t("Save to"));
+                super::a11y::explain(
+                    ui.add(egui::TextEdit::singleline(&mut self.builder.out_dir).desired_width(380.0))
+                        .labelled_by(save_label.id),
+                    &t("The folder the finished package is saved into, as its own folder with the launcher and installer."),
+                );
+                if super::a11y::explain(
+                    ui.button(t("Browse…")),
+                    &t("Choose the folder to save the package into."),
+                )
+                .clicked()
+                {
                     if let Some(p) = pick_folder(&t("Choose where to save the package")) {
                         self.builder.out_dir = p.to_string_lossy().to_string();
                     }
@@ -450,8 +533,22 @@ impl App {
         let ok = PathBuf::from(&self.builder.installer).is_file()
             && !self.builder.details.name.trim().is_empty()
             && !self.builder.out_dir.trim().is_empty();
+        let start_why = if !ok {
+            t("Unavailable: choose an installer file above, give the program a name, and choose where to save the package first.")
+        } else if !self.builder.use_sandbox && !self.elevated {
+            t("Unavailable: installing on this PC needs Administrator rights. Run InstallScope as Administrator, or choose Windows Sandbox above.")
+        } else if self.builder.use_sandbox {
+            t("Starts the capture: the installer runs in Windows Sandbox, InstallScope records what it installs, and the PortableApps.com package is built into the Save to folder.")
+        } else {
+            t("Starts the capture: the installer runs on this PC while InstallScope records it, and the PortableApps.com package is built into the Save to folder.")
+        };
         ui.add_enabled_ui(ok && (self.builder.use_sandbox || self.elevated), |ui| {
-            if theme::primary_button(ui, format!("📦 {}", t("Start"))).clicked() {
+            if super::a11y::explain(
+                theme::primary_button(ui, format!("📦 {}", t("Start"))),
+                &start_why,
+            )
+            .clicked()
+            {
                 self.start_capture(&ctx);
             }
         });
@@ -488,15 +585,24 @@ impl App {
             }
         });
         ui.horizontal(|ui| {
-            ui.label(t("PortableApps folder"));
+            let folder_label = ui.label(t("PortableApps folder"));
             let mut dir = self.settings.portableapps_dir.clone();
-            let r = ui.add(
-                egui::TextEdit::singleline(&mut dir)
-                    .hint_text(t("Found automatically on any drive"))
-                    .desired_width(300.0),
+            let r = super::a11y::explain(
+                ui.add(
+                    egui::TextEdit::singleline(&mut dir)
+                        .hint_text(t("Found automatically on any drive"))
+                        .desired_width(300.0),
+                )
+                .labelled_by(folder_label.id),
+                &t("The folder your PortableApps platform is in; the official PortableApps.com Installer is looked for there. Found automatically on any drive when this is empty."),
             );
             let mut changed = r.lost_focus() && dir != self.settings.portableapps_dir;
-            if ui.button(t("Browse…")).clicked() {
+            if super::a11y::explain(
+                ui.button(t("Browse…")),
+                &t("Choose your PortableApps folder."),
+            )
+            .clicked()
+            {
                 if let Some(p) = pick_folder(&t("Choose your PortableApps folder")) {
                     dir = p.to_string_lossy().to_string();
                     changed = true;
@@ -526,7 +632,12 @@ impl App {
             if self.builder.work_dir.is_some() {
                 ui.add_space(4.0);
                 small_muted(ui, t("Follow the steps in the Windows Sandbox window. When the program is installed, start it once, set it up, close it and click OK in the sandbox. The sandbox closes by itself when the package is ready."));
-                if ui.button(t("Stop waiting")).clicked() {
+                if super::a11y::explain(
+                    ui.button(t("Stop waiting")),
+                    &t("Stops waiting for the sandbox. No package is made; close the Windows Sandbox window to throw the capture away."),
+                )
+                .clicked()
+                {
                     self.builder.work_dir = None;
                     self.builder.error = Some(t(
                         "Stopped. Close the Windows Sandbox window to discard it.",
@@ -536,7 +647,12 @@ impl App {
             if self.builder.waiting_for_user.load(Ordering::SeqCst) {
                 ui.add_space(6.0);
                 ui.label(t("When the installation has finished, start the program once, set it up the way you want it to start, and close it."));
-                if theme::primary_button(ui, t("Done: take the second snapshot")).clicked() {
+                if super::a11y::explain(
+                    theme::primary_button(ui, t("Done: take the second snapshot")),
+                    &t("Tells InstallScope the installation is finished and the program is set up the way you want, so it takes the second snapshot and builds the package."),
+                )
+                .clicked()
+                {
                     self.builder.host_done.store(true, Ordering::SeqCst);
                 }
             }
@@ -589,7 +705,12 @@ impl App {
             }
             ui.add_space(6.0);
             ui.horizontal_wrapped(|ui| {
-                if ui.button(t("Open folder")).clicked() {
+                if super::a11y::explain(
+                    ui.button(t("Open folder")),
+                    &t("Opens the finished package's folder in File Explorer."),
+                )
+                .clicked()
+                {
                     platform::shell_open(&dir.to_string_lossy());
                 }
                 if let Some(compactor) = self
@@ -598,30 +719,47 @@ impl App {
                     .as_ref()
                     .and_then(|tools| tools.app_compactor.as_ref())
                 {
-                    if ui
-                        .button(t("Open AppCompactor"))
-                        .on_hover_text(t("Launches AppCompactor; select this package there and test it after compression."))
-                        .clicked()
+                    if super::a11y::explain(
+                        ui.button(t("Open AppCompactor")),
+                        &t("Launches AppCompactor; select this package there and test it after compression."),
+                    )
+                    .clicked()
                     {
                         platform::shell_open(&compactor.to_string_lossy());
                     }
                 }
                 let launcher_ini = dir.join("App").join("AppInfo").join("Launcher").join(format!("{}.ini", pkg.app_id));
-                if ui.button(t("Edit Launcher settings")).clicked() {
+                if super::a11y::explain(
+                    ui.button(t("Edit Launcher settings")),
+                    &t("Opens the package's Launcher settings file so you can edit it. Afterwards, use Compile to rebuild the launcher and installer with your changes."),
+                )
+                .clicked()
+                {
                     platform::shell_open(&launcher_ini.to_string_lossy());
                 }
-                if ui.add(egui::Button::new(if self.builder.compiled.is_some() { t("Compile again") } else { t("Compile") }))
-                    .on_hover_text(t("Make the launcher and the .paf.exe installer again, for example after editing the Launcher settings."))
-                    .clicked()
+                if super::a11y::explain(
+                    ui.add(egui::Button::new(if self.builder.compiled.is_some() { t("Compile again") } else { t("Compile") })),
+                    &t("Make the launcher and the .paf.exe installer again, for example after editing the Launcher settings."),
+                )
+                .clicked()
                 {
                     self.start_compile(&ctx);
                 }
                 if let Some(log) = self.builder.log.clone() {
-                    if self.builder.on_this_pc && ui.button(tf("Remove {name} from this PC", &[("name", log.name.clone())])).clicked() {
+                    if self.builder.on_this_pc && super::a11y::explain(
+                        ui.button(tf("Remove {name} from this PC", &[("name", log.name.clone())])),
+                        &t("Opens the removal review for the program captured on this PC, using its recorded installation. Nothing is removed until you confirm there."),
+                    )
+                    .clicked() {
                         self.uninstall_from_log(&log);
                     }
                 }
-                if ui.button(t("Build another")).clicked() {
+                if super::a11y::explain(
+                    ui.button(t("Build another")),
+                    &t("Clears this result and goes back to the beginning to build another package. The finished package stays in its folder."),
+                )
+                .clicked()
+                {
                     self.builder.package = None;
                     self.builder.compiled = None;
                     self.builder.log = None;
@@ -633,16 +771,23 @@ impl App {
             });
         });
         ui.add_space(8.0);
-        egui::CollapsingHeader::new(t("Launcher settings"))
+        let launcher_hdr = egui::CollapsingHeader::new(t("Launcher settings"))
             .default_open(true)
             .show(ui, |ui| {
                 let mut text = pkg.launcher_ini.clone();
-                ui.add(
-                    egui::TextEdit::multiline(&mut text)
-                        .code_editor()
-                        .desired_width(f32::INFINITY)
-                        .interactive(true),
+                super::a11y::explain(
+                    ui.add(
+                        egui::TextEdit::multiline(&mut text)
+                            .code_editor()
+                            .desired_width(f32::INFINITY)
+                            .interactive(true),
+                    ),
+                    &t("The Launcher settings generated for this package, shown for reading. To change them, use Edit Launcher settings above, then Compile."),
                 );
             });
+        super::a11y::explain(
+            launcher_hdr.header_response,
+            &t("Show or hide the Launcher settings generated for this package."),
+        );
     }
 }
