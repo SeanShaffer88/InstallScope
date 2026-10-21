@@ -89,6 +89,10 @@ fn file(ui: &mut Ui, label: &str, value: &mut String, extensions: &[&str], help:
     }
 }
 impl Wizard {
+    pub(super) fn operation_active(&self) -> bool {
+        self.build_job.is_some() || self.prepare_job.is_some() || self.io_job.is_some()
+    }
+
     pub fn ui(&mut self, ui: &mut Ui) {
         self.poll_io();
         self.poll_preparation();
@@ -787,16 +791,17 @@ impl Wizard {
                     }
                     a11y::explain(ui.checkbox(&mut self.allow_custom_code,"I reviewed the custom NSIS code and permit it for this build"),"Permit execution of the listed custom build code for one attempt only. Presence detection is not a full script audit; review includes and referenced code yourself.");
                 }
-                // Enable after the official frontend lifecycle gate has passed.
-                let enabled = false
-                    && cfg!(windows)
-                    && (review.custom_code.is_empty() || self.allow_custom_code);
+                let enabled =
+                    cfg!(windows) && (review.custom_code.is_empty() || self.allow_custom_code);
                 if a11y::explain(ui.add_enabled(enabled,egui::Button::new("Build reviewed package")),"Run the two official processes shown above. They may show their own windows and modify the prepared working copy. Keep an invocation journal and available compiler logs in a new build folder; no fallback installer is used.").clicked() {
                     let review=review.clone();let allow=self.allow_custom_code;self.allow_custom_code=false;self.build_attempt=None;
                     let status=self.stage_status.clone();*status.lock().unwrap()="Rechecking prepared files before execution…".into();
                     self.build_job=Some(super::Job::spawn(ui.ctx(),move |progress|review.run(allow,&||progress.cancelled(),&|s|*status.lock().unwrap()=s.to_string()).map_err(|e|format!("{e:#}"))));
                 }
-                ui.label("Build execution is awaiting the official frontend lifecycle verification gate.");
+                ui.label("Official tools may show their own windows. Review their messages; a successful build still requires manual portability and redistribution checks.");
+                if !cfg!(windows) {
+                    ui.label("Build execution requires Windows.");
+                }
             }
         }
         if let Some(attempt) = &self.build_attempt {

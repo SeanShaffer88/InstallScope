@@ -1,6 +1,6 @@
 # Guided PortableApps.com package projects
 
-Status: **project planning, icon conversion, reviewed staging and official build review**.
+Status: **project persistence, icon conversion, reviewed staging and official Windows builds**.
 The regular PortableApps Forge page offers **Guided PAF project** alongside
 **Installation capture**. The wizard prepares files for the official tools. It is
 not a complete installer builder and introduces no competing package format.
@@ -99,7 +99,7 @@ without following that locator automatically. Use **Reconnect prepared files**
 to explicitly verify a referenced preparation, or **Locate prepared project.json**
 if the folder moved. This preserves answers and unsaved-change tracking. These checks do not cover unrecorded extra files, icons, host writes or
 portability, and the companion report is not a signed authenticity record.
-Build review can be resumed after reconnecting the original preparation. Official execution remains gated pending the lifecycle result.
+Build review can be resumed after reconnecting the original preparation. Reviewed execution is available on Windows.
 
 Filesystem checks, hashing, conversion, copying and snapshot I/O use workers.
 Mapping rows are rendered on demand instead of allocating/rendering the entire
@@ -146,10 +146,9 @@ custom NSIS entry points need explicit per-attempt consent. The legacy source-bu
 API remains for development compatibility, not a desktop fallback.
 
 This wizard still does not extract archives or export a complete final validation
-report. Build review is connected; execution remains gated pending official
-frontend lifecycle verification. Complete language-value checking,
-notice-file verification, file/registry redirection assistance and current-tool
-lifecycle verification also remain. Static PE checks establish header signatures,
+report. Reviewed Windows execution and a partial validation report are available.
+Complete language-value checking,
+notice-file verification and file/registry redirection assistance also remain. Static PE checks establish header signatures,
 not authenticity, a complete loader validation or runtime portability.
 
 Core tests cover persistence, injection, declarations, generated metadata, layout,
@@ -219,34 +218,30 @@ capture warnings. The official log paths are shared by that tool installation;
 close concurrent builds before using it. No completeness or authenticity claim
 is made for these logs. Partial output and earlier attempts are retained.
 
-### Current integration checkpoint
+### Verified integration baseline
 
-The verified 3.9.22/2.2.9 CI attempt reached the official Generator but failed
-at `!include LangFile.nsh`, despite that file being present in the distribution.
-The logged script path carried a verbatim Windows prefix introduced by process
-canonicalization. The adapter now uses conventional Windows spellings for short,
-ordinary paths only when they resolve to the same canonical path; special/long
-paths retain their existing spelling. Official source/binaries are unchanged.
-The next real-tool run confirmed that launcher generation succeeds with the
-corrected path handling and reaches Installer 3.9.22. That run then stopped for
-missing homepage metadata in the old hand-written fixture. The fixture now uses
-the wizard's required metadata and complete staging/build-session path; the guided staging/build-session run subsequently built a real installer and
-retained both official compiler logs with a passing partial static report.
-Its silent-install fixture then timed out. Inspection of Installer 3.9.22
-`App/installer/PortableApps.comInstaller.nsi` and its bundled
-`App/nsis/Include/FileFunc.nsh` shows raw `/DESTINATION=` parsing and concatenation
-of the base directory with AppID. The test-only helper now supplies NSIS value
-quoting and a trailing directory separator using Rust `CommandExt::raw_arg`,
-without a shell. It remains inside the supervised Job Object. This is a test
-invocation change, not an official-script modification or product CLI feature.
-The verified source resets normal mode in `.onInit`; its `/SILENT=true` handling
-is conditional on a genuine running PortableApps.com Platform. The standalone
-fixture therefore operates the normal English installer wizard: it advances the
-known welcome page, verifies the destination before Install, and finishes only
-after expected files exist. PID/executable checks restrict actions to its own
-generated installer; unexpected dialogs are reported and never acknowledged.
-No Platform identity, official receipt or silent-mode eligibility is fabricated.
-The install/launch/upgrade result remains pending.
+[Windows lifecycle run 39595073152](https://github.com/SeanShaffer88/SetupSweep/actions/runs/39595073152)
+passed with official Launcher 2.2.9 and Installer 3.9.22. The test exercises project
+staging and reconnect, command review, both official builds, two retained compiler
+logs, partial validation, the generated installer's wizard, portable launch, folder
+relocation and an upgrade preserving `Data` while replacing application files.
+The distribution hashes are checked before the fixture uses the tools.
+
+This is Windows Server CI evidence for the controlled test application. It does
+not verify SetupSweep's desktop UI, accessibility, clean Windows 11 accounts,
+cross-drive moves or arbitrary applications. It is not official certification.
+
+The adapter resolves ordinary short Windows tool paths to conventional spellings
+only when they resolve to the same canonical path; special/long paths retain their
+existing spelling. This avoids the inspected NSIS verbatim-prefix include failure
+without modifying official source or binaries.
+
+Installer 3.9.22 `App/installer/PortableApps.comInstaller.nsi` resets normal mode
+in `.onInit`; its `/SILENT=true` handling requires a genuine running Platform.
+The fixture therefore operates the normal English installer wizard, checks its
+process identity and destination, and reports unexpected dialogs without dismissing
+them. It does not fabricate Platform identity or official approval. This UI driver
+is developer-only test code, not a product automation feature.
 
 Build attempts also write `validation-report.json` with separate blocking errors,
 log-capture warnings and user-reported manual observations. It records the output
@@ -256,4 +251,4 @@ are not covered. `validation_complete`, `portability_verified` and
 `official_approval` remain false. A failed or cancelled report write is a visible
 warning and never overwrites an earlier attempt. Windows integration now exercises
 project staging/reconnect, build review, both official tools, log/report retention,
-install/launch, relocation and upgrade; passing evidence must still be collected.
+install/launch, relocation and upgrade, with passing evidence linked above.

@@ -270,7 +270,7 @@ impl App {
                             theme::warning_banner(ui, e);
                             ui.add_space(6.0);
                         }
-                        if !self.builder.busy() {
+                        if !self.builder.busy() && !self.builder.wizard.operation_active() {
                             ui.horizontal(|ui| {
                                 super::a11y::explain(ui.selectable_value(&mut self.builder.show_capture, false, "Guided PAF project"), "Plan and save a project from existing application files, with source-linked configuration previews.");
                                 super::a11y::explain(ui.selectable_value(&mut self.builder.show_capture, true, "Installation capture"), "Use the existing installation capture workflow. This can install software on this PC or in Windows Sandbox.");
@@ -734,7 +734,7 @@ impl App {
             ui.add_space(6.0);
             self.ui_builder_tools(ui, &ctx);
             ui.label(RichText::new(t("Build command review")).strong());
-            small_muted(ui, t("Official-tool integration is awaiting lifecycle verification. Review the tool windows: full compiler-output capture is not connected yet."));
+            small_muted(ui, t("Review the official tool windows. This capture workflow does not retain compiler-log copies; the guided PAF workflow does."));
             if let Some(tools) = &self.builder.tools {
                 for (label, tool) in [
                     ("Launcher Generator", &tools.launcher_generator),

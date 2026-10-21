@@ -508,8 +508,9 @@ are kept beside the prepared package.
 Opening the original preparation snapshot can reconnect its folder after checking
 recorded application hashes, generated configurations and the completion marker.
 Review exact official build commands before execution. Build-attempt support keeps
-an invocation journal and available changed compiler logs; execution remains gated
-pending the official frontend lifecycle result. Archive import and a complete
+an invocation journal, available changed compiler logs and a partial validation
+report. Reviewed Windows execution is enabled; the official-tool lifecycle test
+passes install, launch, relocation and upgrade preserving Data. Archive import and a complete
 final validation/export flow remain pending. The separate capture workflow
 requires the official packaging tools. See
 [wizard status, references and limits](docs/paf-wizard.md).

@@ -105,7 +105,8 @@ caller-supplied values.
 InstallScope's capture workflow exposes **Cancel build**, requires both official
 frontends, and retains working files on failure. Its newer guided workflow adds
 project persistence, reviewed staging, official command review and retained build
-attempts. Execution there remains gated on its real-tool lifecycle result. Each
+attempts. Reviewed Windows execution is enabled after a passing real-tool lifecycle
+test with official Launcher 2.2.9 and Installer 3.9.22. Each
 attempt distinguishes an invocation journal, observed compiler-log copies and a
 partial validation report. See the host's [current workflow status](../../docs/paf-wizard.md).
 Legacy source-compiler APIs remain separate development compatibility paths;
