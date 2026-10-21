@@ -14,6 +14,7 @@ pub enum Control {
     AdvertisingId,
     TailoredExperiences,
     TypingPersonalization,
+    RecallSnapshots,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -35,9 +36,11 @@ pub struct Definition {
     pub value_names: &'static [&'static str],
     pub limited_value: u32,
     pub requires_admin: bool,
+    /// A policy with irreversible effects beyond the registry value itself.
+    pub warning: Option<&'static str>,
 }
 
-pub const CONTROLS: [Definition; 3] = [
+pub const CONTROLS: [Definition; 4] = [
     Definition {
         control: Control::AdvertisingId,
         title: "Advertising ID",
@@ -47,6 +50,7 @@ pub const CONTROLS: [Definition; 3] = [
         value_names: &["DisabledByGroupPolicy"],
         limited_value: 1,
         requires_admin: true,
+        warning: None,
     },
     Definition {
         control: Control::TailoredExperiences,
@@ -57,6 +61,7 @@ pub const CONTROLS: [Definition; 3] = [
         value_names: &["DisableTailoredExperiencesWithDiagnosticData"],
         limited_value: 1,
         requires_admin: false,
+        warning: None,
     },
     Definition {
         control: Control::TypingPersonalization,
@@ -67,8 +72,64 @@ pub const CONTROLS: [Definition; 3] = [
         value_names: &["RestrictImplicitTextCollection", "RestrictImplicitInkCollection"],
         limited_value: 1,
         requires_admin: false,
+        warning: None,
+    },
+    Definition {
+        control: Control::RecallSnapshots,
+        title: "Recall screen snapshots",
+        effect: "Prevents Windows Recall from saving screen snapshots for this account.",
+        tradeoff: "Recall cannot search past screen activity while snapshot saving is disabled.",
+        key: "HKCU\\Software\\Policies\\Microsoft\\Windows\\WindowsAI",
+        value_names: &["DisableAIDataAnalysis"],
+        limited_value: 1,
+        requires_admin: false,
+        warning: Some("Enabling this policy deletes previously saved Recall snapshots. InstallScope backs up the policy value, not snapshot contents; clearing the policy cannot restore deleted snapshots."),
     },
 ];
+
+const WINDOWS_VERSION_KEY: &str = "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion";
+const RECALL_MIN_BUILD: u32 = 26_100;
+const RECALL_MIN_UBR: u32 = 3_915;
+
+/// The Recall snapshot policy is documented for supported editions on
+/// Windows 11 24H2 build 26100.3915 and later. Unknown profiles fail closed.
+pub fn recall_policy_supported(reg: &dyn Registry) -> bool {
+    let Some(version) = reg.read_key(WINDOWS_VERSION_KEY) else {
+        return false;
+    };
+    let Some(build) = version
+        .get("CurrentBuildNumber")
+        .and_then(RegValue::as_string)
+        .and_then(|value| value.parse::<u32>().ok())
+    else {
+        return false;
+    };
+    let Some(ubr) = version.get("UBR").and_then(RegValue::as_u32) else {
+        return false;
+    };
+    let Some(edition) = version.get("EditionID").and_then(RegValue::as_string) else {
+        return false;
+    };
+    let edition = edition.trim().to_ascii_lowercase();
+    let supported_edition = matches!(
+        edition.as_str(),
+        "professional"
+            | "professionaln"
+            | "professionalworkstation"
+            | "professionalworkstationn"
+            | "professionaleducation"
+            | "professionaleducationn"
+            | "enterprise"
+            | "enterprises"
+            | "education"
+            | "educationn"
+            | "iotenterprise"
+            | "iotenterprises"
+    );
+    let supported_build =
+        build > RECALL_MIN_BUILD || (build == RECALL_MIN_BUILD && ubr >= RECALL_MIN_UBR);
+    supported_build && supported_edition
+}
 
 impl Definition {
     pub fn state(&self, reg: &dyn Registry) -> State {
@@ -122,6 +183,9 @@ pub fn apply_with_backup(
     else {
         anyhow::bail!("privacy setting is not present in the reviewed catalog");
     };
+    if limit && control == Control::RecallSnapshots && !recall_policy_supported(reg) {
+        anyhow::bail!("Recall snapshot policy is unsupported on this Windows version or edition");
+    }
     let state = definition.state(reg);
     if limit && state == State::Limited {
         return Ok(false);
@@ -195,6 +259,64 @@ mod tests {
             .all(|item| item.key.starts_with("HKCU\\")));
         assert!(CONTROLS[1..].iter().all(|item| !item.requires_admin));
         assert_eq!(CONTROLS[2].value_names.len(), 2);
+        assert_eq!(CONTROLS[3].control, Control::RecallSnapshots);
+        assert!(CONTROLS[3].warning.is_some());
+    }
+
+    fn windows_version(build: &str, ubr: u32, edition: &str) -> KeyData {
+        KeyData::new(WINDOWS_VERSION_KEY)
+            .with(RegValue::string("CurrentBuildNumber", build))
+            .with(RegValue::dword("UBR", ubr))
+            .with(RegValue::string("EditionID", edition))
+    }
+
+    #[test]
+    fn recall_policy_is_gated_by_documented_build_update_and_supported_edition() {
+        let reg = MemRegistry::new();
+        assert!(!recall_policy_supported(&reg));
+
+        reg.put(windows_version("26100", 3914, "Professional"));
+        assert!(!recall_policy_supported(&reg));
+        reg.put(windows_version("26100", 3915, "Core"));
+        assert!(!recall_policy_supported(&reg));
+        reg.put(windows_version("26100", 3915, "Professional"));
+        assert!(recall_policy_supported(&reg));
+        reg.put(windows_version("26200", 0, "Education"));
+        assert!(recall_policy_supported(&reg));
+        reg.put(windows_version("not-a-build", 5000, "Enterprise"));
+        assert!(!recall_policy_supported(&reg));
+    }
+
+    #[test]
+    fn recall_snapshot_policy_is_backed_up_and_refuses_unsupported_systems() {
+        let tmp = crate::util::tempdir().unwrap();
+        let backups = tmp.path().join("backups");
+        let reg = MemRegistry::new();
+        let definition = &CONTROLS[3];
+        assert!(apply_with_backup(&reg, &backups, definition.control, true).is_err());
+        assert!(!reg.exists(definition.key));
+        assert!(!backups.exists());
+
+        reg.put(windows_version("26100", 3915, "Professional"));
+        reg.set_value(
+            definition.key,
+            &RegValue::dword(definition.value_names[0], 0),
+        )
+        .unwrap();
+        assert!(apply_with_backup(&reg, &backups, definition.control, true).unwrap());
+        assert_eq!(definition.state(&reg), State::Limited);
+
+        let id = std::fs::read_dir(&backups)
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .file_name()
+            .to_string_lossy()
+            .to_string();
+        let restored = crate::backup::restore_backup(&backups, &id, &reg).unwrap();
+        assert!(restored.iter().all(|row| row.ok));
+        assert_eq!(definition.state(&reg), State::Allowed);
     }
 
     #[test]
