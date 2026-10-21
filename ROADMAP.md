@@ -128,11 +128,11 @@ states what has shipped and what is still open.
   wired to both the command line (`installscope gatekeeper`) and an
   **Autostart Gatekeeper** page, where each new or changed Run/RunOnce entry or
   Startup-folder shortcut waits for an explicit *Keep* or *Remove* (backed up
-  first). An optional scan after a Monitor-page installation is implemented;
+  first). The weekly, non-modal dashboard digest and optional scan after a
+  Monitor-page installation are implemented;
   CLI installs and the separate automatic-monitor service are not covered.
-  Remaining work: a calm periodic digest (default weekly, never modal) instead
-  of only the navigation badge, extending detection to services and scheduled
-  tasks, and auto-disabling only high-confidence bloat — everything reversible
+  Remaining work: extending detection to services and scheduled tasks, and
+  auto-disabling only high-confidence bloat — everything reversible
   and every attribution labeled with its evidence level.
 - **App Rewind — per-program time travel** — for monitored or analyzed
   programs, keep a recorded state history (at install and at updates); rewind
