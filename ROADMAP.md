@@ -1,3 +1,6 @@
+Warning: truncated output (original token count: 5048)
+Total output lines: 276
+
 # Roadmap
 
 Planned for future releases, roughly in priority order. Vote or comment on the
@@ -118,9 +121,9 @@ states what has shipped and what is still open.
   beside it, and running the same pass after cleaning operations (today it
   runs on removal plans).
 - **Slowdown Detective** — history capture, CLI reports and a read-only GUI now
-  cover recorded installs, updates, removals and autostart changes, with inclusive
-  date filters and current startup measurements where available. Remaining:
-  before/after measurements, and contextual
+  cover recorded installs, updates, removals, autostart changes, and observed
+  service and scheduled-task configuration changes, with inclusive date filters
+  and current startup measurements where available. Remaining: before/after measurements and contextual
   Delay/Disable/Uninstall actions through reviewed safety workflows. Timing alone
   must never be presented as proof of causation.
 - **Autostart Gatekeeper** — opt-in (Advanced) review of the programs that
@@ -147,9 +150,7 @@ states what has shipped and what is still open.
 **Product quality**
 - **Complete, production-ready tools** — do not ship placeholders as finished
   features. Each tool must cover its end-to-end workflow, input and permission
-  checks, progress and cancellation where applicable, actionable failures,
-  recovery or cleanup, accessibility, localization, and documented supported
-  configurations. Verify normal use and failure paths before enabling it in the
+  checks,…48 tokens truncated…aths before enabling it in the
   interface; keep unfinished tools visibly marked as planned.
 - **Contextual guidance throughout** — provide concise, useful, localized
   tooltips for interactive controls and settings, explaining their effect,
