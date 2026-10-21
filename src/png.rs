@@ -122,7 +122,7 @@ pub fn decode(bytes: &[u8]) -> io::Result<Rgba> {
         }
         at = end;
     }
-    if !seen_header || idat.len() < 2 {
+    if !seen_header || idat.len() < 6 {
         return Err(bad("the PNG image has no data"));
     }
     if color == 3 {
@@ -156,6 +156,10 @@ pub fn decode(bytes: &[u8]) -> io::Result<Rgba> {
         .read_to_end(&mut raw)?;
     if raw.len() != expected {
         return Err(bad("the PNG image data has the wrong size"));
+    }
+    let checksum = u32::from_be_bytes(idat[idat.len() - 4..].try_into().unwrap());
+    if adler32(&raw) != checksum {
+        return Err(bad("the PNG image data is damaged (Adler-32 mismatch)"));
     }
     // Undo the filters in place.
     let mut prev_start: Option<usize> = None;

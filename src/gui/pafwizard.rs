@@ -3,7 +3,12 @@
 use super::{a11y, theme, widgets::*};
 use egui::{RichText, Ui};
 use installscope_core::pafproject::{Component, Finding, Project, FORMAT_SOURCE, STEPS};
+use installscope_core::{
+    pafassets,
+    pafstage::{Prepared, StagePlan},
+};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 type ProjectIo = Result<(PathBuf, Project), String>;
 
@@ -26,6 +31,14 @@ pub struct Wizard {
     allow_close: bool,
     check_job: Option<super::Job<(Project, Vec<Finding>)>>,
     checked: Option<(Project, Vec<Finding>)>,
+    icon_job: Option<super::Job<Result<(String, pafassets::IconAssets), String>>>,
+    icon_preview: Option<(String, pafassets::IconAssets, egui::TextureHandle)>,
+    review_job: Option<super::Job<Result<StagePlan, String>>>,
+    plan: Option<StagePlan>,
+    plan_texture: Option<egui::TextureHandle>,
+    prepare_job: Option<super::Job<Result<Prepared, String>>>,
+    prepared: Option<Prepared>,
+    stage_status: Arc<Mutex<String>>,
 }
 fn text(ui: &mut Ui, label: &str, value: &mut String, explanation: &str) {
     let label = ui.label(label);
@@ -71,6 +84,39 @@ fn file(ui: &mut Ui, label: &str, value: &mut String, extensions: &[&str], help:
 impl Wizard {
     pub fn ui(&mut self, ui: &mut Ui) {
         self.poll_io();
+        self.poll_preparation();
+        if let Some(result) = self.icon_job.as_ref().and_then(|j| j.poll()) {
+            self.icon_job = None;
+            match result {
+                Ok((path, icon)) => self.set_icon(ui.ctx(), path, icon),
+                Err(e) => self.error = Some(e),
+            }
+        }
+        if let Some(result) = self.review_job.as_ref().and_then(|j| j.poll()) {
+            self.review_job = None;
+            match result {
+                Ok(plan) => {
+                    self.set_icon(ui.ctx(), plan.project().icon.clone(), plan.icon.clone());
+                    self.plan_texture = self
+                        .icon_preview
+                        .as_ref()
+                        .map(|(_, _, texture)| texture.clone());
+                    self.plan = Some(plan);
+                    self.error = None;
+                }
+                Err(e) => self.error = Some(e),
+            }
+        }
+        if let Some(job) = &self.prepare_job {
+            ui.heading("Preparing a new package folder");
+            ui.spinner();
+            ui.label(self.stage_status.lock().unwrap().as_str());
+            ui.label("Original sources are untouched. Cancelling can leave a partial new folder for inspection; it is not a completed package.");
+            if a11y::explain(ui.add_enabled(!job.progress.cancelled(),egui::Button::new("Cancel preparation")),"Stop between files or buffer operations. Partial new output is retained and the originals stay unchanged.").clicked(){job.cancel();}
+            ui.ctx()
+                .request_repaint_after(std::time::Duration::from_millis(100));
+            return;
+        }
         if let Some(result) = self.check_job.as_ref().and_then(|j| j.poll()) {
             self.check_job = None;
             self.checked = Some(result);
@@ -82,7 +128,7 @@ impl Wizard {
             return;
         }
         let ctx = ui.ctx().clone();
-        ui.label("Prepare a saved project and review configuration drafts. Package assembly, icon conversion and the official build adapter are not connected in this revision. No source files are copied, edited or executed.");
+        ui.label("Plan and review a PortableApps.com package, convert its icon, and prepare files in a new workspace folder. Original sources are not edited or executed. Official build/log capture and installer-artwork customization are still pending in this wizard.");
         ui.horizontal_wrapped(|ui| {
             if a11y::explain(ui.button("New project"),"Start a new project with unanswered permissions. Unsaved answers require confirmation before replacement.").clicked() {
                 if self.project!=self.saved {self.pending=Some(PendingProject::New);} else {self.reset();}
@@ -143,10 +189,10 @@ impl Wizard {
                     ui.label("Save a snapshot at any step. Open it later to resume. Projects can contain local paths and notes; review them before sharing.");
                 }
                 1 => {
-                    folder(ui,"Source folder",&mut p.source,"Choose the application's existing files. They are only referenced here; this version does not copy or extract them.");
+                    folder(ui,"Source folder",&mut p.source,"Choose the application files folder. Its contents will be mapped beneath the first subfolder in Program executable, shown in the review plan. Preparation copies files only after your explicit action; originals remain unchanged.");
                     ui.label("Planned layout: App holds application files and AppInfo metadata; Data holds user settings; Other holds supporting help and source material. Review file placement before any future copy operation.");
                     ui.hyperlink_to("Official directory layout", FORMAT_SOURCE);
-                    ui.label("Archive import is not connected yet. Extract trusted archives into a separate folder and select that folder. Do not run extracted scripts to inspect them.");
+                    ui.label("Archive import is not connected yet. Extract trusted archives into a separate folder and select that folder. Do not run extracted scripts to inspect them. Staging is limited to 100,000 entries and 64 GiB; links and special files are rejected.");
                 }
                 2 => {
                     text(ui,"Package display name",&mut p.name,"Enter the actual portable package name. The wizard does not append Portable or invent a publisher.");
@@ -189,7 +235,7 @@ impl Wizard {
                     ui.label("Record what must be tested on a clean account or isolated machine. Avoid adding cleanup rules until you understand which files belong to this application and how existing local settings will be restored.");
                 }
                 4 => {
-                    text(ui,"Program executable relative to App",&mut p.program,"For App\\Example\\example.exe, enter Example\\example.exe. Absolute paths and parent traversal are rejected.");
+                    text(ui,"Program executable relative to App",&mut p.program,"For App\\Example\\example.exe, enter Example\\example.exe. Your source folder must contain example.exe. Nested paths within Example are preserved. An application subfolder is required for staging; absolute paths and parent traversal are rejected.");
                     text(ui,"Command-line arguments (optional)",&mut p.arguments,"Use only arguments supported by the application. Review quoting against PAL documentation. No arguments are executed in this preview.");
                     ui.hyperlink_to(
                         "Official Launcher settings",
@@ -198,7 +244,20 @@ impl Wizard {
                     ui.label("The draft includes only the executable and optional arguments. File moves, registry handling and custom code require separate review; notes are never converted into cleanup commands automatically.");
                 }
                 5 => {
-                    file(ui,"App icon",&mut p.icon,&["ico"],"Choose an icon you have rights to use. The selected file is recorded, not modified. Full icon validation and variant generation are still pending.");
+                    file(ui,"App icon PNG",&mut p.icon,&["png"],"Choose a square static PNG from 256 to 4096 pixels, no larger than 16 MiB, that you have rights to use. Original artwork is not changed.");
+                    if a11y::explain(ui.add_enabled(self.icon_job.is_none() && self.review_job.is_none(),egui::Button::new("Convert and preview icon")),"Decode and validate the selected PNG, then generate the documented icon variants in memory. No files are written yet.").clicked() {
+                        let path=p.icon.clone();self.icon_job=Some(super::Job::spawn(&ctx,move |progress|pafassets::import(std::path::Path::new(&path),&||progress.cancelled()).map(|icon|(path,icon)).map_err(|e|format!("{e:#}"))));
+                    }
+                    if self.icon_job.is_some() {
+                        ui.spinner();
+                        ui.label("Converting icon…");
+                    }
+                    if let Some((path, icon, texture)) = &self.icon_preview {
+                        if path == &p.icon {
+                            ui.image((texture.id(), egui::vec2(128.0, 128.0)));
+                            ui.label(format!("128×128 preview from {}×{} PNG. Output: PNG 16, 32, 75, 128, 256; ICO 16/32/48 at 8-bit and 32-bit, plus PNG 256. The 8-bit compatibility frames use a reduced palette and binary transparency.",icon.original_size,icon.original_size));
+                        }
+                    }
                     ui.label("App icon replacement is documented. Arbitrary artwork in the installer's left panel remains unverified for the official Installer; no unsupported setting is generated.");
                     ui.hyperlink_to("Official icon requirements", FORMAT_SOURCE);
                 }
@@ -250,7 +309,70 @@ impl Wizard {
                             ui.label(e.to_string());
                         }
                     }
-                    ui.label("No build command is offered until source assembly, asset checks, log capture and the current official-tool adapter are implemented and verified. There is no fallback installer in this workflow.");
+                    ui.separator();
+                    if a11y::explain(ui.add_enabled(self.review_job.is_none() && self.icon_job.is_none(),egui::Button::new("Review source mapping and icon")),"Read the selected application files and hash their contents, validate names/layout, convert the icon and create a proposed output path. No files are copied or executed. Large projects can take time.").clicked() {
+                        let project=p.clone();let status=self.stage_status.clone();
+                        self.review_job=Some(super::Job::spawn(&ctx,move |progress|StagePlan::create(&project,&||progress.cancelled(),&|s|*status.lock().unwrap()=s.to_string()).map_err(|e|format!("{e:#}"))));
+                    }
+                    if let Some(job) = &self.review_job {
+                        ui.spinner();
+                        ui.label(self.stage_status.lock().unwrap().as_str());
+                        if a11y::explain(ui.button("Cancel review"),"Stop hashing/converting the source plan. No package files have been written.").clicked(){job.cancel();}
+                        ui.ctx()
+                            .request_repaint_after(std::time::Duration::from_millis(100));
+                    }
+                    if let Some(plan) = &self.plan {
+                        if plan.project() == p {
+                            ui.label(format!(
+                                "{} application files, {} bytes. Proposed new output: {}",
+                                plan.file_count(),
+                                plan.total_bytes,
+                                plan.output().display()
+                            ));
+                            ui.label("Review all file mappings and the configuration previews above. Every source entry is copied beneath App; empty Data and DefaultData folders, help.html, converted icons and a separate project snapshot are also created. No official Installer receipt or certification is generated.");
+                            if let Some(texture) = &self.plan_texture {
+                                ui.image((texture.id(), egui::vec2(128.0, 128.0)));
+                                ui.label("Reviewed appicon_128.png preview from this exact plan");
+                            }
+                            for (name, bytes) in &plan.icon.files {
+                                ui.label(format!(
+                                    "Generated: App/AppInfo/{name} ({} bytes)",
+                                    bytes.len()
+                                ));
+                            }
+                            egui::ScrollArea::both()
+                                .id_salt("paf-staging-mapping")
+                                .max_height(220.0)
+                                .show_rows(ui, 20.0, plan.entry_count(), |ui, range| {
+                                    for i in range {
+                                        if let Some((from, to, bytes)) = plan.mapping(i) {
+                                            ui.add(
+                                                egui::Label::new(format!(
+                                                    "{} → {} ({bytes} bytes)",
+                                                    from.display(),
+                                                    to.display()
+                                                ))
+                                                .wrap_mode(egui::TextWrapMode::Extend),
+                                            );
+                                        }
+                                    }
+                                });
+                            let already = self
+                                .prepared
+                                .as_ref()
+                                .is_some_and(|x| x.package.parent() == Some(plan.output()));
+                            if a11y::explain(ui.add_enabled(!already,egui::Button::new("Prepare reviewed files in the new folder")),"Create exactly the new output folder shown above. Copy the reviewed source contents, write draft configurations and icons, and save a project snapshot. No source overwrites, downloads or program execution occur. Partial output is retained on cancellation/failure.").clicked() {
+                                let plan=plan.clone();let status=self.stage_status.clone();self.error=None;
+                                self.prepare_job=Some(super::Job::spawn(&ctx,move |progress|plan.prepare(&||progress.cancelled(),&|s|*status.lock().unwrap()=s.to_string()).map_err(|e|format!("{e:#}"))));
+                            }
+                            if already {
+                                ui.label("This plan was prepared. Create a new review plan to prepare another copy.");
+                            }
+                        } else {
+                            ui.label("Answers changed after this plan. Create a new review plan before copying files.");
+                        }
+                    }
+                    ui.label("Official build execution and compiler log capture are not connected to this wizard yet. There is no fallback installer.");
                 }
                 _ => {
                     ui.label("Manual test record. Tick only tests you actually performed on the built package; this wizard does not run them yet.");
@@ -268,10 +390,14 @@ impl Wizard {
                             p.tests.retain(|s|s!=item);if done {p.tests.push(item.to_string());}
                         }
                     }
-                    ui.label("Save a project snapshot to retain the drafts, notes and test record. An installable package and validation report are not exported in this revision.");
+                    ui.label("Save a project snapshot to retain drafts, notes and test records. Prepared folders are not installable artifacts; build and testing remain separate. An installable package and validation report are not exported yet.");
                 }
             }
         });
+        if self.prepare_job.is_some() {
+            ui.ctx().request_repaint();
+            return;
+        }
         ui.separator();
         if a11y::explain(ui.add_enabled(self.check_job.is_none(),egui::Button::new("Check folders and tools")),"Check whether the selected files and folders are accessible and the source and workspace overlap. This runs in the background and does not execute tools or validate their publisher.").clicked() {
             let project=self.project.clone();
@@ -291,6 +417,25 @@ impl Wizard {
                 }
             } else {
                 small_muted(ui,"Answers changed after the last path check. Check again before using these paths.");
+            }
+        }
+        if let Some(prepared) = &self.prepared {
+            ui.label(RichText::new("Prepared files — build and testing still required").strong());
+            ui.label(format!(
+                "{} application source files, {} source bytes: {}",
+                prepared.files,
+                prepared.bytes,
+                prepared.package.display()
+            ));
+            ui.label(format!("Saved project: {}", prepared.record.display()));
+            ui.label(format!("Preparation report: {}", prepared.report.display()));
+            if a11y::explain(
+                ui.button("Open prepared folder"),
+                "Open the new staging folder for review. No launcher or installer is run.",
+            )
+            .clicked()
+            {
+                installscope_core::platform::shell_open(&prepared.package.to_string_lossy());
             }
         }
         let findings = self.project.findings();
@@ -327,16 +472,65 @@ impl Wizard {
         self.project = Project::default();
         self.saved = self.project.clone();
         self.path = None;
+        if let Some(job) = &self.review_job {
+            job.cancel();
+        }
+        self.review_job = None;
+        if let Some(job) = &self.icon_job {
+            job.cancel();
+        }
+        self.icon_job = None;
+        self.plan = None;
+        self.plan_texture = None;
+        self.prepared = None;
+        self.icon_preview = None;
         self.pending = None;
         self.checked = None;
         self.error = None;
         self.message = "New project. Permissions are unanswered.".into();
+    }
+    fn set_icon(&mut self, ctx: &egui::Context, path: String, icon: pafassets::IconAssets) {
+        let image = egui::ColorImage::from_rgba_unmultiplied(
+            [icon.preview.width as usize, icon.preview.height as usize],
+            &icon.preview.pixels,
+        );
+        let texture = ctx.load_texture("paf-project-app-icon", image, egui::TextureOptions::LINEAR);
+        self.icon_preview = Some((path, icon, texture));
+    }
+    fn poll_preparation(&mut self) {
+        if let Some(result) = self.prepare_job.as_ref().and_then(|j| j.poll()) {
+            self.prepare_job = None;
+            match result {
+                Ok(output) => {
+                    self.path = Some(output.record.clone());
+                    self.saved = self.project.clone();
+                    self.message="Files prepared in a new folder. Original sources are intact; build and testing remain required.".into();
+                    self.prepared = Some(output);
+                    self.error = None;
+                }
+                Err(e) => self.error = Some(e),
+            }
+        }
     }
     fn poll_io(&mut self) {
         if let Some(result) = self.io_job.as_ref().and_then(|j| j.poll()) {
             self.io_job = None;
             match result {
                 Ok((path, project)) => {
+                    if self.project != project {
+                        if let Some(job) = &self.review_job {
+                            job.cancel();
+                        }
+                        self.review_job = None;
+                        if let Some(job) = &self.icon_job {
+                            job.cancel();
+                        }
+                        self.icon_job = None;
+                        self.plan = None;
+                        self.plan_texture = None;
+                        self.prepared = None;
+                        self.icon_preview = None;
+                    }
                     self.saved = project.clone();
                     self.project = project;
                     self.path = Some(path);
@@ -351,9 +545,10 @@ impl Wizard {
     }
     pub fn guard_close(&mut self, ctx: &egui::Context) {
         self.poll_io();
+        self.poll_preparation();
         if ctx.input(|i| i.viewport().close_requested())
             && !self.allow_close
-            && (self.project != self.saved || self.io_job.is_some())
+            && (self.project != self.saved || self.io_job.is_some() || self.prepare_job.is_some())
         {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
             self.confirm_close = true;
@@ -361,9 +556,9 @@ impl Wizard {
         if self.confirm_close {
             egui::Window::new("Unsaved package project").collapsible(false).resizable(false).show(ctx,|ui| {
                 ui.label("The package project has unsaved answers. Keep working and save a snapshot, or close and discard the in-memory changes. Saved files are unaffected.");
-                if self.io_job.is_some() { ui.label("A project read/save is still finishing. Wait for it before closing."); }
+                if self.io_job.is_some() || self.prepare_job.is_some() { ui.label("A project read/save or preparation is still finishing. Wait for it before closing; preparation can be cancelled from the wizard."); }
                 if a11y::explain(ui.button("Keep working"),"Return to InstallScope and retain all answers. Use Save snapshot in Guided PAF project to save them.").clicked() {self.confirm_close=false;}
-                if a11y::explain(ui.add_enabled(self.io_job.is_none(),egui::Button::new("Close and discard unsaved answers")),"Close InstallScope and discard the unsaved project answers. Existing project snapshots and original application files remain unchanged.").clicked() {
+                if a11y::explain(ui.add_enabled(self.io_job.is_none() && self.prepare_job.is_none(),egui::Button::new("Close and discard unsaved answers")),"Close InstallScope and discard the unsaved project answers. Existing project snapshots and original application files remain unchanged.").clicked() {
                     self.allow_close=true;self.confirm_close=false;ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             });

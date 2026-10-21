@@ -445,12 +445,18 @@ Already shipped features are what's documented above. Planned work — **not ava
 
 ### Guided PAF project planning
 
-The PortableApps Forge page now includes **Guided PAF project**: ten planning
-screens with save/reopen snapshots, explicit license declarations, a component
-inventory, source-linked findings and metadata/launcher configuration previews.
-This is a planning foundation: package assembly, icon conversion, official-tool
-execution and artifact/report export are not connected yet. The separate existing
-installation-capture workflow remains available. See [wizard status and limits](docs/paf-wizard.md).
+The PortableApps Forge page includes **Guided PAF project**: ten screens with
+save/reopen snapshots, explicit license declarations, a component inventory,
+source-linked findings and configuration previews. Import a square PNG to preview
+and generate the package icons, then review file mappings before copying into a
+new workspace folder. Source files stay untouched; cancellation or changed inputs
+leave clearly reported incomplete output. A project snapshot and source-hash report
+are kept beside the prepared package.
+
+Official-tool execution/log capture, archive import, prepared-folder reconnection
+on reopen and installable artifact export remain pending in this wizard. The
+separate capture workflow requires the official packaging tools. See
+[wizard status, references and limits](docs/paf-wizard.md).
 
 ### Reusable portable package SDK
 

@@ -229,7 +229,7 @@ states what has shipped and what is still open.
 - **Per-value live registry view** — the live activity panel shows which registry areas change; listing each value as it changes would need event tracing (ETW).
 
 **PortableApps Forge**
-- **Guided PAF projects — foundation available:** save/open snapshots, ten planning screens, explicit rights/component records, source-linked findings and configuration previews. Package staging, validated icon import/conversion, official-tool execution/logs and artifact/report export remain pending. The new workflow targets the official tools and has no fallback installer. See [detailed status](docs/paf-wizard.md).
+- **Guided PAF projects — planning and staging available:** save/open snapshots, ten planning screens, explicit rights/component records, source-linked findings, configuration previews, PNG-to-icon conversion and reviewed copies into new package folders. Archive import, official-tool execution/logs, prepared-folder reconnection and final artifact/report export remain pending. See [detailed status](docs/paf-wizard.md).
 - **Drive-letter and path fixing** — find absolute paths inside captured settings files and write matching `[FileWrite]` sections, so settings follow the drive.
 - **An isolated sandbox for Windows 11 Home** — Home PCs now have *Try it, then undo*, which installs, records and removes again; a virtual machine option (Home has no Hyper-V, so VirtualBox or QEMU) would keep them entirely untouched.
 

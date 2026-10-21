@@ -2,9 +2,9 @@ name: Portable Builder Kit
 on:
   push:
     branches: [main]
-    paths: ['crates/portable-builder-kit/**', 'src/pafbuild.rs', 'src/pafproject.rs', 'src/gui/pafwizard.rs', 'src/paf_installer.nsi', 'src/patools.rs', 'src/util.rs', 'src/gui/builder.rs', 'examples/pafkit_smoke.rs', '.github/workflows/portable-builder-kit.yml']
+    paths: ['crates/portable-builder-kit/**', 'src/pafbuild.rs', 'src/pafproject.rs', 'src/pafassets.rs', 'src/pafstage.rs', 'src/png.rs', 'src/gui/pafwizard.rs', 'src/paf_installer.nsi', 'src/patools.rs', 'src/util.rs', 'src/gui/builder.rs', 'examples/pafkit_smoke.rs', '.github/workflows/portable-builder-kit.yml']
   pull_request:
-    paths: ['crates/portable-builder-kit/**', 'src/pafbuild.rs', 'src/pafproject.rs', 'src/gui/pafwizard.rs', 'src/paf_installer.nsi', 'src/patools.rs', 'src/util.rs', 'src/gui/builder.rs', 'examples/pafkit_smoke.rs', '.github/workflows/portable-builder-kit.yml']
+    paths: ['crates/portable-builder-kit/**', 'src/pafbuild.rs', 'src/pafproject.rs', 'src/pafassets.rs', 'src/pafstage.rs', 'src/png.rs', 'src/gui/pafwizard.rs', 'src/paf_installer.nsi', 'src/patools.rs', 'src/util.rs', 'src/gui/builder.rs', 'examples/pafkit_smoke.rs', '.github/workflows/portable-builder-kit.yml']
   workflow_dispatch:
 permissions:
   contents: read

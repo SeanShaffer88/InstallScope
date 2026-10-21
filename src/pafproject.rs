@@ -300,7 +300,7 @@ impl Project {
             );
         }
         if self.icon.is_empty() || !Path::new(&self.icon).is_absolute() {
-            add(5,true,"App icon","Choose an existing .ico file. Image contents and required sizes still need validation before packaging.".into(),RuleClass::Wizard,FORMAT_SOURCE);
+            add(5,true,"App icon","Choose a square PNG from 256 to 4096 pixels. Review the converted icon before preparing files.".into(),RuleClass::Wizard,FORMAT_SOURCE);
         }
         for (field, value) in [
             ("Official Installer", &self.installer),
