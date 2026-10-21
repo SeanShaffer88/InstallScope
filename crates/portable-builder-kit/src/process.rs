@@ -200,6 +200,17 @@ mod native {
     // Windows CRT quoting: double trailing backslashes and escape embedded quotes.
     fn quoted(value: &std::ffi::OsStr, out: &mut Vec<u16>) -> io::Result<()> {
         let units = wide(value)?;
+        let argument = &units[..units.len() - 1];
+        // Match conventional Windows argv encoding. Quoting simple switches
+        // unnecessarily can confuse tools with their own command-line parser.
+        if !argument.is_empty()
+            && !argument
+                .iter()
+                .any(|u| matches!(*u, 9 | 10 | 11 | 13 | 32 | 34))
+        {
+            out.extend_from_slice(argument);
+            return Ok(());
+        }
         out.push(b'"' as u16);
         let mut slashes = 0;
         for &unit in &units[..units.len() - 1] {

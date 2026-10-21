@@ -1301,8 +1301,8 @@ pub struct Compiled {
 }
 
 /// Run the Launcher Generator (makes `AppID.exe`) and then the Installer
-/// (makes `AppID_version.paf.exe` next to the package folder). Both tools
-/// build without questions when given the package folder.
+/// (makes `AppID_version.paf.exe` next to the package folder). Official frontends
+/// receive the package directory; tool-specific UI may still appear.
 pub fn compile(
     pkg_dir: &Path,
     app_id: &str,

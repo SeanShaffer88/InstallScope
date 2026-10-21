@@ -102,7 +102,8 @@ Section "${NAME}"
 	File /r "${PACKAGE}\App\*.*"
 	!if /FileExists "${PACKAGE}\Other\*.*"
 		SetOutPath "$INSTDIR\Other"
-		File /r "${PACKAGE}\Other\*.*"
+		; Other is optional and may contain only empty source directories.
+		File /nonfatal /r "${PACKAGE}\Other\*.*"
 	!endif
 	CreateDirectory "$INSTDIR\Data"
 	SetOutPath "$INSTDIR"

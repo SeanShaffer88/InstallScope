@@ -18,6 +18,7 @@ impl Drop for Work {
     }
 }
 fn run(exe: &Path, arguments: Vec<std::ffi::OsString>) -> Result<()> {
+    println!("Running {}", exe.display());
     run_tool(
         &ToolRequest {
             executable: exe.to_path_buf(),
@@ -26,7 +27,8 @@ fn run(exe: &Path, arguments: Vec<std::ffi::OsString>) -> Result<()> {
             timeout: Duration::from_secs(60),
         },
         &|| false,
-    )?;
+    )
+    .with_context(|| format!("running {}", exe.display()))?;
     Ok(())
 }
 fn main() -> Result<()> {
@@ -85,6 +87,16 @@ fn main() -> Result<()> {
         ],
     )?;
     let installed = destination.join("ProbePortable");
+    if installscope_core::patools::ini_value(
+        &installed.join("App/AppInfo/appinfo.ini"),
+        "Version",
+        "PackageVersion",
+    )
+    .as_deref()
+        != Some("1.0.0.0")
+    {
+        return Err(anyhow!("initial install has wrong package version"));
+    }
     let launcher = installed.join("ProbePortable.exe");
     run(&launcher, vec![])?;
     if std::fs::read(installed.join("Data/probe.txt"))? != b"started" {
@@ -103,6 +115,19 @@ fn main() -> Result<()> {
     if !installed.join("Data/probe.txt").is_file() {
         return Err(anyhow!("relocated launcher failed"));
     }
+    std::fs::write(
+        installed.join("App/Probe/obsolete.txt"),
+        b"old application file",
+    )?;
+    std::fs::create_dir_all(installed.join("Other/Source"))?;
+    std::fs::write(
+        installed.join("Other/Source/obsolete.txt"),
+        b"old source file",
+    )?;
+    std::fs::write(
+        package.join("Other/Source/new-source.txt"),
+        b"new source file",
+    )?;
     details.version = "1.0.1".into();
     std::fs::write(
         package.join("App/AppInfo/appinfo.ini"),
@@ -124,6 +149,24 @@ fn main() -> Result<()> {
     )?;
     if std::fs::read(installed.join("Data/keep.txt"))? != b"user settings survive upgrade" {
         return Err(anyhow!("upgrade lost user data"));
+    }
+    if installscope_core::patools::ini_value(
+        &installed.join("App/AppInfo/appinfo.ini"),
+        "Version",
+        "PackageVersion",
+    )
+    .as_deref()
+        != Some("1.0.1.0")
+    {
+        return Err(anyhow!("upgrade did not replace application metadata"));
+    }
+    if installed.join("App/Probe/obsolete.txt").exists()
+        || installed.join("Other/Source/obsolete.txt").exists()
+    {
+        return Err(anyhow!("upgrade retained obsolete App/Other files"));
+    }
+    if std::fs::read(installed.join("Other/Source/new-source.txt"))? != b"new source file" {
+        return Err(anyhow!("upgrade did not install new source file"));
     }
     std::fs::remove_file(installed.join("Data/probe.txt"))?;
     run(&installed.join("ProbePortable.exe"), vec![])?;
