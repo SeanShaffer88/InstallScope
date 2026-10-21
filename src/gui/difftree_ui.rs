@@ -150,11 +150,10 @@ fn overview_bar(ui: &mut egui::Ui, tree: &DiffTree, filter: &mut Option<Area>) {
                 Some(area)
             };
         }
-        r.on_hover_text(format!(
-            "{} — {}",
-            t(area.label()),
-            counts_text(&a.root.counts)
-        ));
+        super::a11y::explain(
+            r,
+            &format!("{} — {}", t(area.label()), counts_text(&a.root.counts)),
+        );
         x += w;
     }
 }
@@ -164,8 +163,14 @@ fn node_ui(ui: &mut egui::Ui, n: &Node, color: Color32, depth: usize, open_all: 
     if n.children.is_empty() {
         ui.horizontal(|ui| {
             ui.label(RichText::new("⏺").small().color(change_color(n.change)));
-            ui.add(egui::Label::new(RichText::new(&n.name).color(theme::TEXT)).truncate())
-                .on_hover_text(&n.full);
+            super::a11y::explain(
+                ui.add(
+                    egui::Label::new(RichText::new(&n.name).color(theme::TEXT))
+                        .truncate()
+                        .selectable(true),
+                ),
+                &n.full,
+            );
             if n.counts.bytes > 0 {
                 small_muted(ui, human_size(n.counts.bytes));
             }
@@ -174,7 +179,7 @@ fn node_ui(ui: &mut egui::Ui, n: &Node, color: Color32, depth: usize, open_all: 
     }
     let header = RichText::new(format!("{icon}{}   {}", n.name, counts_text(&n.counts)))
         .color(if depth == 0 { color } else { theme::TEXT });
-    egui::CollapsingHeader::new(header)
+    let resp = egui::CollapsingHeader::new(header)
         .id_salt(("dt", &n.full, depth))
         .default_open(open_all || depth == 0 && n.counts.total() <= 40)
         .show(ui, |ui| {
@@ -191,6 +196,7 @@ fn node_ui(ui: &mut egui::Ui, n: &Node, color: Color32, depth: usize, open_all: 
                 );
             }
         });
+    super::a11y::explain(resp.header_response, &n.full);
 }
 
 /// The whole map for `cs`.
@@ -219,14 +225,17 @@ pub fn diff_tree_ui(ui: &mut egui::Ui, view: &mut TreeView, cs: &ChangeSet) {
                 .fill(if on { col } else { col.gamma_multiply(0.12) })
                 .stroke(egui::Stroke::new(1.0_f32, col.gamma_multiply(0.6)))
                 .corner_radius(10.0);
-            if ui.add(b).on_hover_text(t(area.hint())).clicked() {
+            if super::a11y::explain(ui.add(b), &t(area.hint())).clicked() {
                 view.filter = if on { None } else { Some(area) };
             }
         }
     });
     ui.add_space(6.0);
     ui.horizontal(|ui| {
-        search_box(ui, &mut view.search, "Find in changes", 260.0);
+        super::a11y::explain(
+            search_box(ui, &mut view.search, "Find in changes", 260.0),
+            &t("Show only the changes whose path contains this text."),
+        );
         ui.label(RichText::new("⏺").color(theme::ADDED));
         small_muted(ui, t("added"));
         ui.label(RichText::new("⏺").color(theme::CHANGED));
@@ -296,15 +305,19 @@ pub fn map_or_list(
     editable: bool,
 ) {
     ui.horizontal(|ui| {
-        if ui
-            .selectable_label(!*show_list, format!("🗺 {}", t("Map")))
-            .clicked()
+        if super::a11y::explain(
+            ui.selectable_label(!*show_list, format!("🗺 {}", t("Map"))),
+            &t("Show the changes as a colored map, grouped by area of the PC."),
+        )
+        .clicked()
         {
             *show_list = false;
         }
-        if ui
-            .selectable_label(*show_list, format!("☰ {}", t("List")))
-            .clicked()
+        if super::a11y::explain(
+            ui.selectable_label(*show_list, format!("☰ {}", t("List"))),
+            &t("Show the changes as a plain list, grouped by the kind of change."),
+        )
+        .clicked()
         {
             *show_list = true;
         }

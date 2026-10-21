@@ -46,6 +46,7 @@ pub fn changes_ui(ui: &mut egui::Ui, cs: &mut ChangeSet, editable: bool) {
         ui: &mut egui::Ui,
         id: &str,
         title: String,
+        hint: String,
         color: egui::Color32,
         items: &mut Vec<T>,
         editable: bool,
@@ -55,7 +56,7 @@ pub fn changes_ui(ui: &mut egui::Ui, cs: &mut ChangeSet, editable: bool) {
             return;
         }
         let mut remove: Option<usize> = None;
-        egui::CollapsingHeader::new(
+        let header = egui::CollapsingHeader::new(
             RichText::new(format!("{title}  ({})", items.len()))
                 .color(color)
                 .strong(),
@@ -73,27 +74,38 @@ pub fn changes_ui(ui: &mut egui::Ui, cs: &mut ChangeSet, editable: bool) {
                         let (main, detail) = render(&items[i]);
                         ui.horizontal(|ui| {
                             if editable
-                                && ui
-                                    .small_button("✖")
-                                    .on_hover_text(t("Not part of this program"))
-                                    .clicked()
+                                && super::a11y::explain(
+                                    ui.small_button("✖"),
+                                    &t("Not part of this program — remove it from this log. It stays on this PC, and uninstalling from this log will not remove or restore it later."),
+                                )
+                                .clicked()
                             {
                                 remove = Some(i);
                             }
-                            ui.add(egui::Label::new(RichText::new(&main).monospace()).truncate())
-                                .on_hover_text(&main);
-                            if !detail.is_empty() {
+                            super::a11y::explain(
                                 ui.add(
-                                    egui::Label::new(
-                                        RichText::new(detail).small().color(theme::MUTED),
-                                    )
-                                    .truncate(),
+                                    egui::Label::new(RichText::new(&main).monospace())
+                                        .truncate()
+                                        .selectable(true),
+                                ),
+                                &main,
+                            );
+                            if !detail.is_empty() {
+                                super::a11y::explain(
+                                    ui.add(
+                                        egui::Label::new(
+                                            RichText::new(&detail).small().color(theme::MUTED),
+                                        )
+                                        .truncate(),
+                                    ),
+                                    &detail,
                                 );
                             }
                         });
                     }
                 });
         });
+        super::a11y::explain(header.header_response, &hint);
         if let Some(i) = remove {
             items.remove(i);
         }
@@ -102,6 +114,7 @@ pub fn changes_ui(ui: &mut egui::Ui, cs: &mut ChangeSet, editable: bool) {
         ui,
         "fa",
         t("Files added"),
+        t("Show or hide the files the installation added."),
         theme::ADDED,
         &mut cs.files_added,
         editable,
@@ -120,6 +133,7 @@ pub fn changes_ui(ui: &mut egui::Ui, cs: &mut ChangeSet, editable: bool) {
         ui,
         "ka",
         t("Registry keys added"),
+        t("Show or hide the registry keys the installation added."),
         theme::ADDED,
         &mut cs.keys_added,
         editable,
@@ -134,6 +148,7 @@ pub fn changes_ui(ui: &mut egui::Ui, cs: &mut ChangeSet, editable: bool) {
         ui,
         "va",
         t("Registry values added"),
+        t("Show or hide the registry values the installation added."),
         theme::ADDED,
         &mut cs.values_added,
         editable,
@@ -148,6 +163,7 @@ pub fn changes_ui(ui: &mut egui::Ui, cs: &mut ChangeSet, editable: bool) {
         ui,
         "vm",
         t("Registry values changed"),
+        t("Show or hide the registry values the installation changed."),
         theme::CHANGED,
         &mut cs.values_modified,
         editable,
@@ -162,6 +178,7 @@ pub fn changes_ui(ui: &mut egui::Ui, cs: &mut ChangeSet, editable: bool) {
         ui,
         "fm",
         t("Files changed"),
+        t("Show or hide the files the installation changed."),
         theme::CHANGED,
         &mut cs.files_modified,
         editable,
@@ -180,6 +197,7 @@ pub fn changes_ui(ui: &mut egui::Ui, cs: &mut ChangeSet, editable: bool) {
         ui,
         "vr",
         t("Registry values removed"),
+        t("Show or hide the registry values the installation removed."),
         theme::REMOVED,
         &mut cs.values_removed,
         editable,
@@ -194,6 +212,7 @@ pub fn changes_ui(ui: &mut egui::Ui, cs: &mut ChangeSet, editable: bool) {
         ui,
         "kr",
         t("Registry keys removed"),
+        t("Show or hide the registry keys the installation removed."),
         theme::REMOVED,
         &mut cs.keys_removed,
         editable,
@@ -203,6 +222,7 @@ pub fn changes_ui(ui: &mut egui::Ui, cs: &mut ChangeSet, editable: bool) {
         ui,
         "fr",
         t("Files removed"),
+        t("Show or hide the files the installation removed."),
         theme::REMOVED,
         &mut cs.files_removed,
         editable,
@@ -413,11 +433,14 @@ impl App {
             .resizable(true)
             .default_width(300.0)
             .show(ctx, |ui| {
-                let r = search_box(
-                    ui,
-                    &mut self.logs.filter,
-                    "Search logs",
-                    ui.available_width() - 30.0,
+                let r = super::a11y::explain(
+                    search_box(
+                        ui,
+                        &mut self.logs.filter,
+                        "Search logs",
+                        ui.available_width() - 30.0,
+                    ),
+                    &t("Search by log name, publisher, group or tag. The list below filters as you type."),
                 );
                 if self.focus_search {
                     r.request_focus();
@@ -434,7 +457,7 @@ impl App {
                 groups.dedup();
                 if !groups.is_empty() {
                     ui.add_space(4.0);
-                    egui::ComboBox::from_id_salt("log_group_filter")
+                    let combo = egui::ComboBox::from_id_salt("log_group_filter")
                         .selected_text(if self.logs.group_filter.is_empty() {
                             t("All groups")
                         } else {
@@ -450,6 +473,10 @@ impl App {
                                 ui.selectable_value(&mut self.logs.group_filter, g.clone(), g);
                             }
                         });
+                    super::a11y::explain(
+                        combo.response,
+                        &t("Show only the logs in one group, or all groups."),
+                    );
                 } else {
                     self.logs.group_filter.clear();
                 }
@@ -553,6 +580,10 @@ impl App {
                                 })
                                 .response
                                 .interact(egui::Sense::click());
+                            let resp = super::a11y::explain(
+                                resp,
+                                &t("Open this install log to see what it recorded and what you can do with it."),
+                            );
                             super::a11y::selectable(&resp, &log.name, sel);
                             if nav == Some(n) {
                                 resp.scroll_to_me(None);
@@ -567,10 +598,16 @@ impl App {
             });
 
         egui::CentralPanel::default().frame(theme::content_frame()).show(ctx, |ui| {
+            // The focused control's explanation line, for keyboard
+            // and touch users (see a11y::explain).
+            super::a11y::focus_hint(ui, theme::MUTED);
             theme::card(ui, |ui| {
                 ui.label(RichText::new(t("Which program created this?")).strong());
                 small_muted(ui, t("Type part of a file path or registry key to find the monitored program it belongs to."));
-                search_box(ui, &mut self.logs.path_search, "e.g. AppData\\Roaming\\Acme or HKCU\\Software\\Acme", 420.0);
+                super::a11y::explain(
+                    search_box(ui, &mut self.logs.path_search, "e.g. AppData\\Roaming\\Acme or HKCU\\Software\\Acme", 420.0),
+                    &t("Search every install log for part of a file path or registry key."),
+                );
                 let fp = self.logs.logs.as_ptr() as usize ^ self.logs.logs.len();
                 let fresh = matches!(&self.logs.search_cache, Some((q, f, _)) if *q == self.logs.path_search && *f == fp);
                 if !fresh {
@@ -585,7 +622,12 @@ impl App {
                 let mut jump = None;
                 for (id, name, n, first) in &hits {
                     ui.horizontal(|ui| {
-                        if ui.link(RichText::new(name).strong()).clicked() {
+                        if super::a11y::explain(
+                            ui.link(RichText::new(name).strong()),
+                            &t("Open this install log."),
+                        )
+                        .clicked()
+                        {
                             jump = Some(id.clone());
                         }
                         small_muted(ui, tf("{n} matches, e.g. {path}", &[("n", n.to_string()), ("path", first.clone())]));
@@ -638,17 +680,23 @@ impl App {
                 });
                 ui.add_space(8.0);
                 ui.horizontal_wrapped(|ui| {
-                    if theme::primary_button(ui, format!("🗑 {}", t("Uninstall using this log"))).clicked() {
+                    if super::a11y::explain(
+                        theme::primary_button(ui, format!("🗑 {}", t("Uninstall using this log"))),
+                        &t("Uninstall this program using exactly what this log recorded. You review the removal first, and the log is deleted when the uninstall completes."),
+                    )
+                    .clicked()
+                    {
                         let full = self.logs.logs[idx].clone();
                         self.uninstall_from_log(&full);
                     }
-                    if ui
-                        .add_enabled(
+                    if super::a11y::explain(
+                        ui.add_enabled(
                             self.logs.package_job.is_none(),
                             egui::Button::new(t("Create Setup Package…")),
-                        )
-                        .on_hover_text(t("Build a silent Setup.exe and deploy folder from this recorded installation."))
-                        .clicked()
+                        ),
+                        &t("Build a silent Setup.exe and deploy folder from this recorded installation."),
+                    )
+                    .clicked()
                     {
                         let id = self.logs.logs[idx].id.clone();
                         match self.store.load_log(&id) {
@@ -659,7 +707,7 @@ impl App {
                             )),
                         }
                     }
-                    ui.menu_button(t("Export"), |ui| {
+                    let export_menu = ui.menu_button(t("Export"), |ui| {
                         for (ext, label) in [
                             ("html", "HTML report"),
                             ("reg", "Registry undo script (.reg)"),
@@ -675,7 +723,16 @@ impl App {
                             }
                         }
                     });
-                    if ui.button(format!("🖨 {}", t("Print"))).on_hover_text(t("Open the report in your browser and print it.")).clicked() {
+                    super::a11y::explain(
+                        export_menu.response,
+                        &t("Save this log in another format, such as an HTML report or a removal script."),
+                    );
+                    if super::a11y::explain(
+                        ui.button(format!("🖨 {}", t("Print"))),
+                        &t("Open the report in your browser and print it."),
+                    )
+                    .clicked()
+                    {
                         let full = self.logs.logs[idx].clone();
                         self.print_log(&full);
                     }
@@ -687,7 +744,7 @@ impl App {
                         .map(|l| (l.id.clone(), format!("{}  ({})", l.name, l.created)))
                         .collect();
                     if !others.is_empty() {
-                        ui.menu_button(t("Merge with"), |ui| {
+                        let merge_menu = ui.menu_button(t("Merge with"), |ui| {
                             small_muted(ui, t("Combine two logs into one, e.g. a program and its update. The originals are kept."));
                             egui::ScrollArea::vertical().max_height(300.0).show(ui, |ui| {
                                 for (id, label) in &others {
@@ -698,12 +755,26 @@ impl App {
                                 }
                             });
                         });
+                        super::a11y::explain(
+                            merge_menu.response,
+                            &t("Combine this log with another into a new log. The originals are kept."),
+                        );
                     }
-                    if ui.button(t("Edit details")).clicked() {
+                    if super::a11y::explain(
+                        ui.button(t("Edit details")),
+                        &t("Edit this log's name, publisher, version, group, tags and notes."),
+                    )
+                    .clicked()
+                    {
                         self.logs.editing = !self.logs.editing;
                         self.logs.tags_text = log.tags.join(", ");
                     }
-                    if ui.button(t("Delete log")).clicked() {
+                    if super::a11y::explain(
+                        ui.button(t("Delete log")),
+                        &t("Delete this install log. You confirm first, and the program itself is not touched."),
+                    )
+                    .clicked()
+                    {
                         self.ask(
                             "Delete install log?",
                             tf("The record of {name} will be deleted. The program itself is not touched.", &[("name", log.name.clone())]),
@@ -723,26 +794,49 @@ impl App {
                 theme::card(ui, |ui| {
                     let l = &mut self.logs.logs[idx];
                     egui::Grid::new("edit_log").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
-                        ui.label(t("Name"));
-                        ui.text_edit_singleline(&mut l.name);
+                        let name_label = ui.label(t("Name"));
+                        super::a11y::explain(
+                            ui.text_edit_singleline(&mut l.name).labelled_by(name_label.id),
+                            &t("The name this install log is saved under. Editing it changes only the log, not the installed program."),
+                        );
                         ui.end_row();
-                        ui.label(t("Publisher"));
-                        ui.text_edit_singleline(&mut l.publisher);
+                        let publisher_label = ui.label(t("Publisher"));
+                        super::a11y::explain(
+                            ui.text_edit_singleline(&mut l.publisher).labelled_by(publisher_label.id),
+                            &t("The publisher recorded in this install log. Editing it changes only the log, not the installed program."),
+                        );
                         ui.end_row();
-                        ui.label(t("Version"));
-                        ui.text_edit_singleline(&mut l.version);
+                        let version_label = ui.label(t("Version"));
+                        super::a11y::explain(
+                            ui.text_edit_singleline(&mut l.version).labelled_by(version_label.id),
+                            &t("The version recorded in this install log. Editing it changes only the log, not the installed program."),
+                        );
                         ui.end_row();
-                        ui.label(t("Group"));
-                        ui.add(egui::TextEdit::singleline(&mut l.group).hint_text(t("e.g. Work tools")));
+                        let group_label = ui.label(t("Group"));
+                        super::a11y::explain(
+                            ui.add(egui::TextEdit::singleline(&mut l.group).hint_text(t("e.g. Work tools"))).labelled_by(group_label.id),
+                            &t("The group this log is filed under in the list. Groups only organize your logs."),
+                        );
                         ui.end_row();
-                        ui.label(t("Tags"));
-                        ui.add(egui::TextEdit::singleline(&mut self.logs.tags_text).hint_text(t("Separate tags with commas")));
+                        let tags_label = ui.label(t("Tags"));
+                        super::a11y::explain(
+                            ui.add(egui::TextEdit::singleline(&mut self.logs.tags_text).hint_text(t("Separate tags with commas"))).labelled_by(tags_label.id),
+                            &t("Words for finding this log later, separated by commas. Tags only organize your logs."),
+                        );
                         ui.end_row();
-                        ui.label(t("Notes"));
-                        ui.text_edit_multiline(&mut l.notes);
+                        let notes_label = ui.label(t("Notes"));
+                        super::a11y::explain(
+                            ui.text_edit_multiline(&mut l.notes).labelled_by(notes_label.id),
+                            &t("Your own notes about this installation, saved with the log."),
+                        );
                         ui.end_row();
                     });
-                    if theme::primary_button(ui, t("Save")).clicked() {
+                    if super::a11y::explain(
+                        theme::primary_button(ui, t("Save")),
+                        &t("Save the changes to this log's details."),
+                    )
+                    .clicked()
+                    {
                         save = true;
                     }
                 });
@@ -769,10 +863,20 @@ impl App {
                     ui.horizontal(|ui| {
                         ui.label(RichText::new(t("Where it put things")).strong());
                         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                            if ui.selectable_label(*show_list, t("List")).clicked() {
+                            if super::a11y::explain(
+                                ui.selectable_label(*show_list, t("List")),
+                                &t("Show the changes as a plain list, grouped by the kind of change."),
+                            )
+                            .clicked()
+                            {
                                 *show_list = true;
                             }
-                            if ui.selectable_label(!*show_list, t("Map")).clicked() {
+                            if super::a11y::explain(
+                                ui.selectable_label(!*show_list, t("Map")),
+                                &t("Show the changes as a colored map, grouped by area of the PC."),
+                            )
+                            .clicked()
+                            {
                                 *show_list = false;
                             }
                         });
