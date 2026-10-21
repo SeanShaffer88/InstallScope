@@ -63,7 +63,13 @@ impl App {
             .show(ctx, |ui| {
                 egui::ScrollArea::vertical()
                     .auto_shrink([false, false])
-                    .show(ui, |ui| self.ui_lab_snapshots(ui));
+                    .show(ui, |ui| {
+                        // The page's explanation line (see a11y::explain): the
+                        // focused control's explanation, for keyboard and
+                        // touch users who never see a hover tooltip.
+                        super::a11y::focus_hint(ui, theme::MUTED);
+                        self.ui_lab_snapshots(ui);
+                    });
             });
     }
 
@@ -74,6 +80,20 @@ impl App {
             small_muted(ui, t("Snapshot now, then run, use or install something (and close it), then snapshot again to see exactly what it left behind."));
             ui.add_space(6.0);
             let busy = self.lab.quick_job.is_some() || self.lab.cmp_job.is_some();
+            let before_why = if busy {
+                t("Unavailable while a snapshot or comparison is running.")
+            } else if self.lab.quick_before.is_some() {
+                t("Discards the 'before' snapshot you already took and takes a fresh one.")
+            } else {
+                t("Takes a snapshot of the files and registry now and keeps it as the 'before' picture for this comparison.")
+            };
+            let after_why = if busy {
+                t("Unavailable while a snapshot or comparison is running.")
+            } else if self.lab.quick_before.is_none() {
+                t("Unavailable: take the 'before' snapshot with button 1 first.")
+            } else {
+                t("Takes the 'after' snapshot now and lists everything that changed since the 'before' snapshot.")
+            };
             ui.horizontal(|ui| {
                 ui.add_enabled_ui(!busy, |ui| {
                     let label = if self.lab.quick_before.is_some() {
@@ -81,7 +101,7 @@ impl App {
                     } else {
                         format!("📷 {}", t("1. Snapshot before"))
                     };
-                    if ui.button(label).clicked() {
+                    if super::a11y::explain(ui.button(label), &before_why).clicked() {
                         let reg = self.reg.clone();
                         let settings = self.settings.clone();
                         self.lab.quick_before = None;
@@ -94,9 +114,12 @@ impl App {
                     }
                 });
                 ui.add_enabled_ui(!busy && self.lab.quick_before.is_some(), |ui| {
-                    if theme::primary_button(
-                        ui,
-                        format!("🔍 {}", t("2. Snapshot after and compare")),
+                    if super::a11y::explain(
+                        theme::primary_button(
+                            ui,
+                            format!("🔍 {}", t("2. Snapshot after and compare")),
+                        ),
+                        &after_why,
                     )
                     .clicked()
                     {
@@ -164,14 +187,27 @@ impl App {
             ui.label(RichText::new(t("Take a named snapshot")).strong());
             small_muted(ui, t("Capture the system now, do anything, capture again, and compare any two snapshots."));
             ui.add_space(6.0);
+            let take_why = if self.lab.snap_job.is_some() {
+                t("Unavailable while the snapshot is being taken.")
+            } else {
+                t("Saves a snapshot of this PC's files and registry now, under the name above, so you can compare it with another snapshot later.")
+            };
             ui.horizontal(|ui| {
-                ui.add(
-                    egui::TextEdit::singleline(&mut self.lab.snap_name)
-                        .hint_text(t("e.g. before-build-42"))
-                        .desired_width(240.0),
+                super::a11y::explain(
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.lab.snap_name)
+                            .hint_text(t("e.g. before-build-42"))
+                            .desired_width(240.0),
+                    ),
+                    &t("A name for this snapshot, so you can find it in the compare lists below. Left empty, the snapshot is named with the date and time."),
                 );
                 ui.add_enabled_ui(self.lab.snap_job.is_none(), |ui| {
-                    if theme::primary_button(ui, format!("📷 {}", t("Take snapshot"))).clicked() {
+                    if super::a11y::explain(
+                        theme::primary_button(ui, format!("📷 {}", t("Take snapshot"))),
+                        &take_why,
+                    )
+                    .clicked()
+                    {
                         let name = if self.lab.snap_name.trim().is_empty() {
                             format!(
                                 "snapshot-{}",
@@ -212,8 +248,8 @@ impl App {
                     .unwrap_or_else(|| t("Choose…"))
             };
             ui.horizontal(|ui| {
-                ui.label(t("Before"));
-                egui::ComboBox::from_id_salt("cmp_a")
+                let before_label = ui.label(t("Before"));
+                let combo_a = egui::ComboBox::from_id_salt("cmp_a")
                     .width(260.0)
                     .selected_text(label(self.lab.cmp_a))
                     .show_ui(ui, |ui| {
@@ -225,8 +261,12 @@ impl App {
                             );
                         }
                     });
-                ui.label(t("After"));
-                egui::ComboBox::from_id_salt("cmp_b")
+                super::a11y::explain(
+                    combo_a.response.labelled_by(before_label.id),
+                    &t("The earlier snapshot: changes are measured from this one."),
+                );
+                let after_label = ui.label(t("After"));
+                let combo_b = egui::ComboBox::from_id_salt("cmp_b")
                     .width(260.0)
                     .selected_text(label(self.lab.cmp_b))
                     .show_ui(ui, |ui| {
@@ -238,14 +278,27 @@ impl App {
                             );
                         }
                     });
+                super::a11y::explain(
+                    combo_b.response.labelled_by(after_label.id),
+                    &t("The later snapshot: what changed is worked out by comparing it with the Before snapshot."),
+                );
             });
             let ready = self.lab.cmp_a.is_some()
                 && self.lab.cmp_b.is_some()
                 && self.lab.cmp_a != self.lab.cmp_b
                 && self.lab.cmp_job.is_none();
+            let cmp_why = if self.lab.cmp_job.is_some() {
+                t("Unavailable while the comparison is running.")
+            } else if !ready {
+                t("Unavailable: choose two different snapshots, one Before and one After.")
+            } else {
+                t("Compares the Before and After snapshots and lists everything that changed between them.")
+            };
             ui.horizontal(|ui| {
                 ui.add_enabled_ui(ready, |ui| {
-                    if theme::primary_button(ui, t("Compare")).clicked() {
+                    if super::a11y::explain(theme::primary_button(ui, t("Compare")), &cmp_why)
+                        .clicked()
+                    {
                         let a = snaps[self.lab.cmp_a.unwrap()].clone();
                         let b = snaps[self.lab.cmp_b.unwrap()].clone();
                         let settings = self.settings.clone();
@@ -275,7 +328,12 @@ impl App {
                         }));
                     }
                 });
-                if ui.button(t("Open snapshot folder")).clicked() {
+                if super::a11y::explain(
+                    ui.button(t("Open snapshot folder")),
+                    &t("Opens the folder where InstallScope saves snapshots, in File Explorer."),
+                )
+                .clicked()
+                {
                     platform::shell_open(&self.store.snapshots_dir().to_string_lossy());
                 }
             });
@@ -292,13 +350,19 @@ impl App {
                 ui.horizontal(|ui| {
                     ui.label(RichText::new(&log.name).strong());
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button(t("Save as install log")).clicked() {
+                        if super::a11y::explain(
+                            ui.button(t("Save as install log")),
+                            &t("Saves this comparison as an install log, so what changed can be reviewed, exported or removed from the Logs page like a monitored installation."),
+                        )
+                        .clicked()
+                        {
                             save = true;
                         }
-                        if ui
-                            .button(t("PortableApps.com Launcher settings…"))
-                            .on_hover_text(t("Save what changed as [RegistryKeys], [DirectoriesMove] and [FilesMove] sections for a PortableApps.com Launcher .ini. Remove unrelated changes with ✖ first."))
-                            .clicked()
+                        if super::a11y::explain(
+                            ui.button(t("PortableApps.com Launcher settings…")),
+                            &t("Save what changed as [RegistryKeys], [DirectoriesMove] and [FilesMove] sections for a PortableApps.com Launcher .ini. Remove unrelated changes with ✖ first."),
+                        )
+                        .clicked()
                         {
                             export_ini = true;
                         }

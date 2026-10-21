@@ -156,17 +156,32 @@ impl App {
                                 small_muted(ui, t("Copy it to the other PC, open InstallScope there and choose File > Restore programs from a package."));
                                 ui.add_space(8.0);
                                 ui.horizontal(|ui| {
-                                    if ui.button(t("Show in folder")).clicked() {
+                                    if super::a11y::explain(
+                                        ui.button(t("Show in folder")),
+                                        &t("Opens File Explorer at the saved package."),
+                                    )
+                                    .clicked()
+                                    {
                                         installscope_core::platform::reveal(&path.to_string_lossy());
                                     }
-                                    if theme::primary_button(ui, t("Close")).clicked() {
+                                    if super::a11y::explain(
+                                        theme::primary_button(ui, t("Close")),
+                                        &t("Closes this window."),
+                                    )
+                                    .clicked()
+                                    {
                                         close = true;
                                     }
                                 });
                             }
                             Err(e) => {
                                 theme::warning_banner(ui, e.clone());
-                                if ui.button(t("Close")).clicked() {
+                                if super::a11y::explain(
+                                    ui.button(t("Close")),
+                                    &t("Closes this window."),
+                                )
+                                .clicked()
+                                {
                                     close = true;
                                 }
                             }
@@ -208,7 +223,17 @@ impl App {
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         let can = !(c.files.is_empty() && c.keys.is_empty());
-                        if ui.add_enabled(can, egui::Button::new(format!("💾 {}", t("Save package…")))).clicked() {
+                        let save_why = if can {
+                            t("Saves the files, settings and registry entries listed above as one transfer package, in a file you choose.")
+                        } else {
+                            t("Unavailable: nothing was found to pack for these programs.")
+                        };
+                        if super::a11y::explain(
+                            ui.add_enabled(can, egui::Button::new(format!("💾 {}", t("Save package…")))),
+                            &save_why,
+                        )
+                        .clicked()
+                        {
                             let default = format!(
                                 "{}.{}",
                                 installscope_core::util::safe_file_name(&if names.len() == 1 { names[0].clone() } else { tf("{n} programs", &[("n", names.len().to_string())]) }),
@@ -224,7 +249,12 @@ impl App {
                                 }));
                             }
                         }
-                        if ui.button(t("Cancel")).clicked() {
+                        if super::a11y::explain(
+                            ui.button(t("Cancel")),
+                            &t("Closes this window without saving a package."),
+                        )
+                        .clicked()
+                        {
                             close = true;
                         }
                     });
@@ -273,7 +303,12 @@ impl App {
                             Err(e) => theme::warning_banner(ui, e.clone()),
                         }
                         ui.add_space(8.0);
-                        if theme::primary_button(ui, t("Close")).clicked() {
+                        if super::a11y::explain(
+                            theme::primary_button(ui, t("Close")),
+                            &t("Closes this window."),
+                        )
+                        .clicked()
+                        {
                             close = true;
                         }
                         return;
@@ -283,7 +318,12 @@ impl App {
                         Ok(x) => x,
                         Err(e) => {
                             theme::warning_banner(ui, e.clone());
-                            if ui.button(t("Close")).clicked() {
+                            if super::a11y::explain(
+                                ui.button(t("Close")),
+                                &t("Closes this window."),
+                            )
+                            .clicked()
+                            {
                                 close = true;
                             }
                             return;
@@ -309,10 +349,34 @@ impl App {
                     }
                     if !c.conflicts.is_empty() {
                         ui.add_space(6.0);
-                        ui.checkbox(overwrite, tf("Replace {n} files that already exist on this PC", &[("n", c.conflicts.len().to_string())]))
-                            .on_hover_text(c.conflicts.iter().take(15).cloned().collect::<Vec<_>>().join("\n"));
+                        // The conflicting files are listed as visible text
+                        // under the checkbox, not only in a hover: the
+                        // explanation stays a one-line summary.
+                        super::a11y::explain(
+                            ui.checkbox(overwrite, tf("Replace {n} files that already exist on this PC", &[("n", c.conflicts.len().to_string())])),
+                            &t("Replace the files listed below, which already exist on this PC."),
+                        );
+                        for p in c.conflicts.iter().take(15) {
+                            small_muted(ui, p.clone());
+                        }
+                        if c.conflicts.len() > 15 {
+                            small_muted(
+                                ui,
+                                tf(
+                                    "…and {n} more",
+                                    &[("n", (c.conflicts.len() - 15).to_string())],
+                                ),
+                            );
+                        }
                     }
                     let blocked = !c.problems.is_empty() || (c.needs_admin && !elevated);
+                    let restore_why = if !c.problems.is_empty() {
+                        t("Unavailable: the problems listed above must be sorted out first; InstallScope won't restore a package that failed its checks.")
+                    } else if c.needs_admin && !elevated {
+                        t("Unavailable: run InstallScope as Administrator to restore these programs.")
+                    } else {
+                        t("Writes the programs' files, settings and registry entries onto this PC. Everything written is recorded, so the transfer can be undone from the Backups page.")
+                    };
                     if c.needs_admin && !elevated {
                         ui.add_space(6.0);
                         theme::warning_banner(ui, t("Run InstallScope as Administrator to restore these programs (they go into Program Files and the machine-wide registry)."));
@@ -321,7 +385,12 @@ impl App {
                     small_muted(ui, t("Everything InstallScope writes is recorded, so the transfer can be undone from the Backups page."));
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
-                        if ui.add_enabled(!blocked, egui::Button::new(format!("📥 {}", t("Restore")))).clicked() {
+                        if super::a11y::explain(
+                            ui.add_enabled(!blocked, egui::Button::new(format!("📥 {}", t("Restore")))),
+                            &restore_why,
+                        )
+                        .clicked()
+                        {
                             let pkg = path.clone();
                             let ow = *overwrite;
                             let reg2 = reg.clone();
@@ -346,7 +415,12 @@ impl App {
                                 res.map(|r| (r, id))
                             }));
                         }
-                        if ui.button(t("Cancel")).clicked() {
+                        if super::a11y::explain(
+                            ui.button(t("Cancel")),
+                            &t("Closes this window without restoring anything."),
+                        )
+                        .clicked()
+                        {
                             close = true;
                         }
                     });

@@ -130,6 +130,10 @@ impl App {
         }
         let advanced = self.settings.advanced_mode;
         egui::CentralPanel::default().frame(theme::content_frame()).show(ctx, |ui| {
+            // The page's explanation line (see a11y::explain): the focused
+            // control's explanation, for keyboard and touch users who
+            // never see a hover tooltip.
+            super::a11y::focus_hint(ui, theme::MUTED);
             let Some(all) = self.shell.entries.clone() else {
                 job_progress(ui, &t("Reading the right-click menu…"), 0);
                 return;
@@ -144,7 +148,10 @@ impl App {
             });
             ui.add_space(6.0);
             ui.horizontal_wrapped(|ui| {
-                search_box(ui, &mut self.shell.filter, "Search the menu", 220.0);
+                super::a11y::explain(
+                    search_box(ui, &mut self.shell.filter, "Search the menu", 220.0),
+                    &t("Show only entries whose name or target contains this text."),
+                );
                 for (v, label) in [
                     (ShellView::Programs, t("Added by programs")),
                     (ShellView::Broken, t("Broken")),
@@ -154,26 +161,54 @@ impl App {
                     if v == ShellView::All && !advanced {
                         continue;
                     }
-                    if ui.selectable_label(self.shell.view == v, label).clicked() {
+                    let why = match v {
+                        ShellView::Programs => {
+                            t("Show only entries added by programs, not Windows' own entries.")
+                        }
+                        ShellView::Broken => {
+                            t("Show only entries whose program is gone, so they no longer work.")
+                        }
+                        ShellView::Disabled => t("Show only entries that are currently turned off."),
+                        ShellView::All => t("Show every entry, including Windows' own entries."),
+                    };
+                    if super::a11y::explain(ui.selectable_label(self.shell.view == v, label), &why)
+                        .clicked()
+                    {
                         self.shell.view = v;
                     }
                 }
             });
             ui.add_space(4.0);
+            let refresh_why = if self.shell.job.is_some() {
+                t("Unavailable while the right-click menu is being read.")
+            } else {
+                t("Reads the right-click menu again, to pick up entries added or removed since.")
+            };
             ui.horizontal_wrapped(|ui| {
                 {
-                    if ui.add_enabled(self.shell.job.is_none(), egui::Button::new(format!("⟳ {}", t("Refresh")))).clicked() {
+                    if super::a11y::explain(
+                        ui.add_enabled(self.shell.job.is_none(), egui::Button::new(format!("⟳ {}", t("Refresh")))),
+                        &refresh_why,
+                    )
+                    .clicked()
+                    {
                         self.refresh_shell(ctx);
                     }
-                    if ui
-                        .add_enabled(self.shell.deep_job.is_none(), egui::Button::new(t("Deep clean…")))
-                        .on_hover_text(t("Find shell extensions, COM classes, \"Open with\" entries and PATH or environment entries left by removed programs, anywhere in Windows."))
-                        .clicked()
+                    if super::a11y::explain(
+                        ui.add_enabled(self.shell.deep_job.is_none(), egui::Button::new(t("Deep clean…"))),
+                        &t("Find shell extensions, COM classes, \"Open with\" entries and PATH or environment entries left by removed programs, anywhere in Windows."),
+                    )
+                    .clicked()
                     {
                         let reg = self.reg.clone();
                         self.shell.deep_job = Some(Job::spawn(ctx, move |_| installscope_core::orphans::scan_system(reg.as_ref())));
                     }
-                    if broken > 0 && theme::primary_button(ui, tf("Remove {n} broken…", &[("n", broken.to_string())])).clicked() {
+                    if broken > 0 && super::a11y::explain(
+                        theme::primary_button(ui, tf("Remove {n} broken…", &[("n", broken.to_string())])),
+                        &t("Opens a review of all the broken entries. Nothing is removed until you confirm there, and what is removed is backed up first, unless you have turned backups off in Settings."),
+                    )
+                    .clicked()
+                    {
                         let plan = shellext::orphan_plan(&all);
                         let mut flow = super::plan::RemovalFlow::new(t("Broken right-click entries"), plan, false, false);
                         flow.plan.info.push(t("These entries belong to programs that are no longer installed; Explorer can slow down or show errors trying to load them."));
@@ -224,16 +259,36 @@ impl App {
                         row.col(|ui| {
                             let mut on = e.enabled;
                             let protected = e.windows && !advanced;
-                            if ui
-                                .add_enabled(!protected, egui::Checkbox::without_text(&mut on))
-                                .on_hover_text(t("Turn this entry on or off; nothing is deleted."))
-                                .changed()
-                            {
+                            let why = if protected {
+                                t("This is one of Windows' own entries, so it can't be changed unless Advanced mode is on in Settings.")
+                            } else {
+                                t("Turn this entry on or off; nothing is deleted.")
+                            };
+                            let resp = super::a11y::explain(
+                                ui.add_enabled(!protected, egui::Checkbox::without_text(&mut on)),
+                                &why,
+                            );
+                            resp.widget_info(|| {
+                                egui::WidgetInfo::selected(
+                                    egui::WidgetType::Checkbox,
+                                    true,
+                                    on,
+                                    &e.name,
+                                )
+                            });
+                            if resp.changed() {
                                 toggle = Some((e.clone(), on));
                             }
                         });
                         row.col(|ui| {
-                            ui.add(egui::Label::new(RichText::new(&e.name).strong()).truncate());
+                            super::a11y::explain(
+                                ui.add(
+                                    egui::Label::new(RichText::new(&e.name).strong())
+                                        .truncate()
+                                        .selectable(true),
+                                ),
+                                &e.name,
+                            );
                             if e.orphaned && !e.windows {
                                 theme::badge(ui, t("Broken"), theme::BAD);
                             }
@@ -249,8 +304,14 @@ impl App {
                         });
                         row.col(|ui| {
                             let shown = if e.target.is_empty() { t("(not registered)") } else { e.target.clone() };
-                            ui.add(egui::Label::new(RichText::new(shown).color(theme::MUTED)).truncate())
-                                .on_hover_text(&e.key);
+                            super::a11y::explain(
+                                ui.add(
+                                    egui::Label::new(RichText::new(shown).color(theme::MUTED))
+                                        .truncate()
+                                        .selectable(true),
+                                ),
+                                &e.key,
+                            );
                         });
                     });
                 });

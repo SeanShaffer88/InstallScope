@@ -109,12 +109,27 @@ pub fn alternatives_widget(
                             }
                             other => {
                                 if let Some(Err(e)) = &other {
-                                    ui.label(RichText::new("✖").color(theme::BAD)).on_hover_text(e);
+                                    // The failure reason is inline text, not
+                                    // hover-only (audit P1-18): everyone can
+                                    // read why the install didn't happen.
+                                    ui.label(
+                                        RichText::new(format!("✖ {e}")).color(theme::BAD).small(),
+                                    );
                                 }
-                                if m.scoop && a.scoop.is_some() && ui.add_enabled(!busy, egui::Button::new(t("Install with Scoop")).small()).clicked() {
+                                let scoop_why = if busy {
+                                    t("Unavailable while another alternative is installing.")
+                                } else {
+                                    t("Downloads and installs this program on this PC through Scoop.")
+                                };
+                                let winget_why = if busy {
+                                    t("Unavailable while another alternative is installing.")
+                                } else {
+                                    t("Downloads and installs this program on this PC through winget.")
+                                };
+                                if m.scoop && a.scoop.is_some() && super::a11y::explain(ui.add_enabled(!busy, egui::Button::new(t("Install with Scoop")).small()), &scoop_why).clicked() {
                                     install_alternative(st, &ctx, a.clone(), Via::Scoop);
                                 }
-                                if m.winget && a.winget.is_some() && ui.add_enabled(!busy, egui::Button::new(t("Install with winget")).small()).clicked() {
+                                if m.winget && a.winget.is_some() && super::a11y::explain(ui.add_enabled(!busy, egui::Button::new(t("Install with winget")).small()), &winget_why).clicked() {
                                     install_alternative(st, &ctx, a.clone(), Via::Winget);
                                 }
                                 if a.winget.is_none() && a.scoop.is_none() {
