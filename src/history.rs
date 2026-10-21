@@ -397,7 +397,7 @@ impl HistoryStore {
         autostart_now: &[StartupEntry],
         now: i64,
     ) -> Vec<HistoryEvent> {
-        self.capture_full(logs, programs_now, autostart_now, &[], &[], now)
+        self.capture_inner(logs, programs_now, autostart_now, None, None, now)
     }
 
     /// Capture all read-only system inventories. Callers pass empty slices
@@ -411,18 +411,42 @@ impl HistoryStore {
         tasks_now: &[crate::startup::TaskEntry],
         now: i64,
     ) -> Vec<HistoryEvent> {
+        self.capture_inner(
+            logs,
+            programs_now,
+            autostart_now,
+            Some(services_now),
+            Some(tasks_now),
+            now,
+        )
+    }
+
+    fn capture_inner(
+        &mut self,
+        logs: &[InstallLog],
+        programs_now: &[InstalledProgram],
+        autostart_now: &[StartupEntry],
+        services_now: Option<&[crate::startup::ServiceEntry]>,
+        tasks_now: Option<&[crate::startup::TaskEntry]>,
+        now: i64,
+    ) -> Vec<HistoryEvent> {
         let programs: Vec<ProgramState> = programs_now.iter().map(ProgramState::of).collect();
         let autostart: Vec<AutostartState> = autostart_now.iter().map(AutostartState::of).collect();
-        let services: Vec<ServiceState> = services_now.iter().map(ServiceState::of).collect();
-        let tasks: Vec<TaskState> = tasks_now.iter().map(TaskState::of).collect();
+        let services =
+            services_now.map(|items| items.iter().map(ServiceState::of).collect::<Vec<_>>());
+        let tasks = tasks_now.map(|items| items.iter().map(TaskState::of).collect::<Vec<_>>());
         if self.started == 0 {
             self.started = now;
             self.programs = programs;
             self.autostart = autostart;
-            self.services = services;
-            self.tasks = tasks;
-            self.services_tracked = true;
-            self.tasks_tracked = true;
+            if let Some(services) = services {
+                self.services = services;
+                self.services_tracked = true;
+            }
+            if let Some(tasks) = tasks {
+                self.tasks = tasks;
+                self.tasks_tracked = true;
+            }
             self.seen_logs = logs.iter().map(|l| l.id.clone()).collect();
             return Vec::new();
         }
@@ -434,11 +458,15 @@ impl HistoryStore {
         // The fields were added to an existing history schema. Seed their
         // baselines once without treating the system's existing entries as
         // changes that just occurred.
-        if self.services_tracked {
-            fresh.extend(diff_services(&self.services, &services, now));
+        if let Some(services) = services.as_ref() {
+            if self.services_tracked {
+                fresh.extend(diff_services(&self.services, services, now));
+            }
         }
-        if self.tasks_tracked {
-            fresh.extend(diff_tasks(&self.tasks, &tasks, now));
+        if let Some(tasks) = tasks.as_ref() {
+            if self.tasks_tracked {
+                fresh.extend(diff_tasks(&self.tasks, tasks, now));
+            }
         }
         dedupe(&mut fresh);
         sort_events(&mut fresh);
@@ -455,10 +483,14 @@ impl HistoryStore {
         }
         self.programs = programs;
         self.autostart = autostart;
-        self.services = services;
-        self.tasks = tasks;
-        self.services_tracked = true;
-        self.tasks_tracked = true;
+        if let Some(services) = services {
+            self.services = services;
+            self.services_tracked = true;
+        }
+        if let Some(tasks) = tasks {
+            self.tasks = tasks;
+            self.tasks_tracked = true;
+        }
         fresh
     }
 
@@ -1172,6 +1204,37 @@ mod tests {
         let events = store.capture_full(&[], &[], &[], &[service], &[changed], NOW + 60);
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].kind, HistoryEventKind::TaskChanged);
+    }
+
+    #[test]
+    fn legacy_capture_does_not_seed_or_erase_extended_inventories() {
+        let mut store = HistoryStore::default();
+        let service = crate::startup::ServiceEntry {
+            name: "Svc".into(),
+            display_name: "Service".into(),
+            image_path: "svc.exe".into(),
+            start: 3,
+            delayed: false,
+            windows: false,
+            is_driver: false,
+        };
+        let task = crate::startup::TaskEntry {
+            name: "\\Vendor\\Task".into(),
+            file: String::new(),
+            command: "task.exe".into(),
+            author: "Vendor".into(),
+            enabled: true,
+            microsoft: false,
+        };
+        store.capture(&[], &[], &[], NOW);
+        assert!(!store.services_tracked && !store.tasks_tracked);
+        store.capture_full(&[], &[], &[], &[service.clone()], &[task.clone()], NOW + 60);
+        store.capture(&[], &[], &[], NOW + 120);
+        assert_eq!(store.services.len(), 1);
+        assert_eq!(store.tasks.len(), 1);
+        assert!(store
+            .capture_full(&[], &[], &[], &[service], &[task], NOW + 180)
+            .is_empty());
     }
 
     #[test]
