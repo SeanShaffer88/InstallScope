@@ -74,3 +74,19 @@ branch, so its implementation must not be copied or redistributed.
   workflow that benefits from it. If custom package-list import becomes a
   requirement, treat the text as untrusted input and resolve only exact known
   identities through the existing review flow.
+
+## Microsoft Recall policy review
+
+Reviewed 2026-10-21 against Microsoft's current [WindowsAI Policy CSP](https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-windowsai)
+and [Manage Recall for Windows clients](https://learn.microsoft.com/en-us/windows/client-management/manage-recall).
+The `DisableAIDataAnalysis` policy is documented for supported Pro,
+Enterprise, Education, and IoT Enterprise editions on Windows 11 24H2 with
+KB5055627 (build 26100.3915) and later. Enabling it prevents Recall snapshots
+from being saved, and Microsoft states that existing snapshots are deleted.
+
+InstallScope exposes this as a current-account policy only after checking the
+installed build, update revision, and edition. It displays the deletion effect
+before confirmation and saves the exact prior registry value. That backup does
+not contain Recall snapshots and cannot restore them. Unknown or unsupported
+system profiles fail closed for applying the policy; an existing policy value
+can still be cleared after review.
