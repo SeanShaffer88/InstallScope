@@ -1,7 +1,7 @@
 //! Settings page.
 
 use super::a11y;
-use super::app::{App, Confirm};
+use super::app::{App, Confirm, Tab};
 use super::theme;
 use super::widgets::*;
 use super::Job;
@@ -542,6 +542,31 @@ impl App {
                             }
                         }
                         small_muted(ui, t("Starts with Windows at low priority, keeps a snapshot, and saves an install log (tagged \"auto\") whenever a new program appears. Taking snapshots uses some disk and memory after sign-in. Needs Administrator rights to turn on or off."));
+                    });
+                }
+                if self.settings.advanced_mode {
+                    ui.add_space(10.0);
+                    theme::card(ui, |ui| {
+                        ui.label(RichText::new(t("Autostart Gatekeeper")).heading());
+                        ui.add_space(4.0);
+                        changed |= a11y::explain(
+                            ui.checkbox(
+                                &mut self.settings.gatekeeper_enabled,
+                                t("Watch for new autostart entries and keep them for review"),
+                            ),
+                            &t("Compares the programs that start with Windows with a saved baseline whenever a scan runs, and queues anything new for you to keep or remove. It never blocks an installer and never removes an entry without your decision."),
+                        )
+                        .changed();
+                        small_muted(ui, t("Opt-in and off by default. Nothing runs in the background: a scan happens when you click Scan now on the Autostart Gatekeeper page, or run \"installscope gatekeeper scan\". Run and RunOnce entries and Startup-folder shortcuts are covered; services and scheduled tasks stay on the Startup page."));
+                        if a11y::explain(
+                            ui.button(format!("→ {}", t("Open the review queue"))),
+                            &t("Go to the Autostart Gatekeeper page, where every new startup entry waits until you keep or remove it."),
+                        )
+                        .clicked()
+                        {
+                            self.tab = Tab::Gatekeeper;
+                            self.on_tab_opened(ctx, Tab::Gatekeeper);
+                        }
                     });
                 }
                 if changed {

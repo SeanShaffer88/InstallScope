@@ -99,12 +99,16 @@ App Rewind.
   start**, **Disable**, **Uninstall…**, or **Keep**. History accumulates locally
   over time — ship the capture early, and show honest empty states on fresh
   installs.
-- **Autostart Gatekeeper** — opt-in (Advanced) extension of background
-  monitoring: new autostart entries land in a review queue attributed to the
-  installer that added them, with Decrapifier verdicts attached. Calm digest
-  (default weekly), never modal popups, never live-blocking; auto-disable only
-  high-confidence bloat; everything reversible; attribution labeled with its
-  evidence level.
+- **Autostart Gatekeeper** — opt-in (Advanced) review of the programs that
+  start with Windows. Detection, attribution and the Decrapifier verdicts are
+  wired to both the command line (`installscope gatekeeper`) and an
+  **Autostart Gatekeeper** page, where each new or changed Run/RunOnce entry or
+  Startup-folder shortcut waits for an explicit *Keep* or *Remove* (backed up
+  first). Remaining work: a calm periodic digest (default weekly, never modal)
+  instead of only the navigation badge, extending detection to services and
+  scheduled tasks, an optional scan after each monitored installation, and
+  auto-disabling only high-confidence bloat — everything reversible and every
+  attribution labeled with its evidence level.
 - **App Rewind — per-program time travel** — for monitored or analyzed
   programs, keep a recorded state history (at install and at updates); rewind
   just that program to an earlier state from a plain-language History timeline,

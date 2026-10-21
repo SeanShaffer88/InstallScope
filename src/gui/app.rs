@@ -25,6 +25,8 @@ pub enum Tab {
     Shell,
     Debloat,
     ExtInv,
+    /// Opt-in review queue for programs that start with Windows.
+    Gatekeeper,
     Settings,
 }
 
@@ -41,6 +43,8 @@ pub enum Confirm {
     DisableExtension(String),
     /// Restore a browser extension disabled through InstallScope.
     RestoreExtension(String),
+    /// Remove an autostart entry from the Gatekeeper's review queue.
+    GatekeeperRemove(String),
     ResetSettings,
     CancelMonitoring,
     /// Discard the install log under review in Monitor Review: the only
@@ -90,6 +94,7 @@ impl Confirm {
                 | Confirm::CleanJunk
                 | Confirm::DeleteStartup(_)
                 | Confirm::DeleteTask(_)
+                | Confirm::GatekeeperRemove(_)
                 | Confirm::ResetSettings
                 | Confirm::DiscardReview
                 | Confirm::DeepClean(_)
@@ -136,6 +141,8 @@ pub struct App {
     pub shell: super::shell_ui::ShellState,
     pub debloat: super::debloat_ui::DebloatState,
     pub extinv: super::extinv_ui::ExtInvState,
+    /// Autostart Gatekeeper review queue (opt-in).
+    pub gatekeeper: super::gatekeeper_ui::GatekeeperState,
     pub alt: super::alt_ui::AltState,
     /// "Ask InstallScope" plain-language search (Ctrl+K).
     pub ask_ui: super::ask::AskState,
@@ -221,6 +228,7 @@ impl App {
             shell: Default::default(),
             debloat: Default::default(),
             extinv: Default::default(),
+            gatekeeper: Default::default(),
             shown_tab: None,
             tab_since: 0.0,
             alt: Default::default(),
@@ -376,6 +384,7 @@ impl App {
             Confirm::DeleteTask(i) => self.delete_task(i),
             Confirm::DisableExtension(key) => self.disable_extension(&key),
             Confirm::RestoreExtension(key) => self.restore_extension(&key),
+            Confirm::GatekeeperRemove(id) => self.remove_gatekeeper_item(&id),
             Confirm::DeprovisionBloat(names, programs) => {
                 // The names ride with the wizard and are consumed only
                 // after those programs were actually removed; a cancelled
@@ -581,6 +590,12 @@ impl App {
     }
 
     fn nav_sidebar(&mut self, ctx: &egui::Context) {
+        // How many autostart entries are waiting in the Gatekeeper's queue.
+        // Read from the stored queue (not a new scan), so showing it never
+        // performs detection behind the user's back.
+        let waiting = self.gatekeeper.pending();
+        let gatekeeper_badge = (self.settings.gatekeeper_enabled && waiting > 0)
+            .then(|| waiting.to_string());
         egui::SidePanel::left("nav")
             .resizable(false)
             .exact_width(214.0)
@@ -758,6 +773,21 @@ impl App {
                         }
                         if theme::nav_item_with_hint(
                             ui,
+                            "🔔",
+                            &t("Autostart Gatekeeper"),
+                            self.tab == Tab::Gatekeeper,
+                            gatekeeper_badge.clone(),
+                            Some(&t(
+                                "Review programs that start with Windows and keep only the ones you want",
+                            )),
+                        )
+                        .clicked()
+                        {
+                            self.tab = Tab::Gatekeeper;
+                            self.on_tab_opened(ctx, Tab::Gatekeeper);
+                        }
+                        if theme::nav_item_with_hint(
+                            ui,
                             "☰",
                             &t("Right-Click Menu"),
                             self.tab == Tab::Shell,
@@ -849,6 +879,10 @@ impl App {
                 "Browser extensions",
                 "See every browser extension, with safe disable and restore",
             ),
+            Tab::Gatekeeper => (
+                "Autostart Gatekeeper",
+                "Review the programs that start with Windows and decide whether they stay",
+            ),
             Tab::Settings => ("Settings", ""),
         };
         let help = page_help(self.tab);
@@ -909,6 +943,9 @@ impl App {
             Tab::Logs => self.reload_logs(),
             Tab::Backups => self.reload_backups(),
             Tab::Startup if !self.startup.loaded => self.refresh_startup(ctx),
+            // Re-read the stored queue each time the page opens, so a scan run
+            // from the command line shows up without restarting InstallScope.
+            Tab::Gatekeeper => self.refresh_gatekeeper(),
             Tab::Settings => self.settings_ui.load(&self.settings),
             Tab::Lab => self.on_lab_opened(),
             _ => {}
@@ -1078,6 +1115,17 @@ impl App {
         self.poll_shell();
         self.poll_debloat();
         self.poll_extinv();
+        self.poll_gatekeeper();
+        // With the Gatekeeper on, read its stored queue once so the navigation
+        // can show how many entries are waiting. This is a file read, not a
+        // scan: nothing is compared or recorded behind the user's back.
+        if self.settings.gatekeeper_enabled
+            && self.gatekeeper.queue.is_none()
+            && self.gatekeeper.load_job.is_none()
+            && self.gatekeeper.error.is_none()
+        {
+            self.refresh_gatekeeper();
+        }
         self.poll_alternatives();
         self.poll_silent_package();
         self.poll_precheck(ctx);
@@ -1214,6 +1262,12 @@ fn page_help(tab: Tab) -> &'static [&'static str] {
             "This page lists every extension installed in the supported Chromium-based and Firefox-based browsers, grouped by browser and profile.",
             "Disable moves an extension's files into InstallScope's own data folder: nothing is deleted, and the rest of the profile (bookmarks, history, settings) is never touched. Restore puts the files back exactly where they were.",
             "Close the browser before disabling or restoring, and restart it afterwards for the change to take effect.",
+        ],
+        Tab::Gatekeeper => &[
+            "The Gatekeeper compares the programs that start with Windows — Run and RunOnce entries and Startup-folder shortcuts — with a saved baseline, so anything new or changed can be reviewed.",
+            "It is off until you turn it on, and it never blocks an installer or removes anything by itself. A scan only fills this list; each entry waits until you click Keep or Remove.",
+            "When an install log explains an entry, the Gatekeeper says which program added it and why it thinks so. Otherwise it says the origin is unknown instead of guessing. Removing is backed up first unless backups are off in Settings.",
+            "To check automatically after installing something, click Scan now (or run \\\"installscope gatekeeper scan\\\"). Services and scheduled tasks are managed on the Startup page.",
         ],
         Tab::Builder => &[
             "Choose a program's installer and describe the program. InstallScope snapshots Windows, runs the installer, lets you start the program once, snapshots again and builds a PortableApps.com Format package from the difference.",
@@ -1478,6 +1532,7 @@ impl App {
                 order.insert(9, Tab::Builder);
                 order.insert(10, Tab::Debloat);
                 order.insert(11, Tab::Shell);
+                order.insert(12, Tab::Gatekeeper);
                 let pos = order.iter().position(|t| *t == self.tab).unwrap_or(0);
                 let n = order.len();
                 let next = if back {
@@ -1509,6 +1564,9 @@ impl App {
             match self.tab {
                 Tab::Programs | Tab::Dashboard => self.refresh_programs(ctx),
                 Tab::Startup => self.refresh_startup(ctx),
+                // Refreshing this page means running a detection pass, which
+                // is what someone pressing F5 here is asking for.
+                Tab::Gatekeeper => self.scan_gatekeeper(),
                 Tab::Logs => self.reload_logs(),
                 Tab::Backups => self.reload_backups(),
                 _ => {}
@@ -1606,6 +1664,7 @@ impl eframe::App for App {
             Tab::Shell => self.ui_shell(ctx),
             Tab::Debloat => self.ui_debloat(ctx),
             Tab::ExtInv => self.ui_extinv(ctx),
+            Tab::Gatekeeper => self.ui_gatekeeper(ctx),
             Tab::Settings => self.ui_settings(ctx),
         }
         self.page_transition(ctx);
@@ -1641,6 +1700,7 @@ mod confirm_tests {
         assert!(!Confirm::CleanJunk.always_confirm());
         assert!(!Confirm::DeleteStartup(0).always_confirm());
         assert!(!Confirm::DeleteTask(0).always_confirm());
+        assert!(!Confirm::GatekeeperRemove("g".into()).always_confirm());
         assert!(!Confirm::ResetSettings.always_confirm());
         assert!(!Confirm::CancelMonitoring.always_confirm());
         assert!(!Confirm::DiscardReview.always_confirm());
@@ -1658,6 +1718,7 @@ mod confirm_tests {
             Confirm::CleanJunk,
             Confirm::DeleteStartup(0),
             Confirm::DeleteTask(0),
+            Confirm::GatekeeperRemove("g".into()),
             Confirm::ResetSettings,
             Confirm::DiscardReview,
             Confirm::DeepClean(DeepItem::RestorePoints),
