@@ -870,6 +870,22 @@ impl App {
                                 ("registry", m.registry_roots.len().to_string()),
                             ],
                         ));
+                        for root in &m.file_roots {
+                            let state = if m.active_file_roots.iter().any(|active| active.eq_ignore_ascii_case(root)) {
+                                t("active")
+                            } else {
+                                t("not active")
+                            };
+                            small_muted(ui, tf("Folder ({state}): {path}", &[("state", state), ("path", root.clone())]));
+                        }
+                        for root in &m.registry_roots {
+                            let state = if m.active_registry_roots.iter().any(|active| active.eq_ignore_ascii_case(root)) {
+                                t("active")
+                            } else {
+                                t("not active")
+                            };
+                            small_muted(ui, tf("Registry ({state}): {path}", &[("state", state), ("path", root.clone())]));
+                        }
                         small_muted(ui, tf(
                             "Distinct paths: {added} added · {changed} changed · {removed} removed · {registry} registry areas. Notifications: {file_events} file · {registry_events} registry.",
                             &[
