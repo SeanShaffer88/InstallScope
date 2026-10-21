@@ -101,6 +101,7 @@ unsafe extern "system" fn fixture_dialog(
         System::Threading::{
             OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
         },
+        UI::Input::KeyboardAndMouse::IsWindowEnabled,
         UI::WindowsAndMessaging::*,
     };
     let state = &mut *(data as *mut FixtureDialog);
