@@ -42,3 +42,19 @@ jobs:
         run: cargo build --manifest-path crates/portable-builder-kit/Cargo.toml --features test-fixture --bin pafkit-test-tool --locked
       - name: Compile, install, launch, relocate and upgrade
         run: cargo run --example pafkit_smoke --locked -- crates/portable-builder-kit/target/debug/pafkit-test-tool.exe
+      - name: Show compiler diagnostics on failure
+        if: failure()
+        shell: pwsh
+        run: |
+          Get-ChildItem "$env:TEMP/installscope-nsis-*.log" -ErrorAction SilentlyContinue | ForEach-Object {
+            Write-Host "Compiler log: $($_.FullName)"
+            Get-Content $_.FullName | Select-Object -Last 80
+            New-Item -ItemType Directory compiler-diagnostics -Force | Out-Null
+            Copy-Item $_.FullName compiler-diagnostics/
+          }
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: portable-compiler-diagnostics
+          path: compiler-diagnostics/*.log
+          if-no-files-found: ignore

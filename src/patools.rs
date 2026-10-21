@@ -281,17 +281,15 @@ pub fn ensure_with_cancel(
 }
 
 fn run_makensis(tc: &Toolchain, args: &[String], cancel: &dyn Fn() -> bool) -> Result<String> {
-    use std::io::{Read, Seek};
     let log = std::env::temp_dir().join(format!("installscope-nsis-{}.log", crate::util::new_id()));
     // Reserve our own diagnostic path before handing it to the trusted compiler.
     std::fs::OpenOptions::new()
         .write(true)
         .create_new(true)
         .open(&log)?;
-    let mut arguments: Vec<std::ffi::OsString> = vec![
-        format!("/O{}", log.display()).into(),
-        "/OUTPUTCHARSET=UTF8".into(),
-    ];
+    // NSIS variants can interpret unknown /O... switches as log filenames;
+    // use the portable /O switch alone and decode the log's actual encoding.
+    let mut arguments: Vec<std::ffi::OsString> = vec![format!("/O{}", log.display()).into()];
     arguments.extend(args.iter().map(std::ffi::OsString::from));
     let request = portable_builder_kit::process::ToolRequest {
         executable: tc.makensis(),
@@ -300,15 +298,8 @@ fn run_makensis(tc: &Toolchain, args: &[String], cancel: &dyn Fn() -> bool) -> R
         timeout: std::time::Duration::from_secs(600),
     };
     let result = portable_builder_kit::process::run_tool(&request, cancel);
-    let diagnostics = (|| -> std::io::Result<String> {
-        let mut file = std::fs::File::open(&log)?;
-        let size = file.metadata()?.len();
-        file.seek(std::io::SeekFrom::Start(size.saturating_sub(65536)))?;
-        let mut bytes = Vec::new();
-        file.take(65536).read_to_end(&mut bytes)?;
-        Ok(String::from_utf8_lossy(&bytes).into_owned())
-    })()
-    .unwrap_or_else(|error| format!("Could not read compiler diagnostics: {error}"));
+    let diagnostics = nsis_log_tail(&log)
+        .unwrap_or_else(|error| format!("Could not read compiler diagnostics: {error}"));
     if let Err(error) = result {
         let tail: Vec<_> = diagnostics
             .lines()
@@ -324,6 +315,37 @@ fn run_makensis(tc: &Toolchain, args: &[String], cancel: &dyn Fn() -> bool) -> R
     }
     let _ = std::fs::remove_file(log);
     Ok(diagnostics)
+}
+
+/// Read a bounded tail from both the older UTF-16 and newer UTF-8 NSIS logs.
+fn nsis_log_tail(path: &Path) -> std::io::Result<String> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(path)?;
+    let size = file.metadata()?.len();
+    let mut bom = [0u8; 2];
+    if size >= 2 {
+        file.read_exact(&mut bom)?;
+    }
+    let utf16 = bom == [0xff, 0xfe];
+    let start = if utf16 {
+        size.saturating_sub(65536) & !1
+    } else {
+        size.saturating_sub(65536)
+    };
+    file.seek(SeekFrom::Start(start))?;
+    let mut bytes = Vec::new();
+    file.take(65536).read_to_end(&mut bytes)?;
+    if utf16 {
+        let units: Vec<_> = bytes
+            .strip_prefix(&[0xff, 0xfe])
+            .unwrap_or(&bytes)
+            .chunks_exact(2)
+            .map(|b| u16::from_le_bytes([b[0], b[1]]))
+            .collect();
+        Ok(String::from_utf16_lossy(&units))
+    } else {
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
+    }
 }
 
 /// Compile `<package>\<AppID>.exe` from the official Launcher source, the
@@ -503,6 +525,26 @@ pub fn build_silent_setup(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn compiler_diagnostics_decode_unicode_and_bound_the_tail() {
+        let temp = crate::util::tempdir().unwrap();
+        let path = temp.path().join("compiler.log");
+        let text = "工具: actual compiler error";
+        std::fs::write(&path, text.as_bytes()).unwrap();
+        assert_eq!(nsis_log_tail(&path).unwrap(), text);
+        let mut wide = vec![0xff, 0xfe];
+        for unit in text.encode_utf16() {
+            wide.extend_from_slice(&unit.to_le_bytes());
+        }
+        std::fs::write(&path, wide).unwrap();
+        assert_eq!(nsis_log_tail(&path).unwrap(), text);
+        let huge = format!("{}\n{last}", "x".repeat(100000), last = text);
+        std::fs::write(&path, huge.as_bytes()).unwrap();
+        let tail = nsis_log_tail(&path).unwrap();
+        assert!(tail.len() <= 65536 && tail.ends_with(text));
+    }
+
     use std::io::Write;
 
     #[test]
