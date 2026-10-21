@@ -9,7 +9,7 @@
 //!
 //! ## Where events come from
 //!
-//! Nothing here monitors anything new. [`HistoryStore::capture`] is handed
+//! Nothing here monitors anything new. [`HistoryStore::capture_full`] is handed
 //! existing local observations — saved install logs, installed programs,
 //! startup entries, services and scheduled tasks — and derives events from
 //! them:
