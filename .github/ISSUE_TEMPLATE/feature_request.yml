@@ -1,8 +1,8 @@
 name: Feature request
-description: Suggest an idea for InstallScope
+description: Suggest an idea for SetupSweep
 labels: [enhancement]
 body:
   - type: textarea
     id: idea
-    attributes: { label: What would you like InstallScope to do?, description: "And what problem would it solve for you?" }
+    attributes: { label: What would you like SetupSweep to do?, description: "And what problem would it solve for you?" }
     validations: { required: true }

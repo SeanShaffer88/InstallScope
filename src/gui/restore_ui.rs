@@ -7,9 +7,9 @@ use super::widgets::*;
 use super::Job;
 use egui::RichText;
 use egui_extras::{Column, TableBuilder};
-use installscope_core::i18n::{t, tf};
-use installscope_core::model::human_size;
-use installscope_core::restore::{self, Protection, RestorePoint};
+use setupsweep_core::i18n::{t, tf};
+use setupsweep_core::model::human_size;
+use setupsweep_core::restore::{self, Protection, RestorePoint};
 
 /// Restore points (or why they couldn't be read) and System Protection.
 type Loaded = (Result<Vec<RestorePoint>, String>, Protection);
@@ -104,7 +104,7 @@ impl App {
         let busy = self.restore.action_job.is_some();
         egui::CentralPanel::default().frame(theme::content_frame()).show(ctx, |ui| {
             if !self.elevated {
-                theme::warning_banner(ui, t("Run InstallScope as Administrator to see and manage restore points."));
+                theme::warning_banner(ui, t("Run SetupSweep as Administrator to see and manage restore points."));
                 ui.add_space(6.0);
             }
             match &self.restore.message {
@@ -143,7 +143,7 @@ impl App {
                         ui.horizontal_wrapped(|ui| {
                             let label = if p.enabled { t("Turn off") } else { t("Turn on") };
                             let why = if p.enabled {
-                                t("Turn System Protection off. Windows deletes every restore point, so InstallScope asks first.")
+                                t("Turn System Protection off. Windows deletes every restore point, so SetupSweep asks first.")
                             } else {
                                 t("Turn System Protection on, so restore points can be created again.")
                             };
@@ -151,7 +151,7 @@ impl App {
                                 if p.enabled {
                                     self.ask(
                                         "Turn off System Protection?",
-                                        t("Windows deletes all existing restore points and stops creating new ones. InstallScope can then no longer create a restore point before changes."),
+                                        t("Windows deletes all existing restore points and stops creating new ones. SetupSweep can then no longer create a restore point before changes."),
                                         "Turn off",
                                         Confirm::SetProtection(false),
                                     );
@@ -189,7 +189,7 @@ impl App {
                     let ok = !busy && self.elevated && prot.as_ref().is_some_and(|p| p.enabled);
                     if a11y::explain(ui.add_enabled(ok, egui::Button::new(t("Create"))), &t("Create a restore point now: a snapshot of Windows' system files and settings that you can roll back to if something goes wrong. Your documents and photos are not part of it.")).clicked() {
                         let d = if self.restore.description.trim().is_empty() {
-                            "InstallScope manual restore point".to_string()
+                            "SetupSweep manual restore point".to_string()
                         } else {
                             self.restore.description.trim().to_string()
                         };

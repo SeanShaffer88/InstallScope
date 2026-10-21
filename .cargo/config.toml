@@ -1,4 +1,4 @@
-# Statically link the C runtime so InstallScope.exe needs nothing but Windows itself
+# Statically link the C runtime so SetupSweep.exe needs nothing but Windows itself
 # (no Visual C++ Redistributable).
 [target.x86_64-pc-windows-msvc]
 rustflags = ["-C", "target-feature=+crt-static"]

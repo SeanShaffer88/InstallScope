@@ -580,8 +580,8 @@ mod tests {
         std::fs::write(tmp.path().join("Profile 1/Cache/a/f1"), "1234").unwrap();
         std::fs::write(tmp.path().join("Default/Cache/f2"), "12").unwrap();
         std::fs::write(tmp.path().join("Default/Keep/f3"), "1").unwrap();
-        std::env::set_var("INSTALLSCOPE_CLEAN_TEST", tmp.path());
-        let pat: &'static str = "%INSTALLSCOPE_CLEAN_TEST%/*/Cache";
+        std::env::set_var("SETUPSWEEP_CLEAN_TEST", tmp.path());
+        let pat: &'static str = "%SETUPSWEEP_CLEAN_TEST%/*/Cache";
         let found = resolve_pattern(pat);
         assert_eq!(found.len(), 2, "{found:?}");
         let cat = Category {
@@ -604,7 +604,7 @@ mod browser_tests {
 
     #[test]
     fn browser_items_cover_every_profile() {
-        let d = std::env::temp_dir().join(format!("installscope-browsers-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("setupsweep-browsers-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         for prof in ["Default", "Profile 2"] {
             let p = d.join("Chrome").join("User Data").join(prof);
@@ -657,12 +657,12 @@ mod review_tests {
         std::fs::write(root.join("Keep/b/f2"), "123").unwrap(); // folder protected
         std::fs::write(root.join("Cookies/f3"), "12").unwrap(); // exact file protected
         std::fs::write(root.join("Cookies/f4"), "1").unwrap(); // deletable: only f3 is named
-        std::env::set_var("INSTALLSCOPE_CLEAN_PROT1", root);
-        let pat: &'static str = "%INSTALLSCOPE_CLEAN_PROT1%";
+        std::env::set_var("SETUPSWEEP_CLEAN_PROT1", root);
+        let pat: &'static str = "%SETUPSWEEP_CLEAN_PROT1%";
         let cat = test_category("t", pat);
         let protect = vec![
-            format!("%INSTALLSCOPE_CLEAN_PROT1%\\Keep"),
-            format!("%INSTALLSCOPE_CLEAN_PROT1%\\Cookies\\f3"),
+            format!("%SETUPSWEEP_CLEAN_PROT1%\\Keep"),
+            format!("%SETUPSWEEP_CLEAN_PROT1%\\Cookies\\f3"),
         ];
         let scan = scan_detailed(&cat, &protect);
         // Keep is a folder: everything beneath it is kept.
@@ -695,14 +695,14 @@ mod review_tests {
         std::fs::write(root.join("Profiles/Default/Network/Cookies"), "ccc").unwrap();
         std::fs::write(root.join("Profiles/Other/Network/Cookies"), "cc").unwrap();
         std::fs::write(root.join("Profiles/Default/Network/Cache"), "c").unwrap();
-        std::env::set_var("INSTALLSCOPE_CLEAN_PROT2", root);
-        let cat = test_category("t", "%INSTALLSCOPE_CLEAN_PROT2%");
+        std::env::set_var("SETUPSWEEP_CLEAN_PROT2", root);
+        let cat = test_category("t", "%SETUPSWEEP_CLEAN_PROT2%");
         let protect = vec![
             // A glob over the profile segment protects every profile's
             // Cookies file; blanks and comments are ignored.
             "".to_string(),
             "# keep sign-in state".to_string(),
-            "%INSTALLSCOPE_CLEAN_PROT2%\\Profiles\\*\\Network\\COOKIES".to_string(),
+            "%SETUPSWEEP_CLEAN_PROT2%\\Profiles\\*\\Network\\COOKIES".to_string(),
         ];
         let scan = scan_detailed(&cat, &protect);
         let kept_names: Vec<_> = scan
@@ -726,10 +726,10 @@ mod review_tests {
         std::fs::write(root.join("Cache/f1"), "1234").unwrap();
         std::fs::write(root.join("Cache/sub/f2"), "12").unwrap();
         std::fs::write(root.join("Saved/f3"), "1").unwrap();
-        std::env::set_var("INSTALLSCOPE_CLEAN_PROT3", root);
-        let cat = test_category("t", "%INSTALLSCOPE_CLEAN_PROT3%");
+        std::env::set_var("SETUPSWEEP_CLEAN_PROT3", root);
+        let cat = test_category("t", "%SETUPSWEEP_CLEAN_PROT3%");
         // Protect the Saved folder; clean only what the scan lists.
-        let protect = vec!["%INSTALLSCOPE_CLEAN_PROT3%\\Saved".to_string()];
+        let protect = vec!["%SETUPSWEEP_CLEAN_PROT3%\\Saved".to_string()];
         let scan = scan_detailed(&cat, &protect);
         assert_eq!(scan.files.len(), 2);
         let freed = clean_files(&cat, &scan.files);
@@ -752,18 +752,18 @@ mod review_tests {
         let tmp = crate::util::tempdir().unwrap();
         std::fs::create_dir(tmp.path().join("sub")).unwrap();
         std::fs::write(tmp.path().join("sub/cache"), b"1234").unwrap();
-        std::env::set_var("INSTALLSCOPE_CLEAN_OVERLAP", tmp.path());
+        std::env::set_var("SETUPSWEEP_CLEAN_OVERLAP", tmp.path());
         let cat = Category {
             patterns: vec![
-                "%INSTALLSCOPE_CLEAN_OVERLAP%",
-                "%INSTALLSCOPE_CLEAN_OVERLAP%/sub",
+                "%SETUPSWEEP_CLEAN_OVERLAP%",
+                "%SETUPSWEEP_CLEAN_OVERLAP%/sub",
             ],
-            ..test_category("t", "%INSTALLSCOPE_CLEAN_OVERLAP%")
+            ..test_category("t", "%SETUPSWEEP_CLEAN_OVERLAP%")
         };
         let scan = scan_detailed(&cat, &[]);
         assert_eq!(scan.files.len(), 1);
         assert_eq!(scan.totals, ScanResult { files: 1, bytes: 4 });
-        let kept = scan_detailed(&cat, &["%INSTALLSCOPE_CLEAN_OVERLAP%".into()]);
+        let kept = scan_detailed(&cat, &["%SETUPSWEEP_CLEAN_OVERLAP%".into()]);
         assert!(kept.files.is_empty());
         assert_eq!(kept.kept_totals(), ScanResult { files: 1, bytes: 4 });
     }
@@ -775,8 +775,8 @@ mod review_tests {
         let stable = tmp.path().join("stable");
         std::fs::write(&changed, b"old").unwrap();
         std::fs::write(&stable, b"keep size").unwrap();
-        std::env::set_var("INSTALLSCOPE_CLEAN_CHANGED", tmp.path());
-        let cat = test_category("t", "%INSTALLSCOPE_CLEAN_CHANGED%");
+        std::env::set_var("SETUPSWEEP_CLEAN_CHANGED", tmp.path());
+        let cat = test_category("t", "%SETUPSWEEP_CLEAN_CHANGED%");
         let scan = scan_detailed(&cat, &[]);
         std::fs::write(&changed, b"new content to review").unwrap();
         assert_eq!(

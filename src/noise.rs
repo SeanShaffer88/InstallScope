@@ -4,7 +4,7 @@
 //!
 //! Two layers:
 //! - a built-in list, applied whenever "automatic exclusions" is on; it is not
-//!   stored in the settings file, so it improves with every InstallScope update;
+//!   stored in the settings file, so it improves with every SetupSweep update;
 //! - *learned* noise: two snapshots taken a minute apart with nothing
 //!   installed in between show what this particular PC changes by itself.
 

@@ -1,12 +1,12 @@
 <#
 .SYNOPSIS
   Soak test: install, remove and verify real programs over and over for
-  hours or days, with InstallScope's background watcher running throughout.
+  hours or days, with SetupSweep's background watcher running throughout.
 
 .DESCRIPTION
-  Each cycle installs one program under monitoring, removes it with InstallScope
+  Each cycle installs one program under monitoring, removes it with SetupSweep
   (closing it if it started, restarting Explorer if needed), and checks that
-  nothing it added is left. Meanwhile `installscope watch` runs as it does after
+  nothing it added is left. Meanwhile `setupsweep watch` runs as it does after
   sign-in, and its handle count and memory are sampled every cycle.
 
   Fails (exit 1) when:
@@ -21,12 +21,12 @@
 
 .EXAMPLE
   # Three days on a test VM, from an elevated PowerShell:
-  .\scripts\soak.ps1 -InstallScope .\target\release\installscope.exe -Hours 72
+  .\scripts\soak.ps1 -SetupSweep .\target\release\setupsweep.exe -Hours 72
 #>
 param(
-  [Parameter(Mandatory)] [string] $InstallScope,
+  [Parameter(Mandatory)] [string] $SetupSweep,
   [double] $Hours = 5,
-  [string] $Work = "$env:TEMP\installscope-soak",
+  [string] $Work = "$env:TEMP\setupsweep-soak",
   # Cycles before the watcher's resource use is taken as the baseline.
   [int] $WarmupCycles = 3,
   # Allowed growth over the baseline before it counts as a leak.
@@ -48,9 +48,9 @@ $installers = @(
      url = 'https://github.com/jrsoftware/issrc/releases/download/is-6_4_3/innosetup-6.4.3.exe' }
 )
 
-New-Item -ItemType Directory -Force $Work, "$Work\cache", "$Work\app\InstallScopeData" | Out-Null
-$exe = "$Work\app\InstallScope.exe"
-Copy-Item $InstallScope $exe -Force
+New-Item -ItemType Directory -Force $Work, "$Work\cache", "$Work\app\SetupSweepData" | Out-Null
+$exe = "$Work\app\SetupSweep.exe"
+Copy-Item $SetupSweep $exe -Force
 # Portable mode keeps logs and backups in the work folder.
 New-Item "$Work\app\portable" -ItemType File -Force | Out-Null
 @{
@@ -64,7 +64,7 @@ New-Item "$Work\app\portable" -ItemType File -Force | Out-Null
     @{ path = '%PUBLIC%\Desktop'; recursive = $false },
     @{ path = '%USERPROFILE%\Desktop'; recursive = $false }
   )
-} | ConvertTo-Json -Depth 5 | Set-Content "$Work\app\InstallScopeData\settings.json"
+} | ConvertTo-Json -Depth 5 | Set-Content "$Work\app\SetupSweepData\settings.json"
 
 foreach ($i in $installers) {
   $out = "$Work\cache\$($i.file)"
@@ -74,9 +74,9 @@ foreach ($i in $installers) {
   }
 }
 
-# Run InstallScope and wait for it alone (not for programs an installer leaves
+# Run SetupSweep and wait for it alone (not for programs an installer leaves
 # running). Returns its exit code, standard output and error output.
-function Invoke-InstallScope([string[]] $argv, [int] $minutes = $StepMinutes) {
+function Invoke-SetupSweep([string[]] $argv, [int] $minutes = $StepMinutes) {
   $quoted = $argv | ForEach-Object { if ($_ -match ' ') { '"' + $_ + '"' } else { $_ } }
   $p = Start-Process $exe -ArgumentList $quoted -PassThru -NoNewWindow `
     -RedirectStandardOutput "$Work\out.txt" -RedirectStandardError "$Work\err.txt"
@@ -90,7 +90,7 @@ function Invoke-InstallScope([string[]] $argv, [int] $minutes = $StepMinutes) {
 
 # Install logs background monitoring recorded on its own.
 function Get-AutoLogs {
-  $r = Invoke-InstallScope @('logs', '--tag', 'auto', '--json') 2
+  $r = Invoke-SetupSweep @('logs', '--tag', 'auto', '--json') 2
   if ($r.code -ne 0 -or -not $r.out) { return @() }
   @($r.out | ConvertFrom-Json)
 }
@@ -115,7 +115,7 @@ while ((Get-Date) -lt $deadline -and $failures.Count -eq 0) {
   $ok = $true; $detail = ''
 
   $t = [Diagnostics.Stopwatch]::StartNew()
-  $r = Invoke-InstallScope (@('monitor', '--no-prompt', '--json', '--', $iexe) + $iargs)
+  $r = Invoke-SetupSweep (@('monitor', '--no-prompt', '--json', '--', $iexe) + $iargs)
   $installS = [math]::Round($t.Elapsed.TotalSeconds)
   $removeS = 0
   if ($r.code -ne 0) {
@@ -123,18 +123,18 @@ while ((Get-Date) -lt $deadline -and $failures.Count -eq 0) {
   } else {
     $log = $r.out | ConvertFrom-Json
     $t.Restart()
-    $r = Invoke-InstallScope @('revert', $log.id, '--close-programs', '--restart-explorer', '--keep-log')
+    $r = Invoke-SetupSweep @('revert', $log.id, '--close-programs', '--restart-explorer', '--keep-log')
     $removeS = [math]::Round($t.Elapsed.TotalSeconds)
     if ($r.code -ne 0) {
       $ok = $false; $detail = 'revert: ' + ((($r.out + $r.err) -split "`n" | Select-String 'FAIL' | Select-Object -First 3) -join ' | ')
     } else {
-      $r = Invoke-InstallScope @('check-clean', $log.id)
+      $r = Invoke-SetupSweep @('check-clean', $log.id)
       if ($r.code -ne 0) {
         $ok = $false; $detail = 'leftovers: ' + ((($r.out + $r.err) -split "`n" | Where-Object { $_ } | Select-Object -First 5) -join ' | ')
       }
     }
     # The log has served its purpose; removing it keeps the store small.
-    Remove-Item "$Work\app\InstallScopeData\logs\$($log.id).json" -ErrorAction SilentlyContinue
+    Remove-Item "$Work\app\SetupSweepData\logs\$($log.id).json" -ErrorAction SilentlyContinue
   }
 
   $auto = Get-AutoLogs
@@ -150,7 +150,7 @@ while ((Get-Date) -lt $deadline -and $failures.Count -eq 0) {
     $handles = $watch.HandleCount
     $privMb = [math]::Round($watch.PrivateMemorySize64 / 1MB, 1)
   }
-  $dataMb = [math]::Round(((Get-ChildItem "$Work\app\InstallScopeData" -Recurse -File | Measure-Object Length -Sum).Sum) / 1MB, 1)
+  $dataMb = [math]::Round(((Get-ChildItem "$Work\app\SetupSweepData" -Recurse -File | Measure-Object Length -Sum).Sum) / 1MB, 1)
 
   if ($cycle -eq $WarmupCycles) { $baseline = @{ handles = $handles; mb = $privMb } }
   if ($baseline -and -not $watch.HasExited) {
@@ -180,7 +180,7 @@ $summary = @"
 | Failures | $($failures.Count) |
 | Watcher handles (first, last) | $($rows[0].watch_handles), $($rows[-1].watch_handles) |
 | Watcher private memory MB (first, last) | $($rows[0].watch_private_mb), $($rows[-1].watch_private_mb) |
-| InstallScope data MB (last) | $($rows[-1].data_mb) |
+| SetupSweep data MB (last) | $($rows[-1].data_mb) |
 "@
 if ($failures.Count) { $summary += "`n**First failure:** $($failures[0])`n" }
 $summary | Set-Content "$Work\soak-summary.md"

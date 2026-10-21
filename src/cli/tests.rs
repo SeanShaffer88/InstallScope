@@ -14,7 +14,7 @@ fn every_destructive_command_classifies_destructive() {
         &["clean", "--categories", "user_temp"][..],
         &["components", "log1", "--strike"][..],
         &["restore", "backup1"][..],
-        &["transfer", "import", "pkg.installscope"][..],
+        &["transfer", "import", "pkg.setupsweep"][..],
         &["gatekeeper", "remove", "42"][..],
         &["restore-point", "delete", "3"][..],
         &["restore-point", "rollback", "3"][..],
@@ -44,7 +44,7 @@ fn previews_and_read_only_commands_never_classify_destructive() {
         &["clean", "--dry-run"][..],
         &["components", "log1"][..],
         &["components", "log1", "--json"][..],
-        &["transfer", "check", "p.installscope"][..],
+        &["transfer", "check", "p.setupsweep"][..],
         &["rewind", "log1", "--list"][..],
         &["rewind", "log1", "--to", "s", "--dry-run"][..],
         &["restore-point"][..],
@@ -81,7 +81,7 @@ fn automation_and_bookkeeping_classify_mutating_not_destructive() {
         &["gatekeeper", "allow", "42"][..],
         &["gatekeeper", "enable"][..],
         &["restore-point", "create"][..],
-        &["transfer", "export", "o.installscope", "App"][..],
+        &["transfer", "export", "o.setupsweep", "App"][..],
         &["rewind", "log1", "--capture"][..],
     ] {
         let args = v(args);
@@ -118,7 +118,7 @@ fn every_command_has_help_that_names_its_confirmation() {
             "{name}: no confirmation line"
         );
         assert!(
-            text.starts_with(format!("installscope {name}").as_str()),
+            text.starts_with(format!("setupsweep {name}").as_str()),
             "{name}: heading"
         );
     }

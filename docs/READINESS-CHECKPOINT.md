@@ -50,7 +50,7 @@ The original checkout remains unchanged.
 
 Exa can locate primary technical references for concrete implementation questions.
 Render is connected, with no selected workspace; select a user-confirmed workspace
-only if hosted infrastructure is actually needed. InstallScope, Meridian, and
+only if hosted infrastructure is actually needed. SetupSweep, Meridian, and
 DesktopMayhem currently describe local Windows applications, so this inspection
 provides no reason to introduce cloud hosting or a Supabase backend. Template
 Creator is appropriate when a reusable artifact template is requested, rather than

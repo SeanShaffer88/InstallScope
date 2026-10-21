@@ -1,4 +1,4 @@
-//! The InstallScope desktop interface (egui, rendered with DirectX 12 on Windows).
+//! The SetupSweep desktop interface (egui, rendered with DirectX 12 on Windows).
 
 mod a11y;
 mod alt_ui;
@@ -33,7 +33,7 @@ mod theme;
 mod transfer_ui;
 mod widgets;
 
-use installscope_core::snapshot::Progress;
+use setupsweep_core::snapshot::Progress;
 use std::sync::mpsc;
 use std::sync::Arc;
 
@@ -89,7 +89,7 @@ impl<T: Send + 'static> Job<T> {
         let ctx = ctx.clone();
         std::thread::spawn(move || {
             #[cfg(windows)]
-            installscope_core::platform::windows::lower_thread_priority();
+            setupsweep_core::platform::windows::lower_thread_priority();
             let r = f(&p);
             let _ = tx.send(r);
             ctx.request_repaint();
@@ -113,7 +113,7 @@ impl<T: Send + 'static> Job<T> {
 /// stays legible at taskbar size.
 fn load_icon() -> Option<egui::IconData> {
     let bytes = include_bytes!("../../assets/icon-taskbar.png");
-    let img = installscope_core::png::decode(bytes).ok()?;
+    let img = setupsweep_core::png::decode(bytes).ok()?;
     Some(egui::IconData {
         rgba: img.pixels,
         width: img.width,
@@ -176,10 +176,10 @@ pub fn run(install_target: Option<String>, launch_args: Vec<String>) -> anyhow::
     #[cfg(not(all(windows, feature = "native-ui-preview")))]
     {
         let mut viewport = egui::ViewportBuilder::default()
-            .with_title("InstallScope")
+            .with_title("SetupSweep")
             .with_inner_size([1180.0, 760.0])
             .with_min_inner_size([820.0, 520.0])
-            .with_app_id("InstallScope");
+            .with_app_id("SetupSweep");
         if let Some(icon) = load_icon() {
             viewport = viewport.with_icon(Arc::new(icon));
         }
@@ -190,7 +190,7 @@ pub fn run(install_target: Option<String>, launch_args: Vec<String>) -> anyhow::
             ..Default::default()
         };
         eframe::run_native(
-            "InstallScope",
+            "SetupSweep",
             options,
             Box::new(|cc| {
                 install_fonts(&cc.egui_ctx);

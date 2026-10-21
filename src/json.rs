@@ -1,5 +1,5 @@
 //! JSON without a library: a strict RFC 8259 reader and a writer whose
-//! compact and pretty layouts match what earlier versions of InstallScope
+//! compact and pretty layouts match what earlier versions of SetupSweep
 //! produced, so every saved log, setting, backup and package stays
 //! readable and diffs cleanly.
 //!

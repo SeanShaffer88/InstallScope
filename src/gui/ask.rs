@@ -1,4 +1,4 @@
-//! "Ask InstallScope" (Ctrl+K): search programs and install logs in plain
+//! "Ask SetupSweep" (Ctrl+K): search programs and install logs in plain
 //! language, e.g. "find and wipe everything related to that video converter
 //! I downloaded last week". Shows how the question was understood; removal
 //! still goes through the usual review.
@@ -7,10 +7,10 @@ use super::app::{App, Tab};
 use super::theme;
 use super::widgets::*;
 use egui::RichText;
-use installscope_core::i18n::{t, tf};
-use installscope_core::model::human_size;
-use installscope_core::nlquery::{self, Action, Query};
-use installscope_core::programs::InstalledProgram;
+use setupsweep_core::i18n::{t, tf};
+use setupsweep_core::model::human_size;
+use setupsweep_core::nlquery::{self, Action, Query};
+use setupsweep_core::programs::InstalledProgram;
 use std::collections::HashSet;
 
 #[derive(Default)]
@@ -38,7 +38,7 @@ impl App {
     }
 
     fn run_ask(&mut self) {
-        let today = installscope_core::time::Date::today_local();
+        let today = setupsweep_core::time::Date::today_local();
         let q = nlquery::parse(&self.ask_ui.text, today);
         let size_of = |p: &InstalledProgram| {
             if p.size_kb > 0 {
@@ -122,14 +122,14 @@ impl App {
         let mut uninstall: Option<Vec<InstalledProgram>> = None;
         let mut goto_program: Option<String> = None;
         let mut goto_log: Option<String> = None;
-        egui::Window::new(format!("✨ {}", t("Ask InstallScope")))
+        egui::Window::new(format!("✨ {}", t("Ask SetupSweep")))
             .open(&mut open)
             .collapsible(false)
             .resizable(true)
             .default_width(640.0)
             .anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, 80.0))
             .show(ctx, |ui| {
-                small_muted(ui, t("Ask in your own words. InstallScope works it out on this PC; nothing is sent anywhere."));
+                small_muted(ui, t("Ask in your own words. SetupSweep works it out on this PC; nothing is sent anywhere."));
                 ui.add_space(4.0);
                 let r = super::a11y::explain(
                     ui.add(
@@ -137,7 +137,7 @@ impl App {
                             .hint_text(t("e.g. remove the video converter I downloaded last week"))
                             .desired_width(f32::INFINITY),
                     ),
-                    &t("Ask in your own words. InstallScope works out what you mean on this PC and searches your programs and install logs; nothing is sent anywhere."),
+                    &t("Ask in your own words. SetupSweep works out what you mean on this PC and searches your programs and install logs; nothing is sent anywhere."),
                 );
                 if self.ask_ui.focus {
                     r.request_focus();
@@ -257,7 +257,7 @@ impl App {
                                     .collect(),
                             );
                         }
-                        small_muted(ui, t("You'll see every file and registry entry before anything is removed, and what InstallScope removes is backed up first, unless you have turned backups off in Settings."));
+                        small_muted(ui, t("You'll see every file and registry entry before anything is removed, and what SetupSweep removes is backed up first, unless you have turned backups off in Settings."));
                     });
                 }
             });

@@ -1,14 +1,14 @@
 //! Scheduled junk cleaning through Windows Task Scheduler.
 //!
-//! The task runs `InstallScope.exe clean --scheduled --categories …` with the
-//! categories chosen when it was set up, so the schedule needs no InstallScope
+//! The task runs `SetupSweep.exe clean --scheduled --categories …` with the
+//! categories chosen when it was set up, so the schedule needs no SetupSweep
 //! process running in the background.
 
 use crate::platform::run_hidden;
 use anyhow::{anyhow, Result};
 
-/// Task name in Task Scheduler (inside an "InstallScope" folder).
-pub const TASK: &str = "InstallScope\\Junk cleaning";
+/// Task name in Task Scheduler (inside an "SetupSweep" folder).
+pub const TASK: &str = "SetupSweep\\Junk cleaning";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Frequency {
@@ -127,14 +127,16 @@ mod tests {
     #[test]
     fn task_arguments() {
         let a = create_args(
-            "C:\\Tools\\InstallScope.exe",
+            "C:\\Tools\\SetupSweep.exe",
             &["user_temp", "crash_dumps"],
             Frequency::Weekly,
             false,
         );
         assert!(a.contains(&"WEEKLY".to_string()));
-        assert!(a.iter().any(|x| x
-            == "\"C:\\Tools\\InstallScope.exe\" clean --scheduled --categories user_temp,crash_dumps"));
+        assert!(a.iter().any(|x| {
+            x
+            == "\"C:\\Tools\\SetupSweep.exe\" clean --scheduled --categories user_temp,crash_dumps"
+        }));
         assert!(!a.contains(&"HIGHEST".to_string()));
         let a = create_args("x.exe", &["user_temp"], Frequency::Monthly, true);
         assert!(a.contains(&"MONTHLY".to_string()) && a.contains(&"HIGHEST".to_string()));
@@ -143,7 +145,7 @@ mod tests {
     #[test]
     fn reads_task_xml() {
         let xml = r#"<Task><Triggers><CalendarTrigger><ScheduleByWeek><WeeksInterval>1</WeeksInterval></ScheduleByWeek></CalendarTrigger></Triggers>
-<Actions><Exec><Command>"C:\InstallScope.exe"</Command><Arguments>clean --scheduled --categories user_temp,shader_cache</Arguments></Exec></Actions></Task>"#;
+<Actions><Exec><Command>"C:\SetupSweep.exe"</Command><Arguments>clean --scheduled --categories user_temp,shader_cache</Arguments></Exec></Actions></Task>"#;
         let (f, c) = parse_task_xml(xml).unwrap();
         assert_eq!(f, Frequency::Weekly);
         assert_eq!(c, vec!["user_temp", "shader_cache"]);

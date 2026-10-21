@@ -4,7 +4,7 @@
 //! precisely from an install log when the program was monitored, otherwise
 //! with the leftover scanner (install folder, data folders, shortcuts,
 //! registry keys, file associations, services, scheduled tasks) — and packs
-//! it into one `.installscope` file (a zip with a JSON manifest). Paths inside
+//! it into one `.setupsweep` file (a zip with a JSON manifest). Paths inside
 //! user profiles and Program Files are stored as `%VARIABLES%`, so they land
 //! in the right place even when the user name or drive differs.
 //!
@@ -25,7 +25,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 pub const FORMAT: u32 = 1;
-pub const EXTENSION: &str = "installscope";
+pub const EXTENSION: &str = "setupsweep";
 
 /// Folder variables used to make paths portable, longest value first.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -473,14 +473,14 @@ pub fn export_with(
 
 pub fn read_manifest(pkg: &Path) -> Result<Manifest> {
     let mut zip = crate::zip::ZipArchive::new(std::fs::File::open(pkg)?)
-        .context("not an InstallScope transfer package")?;
+        .context("not an SetupSweep transfer package")?;
     let mut s = String::new();
     zip.by_name("manifest.json")
-        .context("not an InstallScope transfer package")?
+        .context("not an SetupSweep transfer package")?
         .read_to_string(&mut s)?;
     let m: Manifest = crate::json::compat::from_str(&s)?;
     if m.format > FORMAT {
-        anyhow::bail!("This package was made by a newer version of InstallScope; please update.");
+        anyhow::bail!("This package was made by a newer version of SetupSweep; please update.");
     }
     Ok(m)
 }
@@ -732,8 +732,8 @@ pub fn restore_with(
         let res = (|| -> Result<()> {
             let mut xml = Vec::new();
             zip.by_name(&t.entry)?.read_to_end(&mut xml)?;
-            let tmp = std::env::temp_dir()
-                .join(format!("installscope-task-{}.xml", crate::util::new_id()));
+            let tmp =
+                std::env::temp_dir().join(format!("setupsweep-task-{}.xml", crate::util::new_id()));
             std::fs::write(&tmp, &xml)?;
             let (code, out) = platform::run_hidden(
                 "schtasks.exe",
@@ -832,7 +832,7 @@ mod tests {
         });
 
         // Export with the source variables (no env dependence).
-        let pkg = src.path().join("move.installscope");
+        let pkg = src.path().join("move.setupsweep");
         let m = export_with(&c, &reg, &pkg, &|_| {}, &from).unwrap();
         assert!(
             m.files.iter().all(|f| f.path.starts_with("%ProgramFiles%")),
