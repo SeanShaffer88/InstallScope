@@ -400,7 +400,7 @@ impl StagePlan {
                 .collect();
             let report=crate::json::Value::Object(vec![
                 ("schema".into(),crate::json::Value::UInt(1)),
-                ("status".into(),crate::json::Value::String("prepared; build and portability testing remain required".into())),
+                ("status".into(),crate::json::Value::String("source copies verified; preparation requires the completion marker; build and portability testing remain required".into())),
                 ("source_files".into(),crate::json::Value::Array(source_files)),
                 ("notes".into(),crate::json::Value::String("Copied bytes matched the reviewed SHA-256 values. Original sources were not changed. Permission declarations are user-supplied. This is not official approval or a compiler log. Trusted private directories are required; filesystem race containment, ACLs and alternate data streams are not provided.".into())),
             ]);
@@ -409,7 +409,17 @@ impl StagePlan {
                 &report_path,
                 crate::json::to_json_string_pretty(&report).as_bytes(),
             )?;
-            write_new(&wrapper.join("preparation-complete.txt"),b"Preparation completed. This is not a build, portability test, or official approval. Original sources were not modified.\r\n")?;
+            cancelled(cancel)?;
+            let pending_marker = wrapper.join("preparation-complete.pending");
+            let marker = wrapper.join("preparation-complete.txt");
+            write_new(&pending_marker,b"Preparation completed. This is not a build, portability test, or official approval. Original sources were not modified.\r\n")?;
+            cancelled(cancel)?;
+            if marker.try_exists()? {
+                return Err(anyhow!(
+                    "Completion marker unexpectedly exists; review the new output folder"
+                ));
+            }
+            fs::rename(pending_marker, marker)?;
             Ok(Prepared {
                 package: package.clone(),
                 record: record.clone(),
@@ -546,6 +556,14 @@ mod tests {
         assert!(length > 0 && length < 200_000);
         assert!(!plan.output().join("preparation-complete.txt").exists());
         assert_eq!(fs::read(source).unwrap(), data);
+    }
+    #[test]
+    fn cancellation_during_final_report_does_not_publish_completion() {
+        let (_temp, p) = fixture();
+        let plan = StagePlan::create(&p, &|| false, &|_| {}).unwrap();
+        let cancel = || plan.output().join("preparation-report.json").exists();
+        assert!(plan.prepare(&cancel, &|_| {}).is_err());
+        assert!(!plan.output().join("preparation-complete.txt").exists());
     }
     #[test]
     fn rejects_case_collisions_and_reserved_layout_folders() {
