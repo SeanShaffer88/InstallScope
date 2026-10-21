@@ -87,15 +87,17 @@ fn main() -> Result<()> {
         ],
     )?;
     let installed = destination.join("ProbePortable");
-    if installscope_core::patools::ini_value(
+    let installed_version = installscope_core::patools::ini_value(
         &installed.join("App/AppInfo/appinfo.ini"),
         "Version",
         "PackageVersion",
-    )
-    .as_deref()
-        != Some("1.0.0.0")
-    {
-        return Err(anyhow!("initial install has wrong package version"));
+    );
+    if installed_version.as_deref() != Some("1.0.0.0") {
+        return Err(anyhow!(
+            "initial install at {} has version {:?}; expected 1.0.0.0",
+            installed.display(),
+            installed_version
+        ));
     }
     let launcher = installed.join("ProbePortable.exe");
     run(&launcher, vec![])?;

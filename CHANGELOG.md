@@ -12,6 +12,7 @@ All notable changes to InstallScope are documented here. The format follows
 - Added real-process lifecycle tests and a Windows package lifecycle smoke job covering official-source launcher compilation, the InstallScope installer, launch, folder relocation and Data-preserving upgrades. The official Installer frontend remains a separate verification gate.
 
 ### Fixed
+- The portable installer accepts whole-argument quoting of /DESTINATION and /AUTOCLOSE switches from normal process APIs, so paths containing spaces are installed to the requested location.
 - Portable installer generation handles an optional Other folder containing only empty subdirectories. Required application files remain mandatory.
 - Portable package compilation now checks the external Launcher Generator and Installer exit codes, validates the requested AppID against package metadata before tool acquisition, and rejects stale, unrelated, ambiguous or structurally invalid installer output. Previous output selection used only a recent modification time.
 - SHA-256 tool and artifact checks now stream through a bounded buffer instead of loading complete executables into memory. The compression algorithm is unchanged; read errors propagate.

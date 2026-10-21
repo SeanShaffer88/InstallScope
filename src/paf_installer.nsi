@@ -17,6 +17,8 @@ RequestExecutionLevel user
 !include "MUI2.nsh"
 !include "FileFunc.nsh"
 !include "LogicLib.nsh"
+!include "StrFunc.nsh"
+${StrRep}
 
 Name "${NAME}"
 OutFile "${OUTFILE}"
@@ -50,6 +52,11 @@ VIAddVersionKey /LANG=${LANG_ENGLISH} "PortableApps.comInstallerVersion" "Instal
 
 Function .onInit
 	${GetParameters} $R0
+	; Windows argv encoding can quote the whole argument when a path has spaces.
+	; GetOptions skips options inside whole-argument quotes. Normalize to the
+	; equivalent value-quoted syntax it accepts, retaining the closing quote.
+	${StrRep} $R0 $R0 '"/DESTINATION=' '/DESTINATION="'
+	${StrRep} $R0 $R0 '"/AUTOCLOSE=' '/AUTOCLOSE="'
 
 	; The PortableApps.com Platform passes its PortableApps folder.
 	ClearErrors
