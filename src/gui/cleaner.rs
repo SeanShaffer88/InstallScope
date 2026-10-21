@@ -464,7 +464,7 @@ impl App {
             if let Some(f) = self.cleaner.freed {
                 theme::card(ui, |ui| {
                     ui.label(RichText::new(tf("✔ Freed {size}", &[("size", human_size(f))])).color(theme::OK).strong());
-                    small_muted(ui, t("Files that were in use were skipped."));
+                    small_muted(ui, t("Files that could not be removed, changed size since review, or became links were skipped. Scan again to review remaining files."));
                 });
                 ui.add_space(8.0);
             }

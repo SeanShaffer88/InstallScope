@@ -384,6 +384,9 @@ pub fn scan_detailed(cat: &Category, protect: &[String]) -> CategoryScan {
     }
     r.files.sort_by(|a, b| a.path.cmp(&b.path));
     r.kept.sort_by(|a, b| a.path.cmp(&b.path));
+    // Overlapping category patterns must not inflate the reviewed totals.
+    r.files.dedup_by(|a, b| a.path == b.path);
+    r.kept.dedup_by(|a, b| a.path == b.path);
     r.totals = totals_of(&r.files);
     r
 }
@@ -434,7 +437,10 @@ pub fn clean(cat: &Category) -> ScanResult {
 /// Delete exactly the files in `files` (a reviewed scan's deletion
 /// set), then remove folders the deletions left empty, like [`clean`]
 /// does. Files that can't be deleted (in use, already gone) are
-/// skipped and not counted. The pattern targets themselves, and any
+/// skipped and not counted. Files whose size changed since review, links,
+/// and non-file entries are also skipped; a fresh scan is needed to review them.
+/// This is a conservative recheck, not a lock against concurrent filesystem changes.
+/// The pattern targets themselves, and any
 /// file that was never in the list — protected or simply unscanned —
 /// are untouched.
 pub fn clean_files(cat: &Category, files: &[CleanFile]) -> ScanResult {
@@ -444,6 +450,14 @@ pub fn clean_files(cat: &Category, files: &[CleanFile]) -> ScanResult {
     }
     let mut freed = ScanResult::default();
     for f in files {
+        // Never follow a replacement link or delete a file whose reviewed size
+        // is stale. Metadata errors are conservative skips, like locked files.
+        let Ok(meta) = std::fs::symlink_metadata(&f.path) else {
+            continue;
+        };
+        if !meta.file_type().is_file() || meta.len() != f.bytes {
+            continue;
+        }
         if crate::platform::delete_file(&f.path).is_ok() {
             freed.files += 1;
             freed.bytes += f.bytes;
@@ -673,6 +687,77 @@ mod review_tests {
         assert!(!root.join("Cache/sub").exists());
         assert!(!root.join("Cache").exists());
         assert!(root.exists());
+    }
+
+    #[test]
+    fn overlapping_patterns_are_counted_once_including_protected_files() {
+        let tmp = crate::util::tempdir().unwrap();
+        std::fs::create_dir(tmp.path().join("sub")).unwrap();
+        std::fs::write(tmp.path().join("sub/cache"), b"1234").unwrap();
+        std::env::set_var("INSTALLSCOPE_CLEAN_OVERLAP", tmp.path());
+        let cat = Category {
+            patterns: vec![
+                "%INSTALLSCOPE_CLEAN_OVERLAP%",
+                "%INSTALLSCOPE_CLEAN_OVERLAP%/sub",
+            ],
+            ..test_category("t", "%INSTALLSCOPE_CLEAN_OVERLAP%")
+        };
+        let scan = scan_detailed(&cat, &[]);
+        assert_eq!(scan.files.len(), 1);
+        assert_eq!(scan.totals, ScanResult { files: 1, bytes: 4 });
+        let kept = scan_detailed(&cat, &["%INSTALLSCOPE_CLEAN_OVERLAP%".into()]);
+        assert!(kept.files.is_empty());
+        assert_eq!(kept.kept_totals(), ScanResult { files: 1, bytes: 4 });
+    }
+
+    #[test]
+    fn reviewed_clean_keeps_files_changed_since_scan() {
+        let tmp = crate::util::tempdir().unwrap();
+        let changed = tmp.path().join("changed");
+        let stable = tmp.path().join("stable");
+        std::fs::write(&changed, b"old").unwrap();
+        std::fs::write(&stable, b"keep size").unwrap();
+        std::env::set_var("INSTALLSCOPE_CLEAN_CHANGED", tmp.path());
+        let cat = test_category("t", "%INSTALLSCOPE_CLEAN_CHANGED%");
+        let scan = scan_detailed(&cat, &[]);
+        std::fs::write(&changed, b"new content to review").unwrap();
+        assert_eq!(
+            clean_files(&cat, &scan.files),
+            ScanResult { files: 1, bytes: 9 }
+        );
+        assert_eq!(std::fs::read(&changed).unwrap(), b"new content to review");
+        assert!(!stable.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn reviewed_clean_keeps_replacement_symlink_and_its_target() {
+        let tmp = crate::util::tempdir().unwrap();
+        let reviewed = tmp.path().join("reviewed");
+        let target = tmp.path().join("target");
+        std::fs::write(&reviewed, b"data").unwrap();
+        std::fs::write(&target, b"data").unwrap();
+        std::fs::remove_file(&reviewed).unwrap();
+        std::os::unix::fs::symlink(&target, &reviewed).unwrap();
+        let cat = Category {
+            patterns: vec![],
+            ..test_category("t", "unused")
+        };
+        assert_eq!(
+            clean_files(
+                &cat,
+                &[CleanFile {
+                    path: reviewed.clone(),
+                    bytes: 4
+                }]
+            ),
+            ScanResult::default()
+        );
+        assert!(std::fs::symlink_metadata(&reviewed)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert_eq!(std::fs::read(target).unwrap(), b"data");
     }
 
     #[test]

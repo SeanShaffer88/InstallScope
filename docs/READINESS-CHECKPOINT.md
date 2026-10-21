@@ -59,3 +59,22 @@ for ordinary source-code fixes. No hosted resources or templates were created.
 GitHub metadata and READMEs were retrieved for Meridian and DesktopMayhem.
 `SeanShaffer88/agent-sandbox-diff` returned 404; confirm its current repository
 location or access before attempting implementation there.
+
+## Follow-up cleaner review safeguards
+
+The product direction is recorded in ROADMAP.md. Cleaner scans now deduplicate
+identical paths across overlapping patterns. Reviewed cleanup checks metadata
+without following a replacement link and skips missing, unreadable, non-file,
+linked, or size-changed entries. The GUI explains these skips. This is not a
+file-identity guarantee: same-size edits, parent-directory links, and changes
+between the metadata check and deletion remain limitations. Logical file sizes
+are not guaranteed physical disk space reclaimed (hard links, compression, and
+sparse files can differ). Recycle Bin and unreviewed scheduled cleaning are
+unchanged by this batch.
+
+Verification: `cargo test --locked --offline` passed 274 library and 30
+application tests; three tests remain ignored by the suite. Added tests exercise
+overlapping patterns including protected items, a size change after scanning,
+and a replacement symlink with a surviving target (Unix only). Formatting,
+diff whitespace checks, and all-target Clippy passed; existing Clippy warnings
+remain. Windows runtime and Windows reparse-point behavior remain unverified.

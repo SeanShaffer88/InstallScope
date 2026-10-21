@@ -4,6 +4,22 @@ Planned for future releases, roughly in priority order. Vote or comment on the
 matching GitHub issue to move something up. Features that already exist are
 listed in the [README](README.md#features).
 
+## Product direction
+
+InstallScope is a cohesive local Windows toolkit for reclaiming disk space,
+reviewing bloat and telemetry, thorough program removal, install monitoring,
+program migration, developer containment, temporary scratch storage, conservative
+registry repair, and read-only VSS browsing. Existing tools and planned tools must
+remain clearly distinguished.
+
+Prioritize shared review, recovery, actionable diagnostics, and accessible guidance
+before adding more surfaces. New and experienced users should follow the same
+predictable sequence: scan, explain, review, back up where supported, apply,
+verify, and undo where feasible. Irreversible cleanup must say plainly that no
+backup or undo is available. Never promise completely safe registry cleanup:
+restrict repair to evidence-backed findings, keep uncertain entries by default,
+and back up mutations. Avoid implying registry entry counts measure performance.
+
 ## Next
 
 The core 1.0 feature set is substantially implemented. The next priorities are
