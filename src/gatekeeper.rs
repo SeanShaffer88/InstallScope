@@ -263,6 +263,19 @@ pub struct ScanSummary {
     pub changed: Vec<String>,
 }
 
+/// Establish the first known-good snapshot without creating review items.
+/// Returns `true` only when the queue was empty and its baseline was seeded.
+/// This is used immediately before an explicitly monitored installation so
+/// that its post-install scan can identify what changed during that install.
+pub fn seed_baseline_if_empty(queue: &mut Queue, current: &[WatchedEntry]) -> bool {
+    if queue.baseline.is_empty() && queue.items.is_empty() {
+        queue.baseline = current.to_vec();
+        true
+    } else {
+        false
+    }
+}
+
 fn now_stamp() -> String {
     crate::time::DateTime::now_local().ymd_hms()
 }
@@ -702,6 +715,27 @@ mod tests {
         // And the same inputs do scan when it is on.
         let out = scan_if_enabled(true, &mut q, &current, &[]);
         assert_eq!(out.unwrap().added.len(), 1);
+    }
+
+    #[test]
+    fn install_baseline_seed_is_non_reviewing_and_only_happens_once() {
+        let before = run_entry("Existing", "C:\\Apps\\existing.exe");
+        let mut q = Queue::empty();
+        assert!(seed_baseline_if_empty(
+            &mut q,
+            std::slice::from_ref(&before)
+        ));
+        assert_eq!(q.baseline, vec![before.clone()]);
+        assert!(q.items.is_empty());
+
+        let added = run_entry("Added", "C:\\Apps\\added.exe");
+        assert!(!seed_baseline_if_empty(
+            &mut q,
+            std::slice::from_ref(&added)
+        ));
+        let summary = run_scan(&mut q, &[before, added], &[]);
+        assert_eq!(summary.added.len(), 1);
+        assert_eq!(q.pending().len(), 1);
     }
 
     #[test]
