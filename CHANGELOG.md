@@ -7,6 +7,7 @@ All notable changes to InstallScope are documented here. The format follows
 ## [Unreleased]
 
 ### Guided PAF projects
+- Reopening the original preparation snapshot now reconnects completed output after checking its marker, bounded report, generated configurations and recorded application hashes. Changed output restores answers with a warning; no tools execute automatically.
 - Added reviewed source staging with explicit file mappings, original-file preservation, source/destination separation, link/name/collision checks, cancellable streaming copies and SHA-256 verification against reviewed contents. New output never overwrites an existing folder; failures keep labeled partial output. A project snapshot and preparation report accompany the new package.
 - Added bounded static-PNG icon import, an exact 128-pixel preview, documented PNG variants and ICO frames including 8-bit and 32-bit compatibility images. The shared PNG reader now validates the zlib Adler-32 checksum as well as chunk CRCs. Arbitrary official-Installer artwork customization remains unverified and is not offered.
 - Capture now stops for review and requires the official Launcher Generator and Installer. The desktop build path no longer downloads/substitutes the development toolchain or InstallScope installer. It shows executable/argument/working-directory details, rejects unchanged launcher output, and requires explicit per-build consent for recognized custom NSIS entry points. Real current official-tool execution remains a release gate.
@@ -15,7 +16,7 @@ All notable changes to InstallScope are documented here. The format follows
 ### Developer SDK
 - Added an independent MIT Rust `portable-builder-kit` crate with bounded metadata parsing, Windows filename/path checks, actionable preflight findings, DOS/PE signature checks and host-supplied SHA-256 build receipts. Includes a native preflight example and Windows/Linux contract CI. Runtime portability and real official-tool execution still require Windows release verification.
 - Added a shell-free compiler supervisor with timeouts, cancellation and Windows Job Object cleanup of compiler descendants. Packaging now uses it for tool downloads and compiler execution. The packaging screen has an accessible Cancel build control; captured files are retained, incomplete output is not reported as a successful package, and failed NSIS builds report a bounded diagnostic tail with the full local log path.
-- Added real-process lifecycle tests and a Windows package lifecycle smoke job covering official-source launcher compilation, the InstallScope installer, launch, folder relocation and Data-preserving upgrades. The official Installer frontend remains a separate verification gate.
+- Added real-process lifecycle tests. The Windows package lifecycle fixture now requires separately executed official Generator/Installer frontends, with CI-only pinned downloads verified against published SHA-256 values. It checks install, launch, relocation and Data-preserving upgrade without acknowledging launch warnings. Passing official-tool lifecycle evidence remains a release gate.
 
 ### Fixed
 - The portable installer accepts whole-argument quoting of /DESTINATION and /AUTOCLOSE switches from normal process APIs, so paths containing spaces are installed to the requested location.

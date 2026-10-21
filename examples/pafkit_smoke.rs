@@ -1,5 +1,5 @@
-//! Windows-only integration: compile a real official-source launcher and the
-//! InstallScope installer, then exercise launch, relocation and Data-preserving upgrade.
+//! Windows-only integration with explicitly supplied official frontends.
+//! Exercises build, install, launch, relocation and Data-preserving upgrade.
 use anyhow::{anyhow, Context, Result};
 use installscope_core::{
     pafbuild::{self, AppDetails, PaTools},
@@ -11,10 +11,17 @@ use std::{
     time::Duration,
 };
 
-struct Work(PathBuf);
+struct Work(PathBuf, bool);
 impl Drop for Work {
     fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
+        if self.1 {
+            eprintln!(
+                "Failed fixture retained for diagnosis: {}",
+                self.0.display()
+            );
+        } else {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
     }
 }
 fn run(exe: &Path, arguments: Vec<std::ffi::OsString>) -> Result<()> {
@@ -23,7 +30,6 @@ fn run(exe: &Path, arguments: Vec<std::ffi::OsString>) -> Result<()> {
     let dialog = std::cell::RefCell::new(FixtureDialog {
         executable: std::fs::canonicalize(exe)?,
         reported: false,
-        acknowledged: false,
     });
     run_tool(
         &ToolRequest {
@@ -34,11 +40,8 @@ fn run(exe: &Path, arguments: Vec<std::ffi::OsString>) -> Result<()> {
         },
         &|| {
             #[cfg(windows)]
-            if exe.file_name().is_some_and(|n| n == "ProbePortable.exe")
-                && !dialog.borrow().acknowledged
-            {
-                // Acknowledge only this fixture's documented upstream warning.
-                // No production warning is disabled or official receipt forged.
+            if exe.file_name().is_some_and(|n| n == "ProbePortable.exe") {
+                // Report this fixture's own dialog only; never dismiss warnings.
                 unsafe {
                     windows_sys::Win32::UI::WindowsAndMessaging::EnumWindows(
                         Some(fixture_dialog),
@@ -56,7 +59,6 @@ fn run(exe: &Path, arguments: Vec<std::ffi::OsString>) -> Result<()> {
 struct FixtureDialog {
     executable: PathBuf,
     reported: bool,
-    acknowledged: bool,
 }
 
 #[cfg(windows)]
@@ -101,12 +103,17 @@ unsafe extern "system" fn fixture_dialog(
     ) -> i32 {
         let text = &mut *(data as *mut String);
         let mut buffer = [0u16; 4096];
-        let count = windows_sys::Win32::UI::WindowsAndMessaging::GetWindowTextW(
+        let mut count = 0usize;
+        let delivered = windows_sys::Win32::UI::WindowsAndMessaging::SendMessageTimeoutW(
             window,
-            buffer.as_mut_ptr(),
-            buffer.len() as i32,
+            WM_GETTEXT,
+            buffer.len(),
+            buffer.as_mut_ptr() as isize,
+            SMTO_ABORTIFHUNG | SMTO_BLOCK,
+            100,
+            &mut count,
         );
-        if count > 0 {
+        if delivered != 0 && count > 0 && count < buffer.len() {
             text.push_str(&String::from_utf16_lossy(&buffer[..count as usize]));
             text.push(' ');
         }
@@ -117,15 +124,6 @@ unsafe extern "system" fn fixture_dialog(
     if !state.reported {
         println!("Fixture launcher dialog: {text}");
         state.reported = true;
-    }
-    if text.contains("Integrity Failure Warning:")
-        && text.contains("installed or upgraded without using its installer")
-    {
-        let button = GetDlgItem(window, 1); // IDOK, this fixture's known warning only
-        if !button.is_null() && PostMessageW(button, BM_CLICK, 0, 0) != 0 {
-            state.acknowledged = true;
-            println!("CI explicitly acknowledged the upstream unsupported-install warning; no official installer receipt is fabricated");
-        }
     }
     1
 }
@@ -139,7 +137,23 @@ fn main() -> Result<()> {
             .nth(1)
             .context("provide the test-tool executable path")?,
     );
-    let work = Work(std::env::temp_dir().join(format!("pafkit smoke 工具 {}", util::new_id())));
+    let tools = PaTools {
+        launcher_generator: Some(
+            std::env::var_os("PAF_TEST_GENERATOR")
+                .context("Set PAF_TEST_GENERATOR to the verified official frontend")?
+                .into(),
+        ),
+        installer: Some(
+            std::env::var_os("PAF_TEST_INSTALLER")
+                .context("Set PAF_TEST_INSTALLER to the verified official frontend")?
+                .into(),
+        ),
+        ..Default::default()
+    };
+    let mut work = Work(
+        std::env::temp_dir().join(format!("pafkit smoke 工具 {}", util::new_id())),
+        true,
+    );
     std::fs::create_dir(&work.0)?;
     let package = work.0.join("build/ProbePortable");
     for dir in [
@@ -156,6 +170,7 @@ fn main() -> Result<()> {
         name: "Probe".into(),
         publisher: "SDK integration test".into(),
         version: "1.0".into(),
+        open_source: true,
         ..Default::default()
     };
     std::fs::write(
@@ -167,12 +182,18 @@ fn main() -> Result<()> {
         "<!doctype html><title>Build test</title>",
     )?;
     std::fs::write(package.join("App/AppInfo/Launcher/ProbePortable.ini"),"[Launch]\r\nProgramExecutable=Probe\\probe.exe\r\nCommandLineArguments=touch \"%PAL:DataDir%\\probe.txt\"\r\nDirectoryMoveOK=yes\r\nSupportsUNC=yes\r\n")?;
-    let compiled = pafbuild::compile(
+    let png = installscope_core::png::encode_rgba(256, 256, &vec![255; 256 * 256 * 4])
+        .context("encode fixture icon")?;
+    for (name, bytes) in installscope_core::pafassets::from_png(&png, &|| false)?.files {
+        std::fs::write(package.join("App/AppInfo").join(name), bytes)?;
+    }
+    let compiled = pafbuild::compile_official_with_cancel(
         &package,
         "ProbePortable",
-        &PaTools::default(),
-        &work.0.join("data"),
+        &tools,
+        false,
         &|s| println!("{s}"),
+        &|| false,
     )?;
     let installer = compiled.paf.context("installer missing")?;
     portable_builder_kit::validate_executable(&installer)?;
@@ -234,12 +255,13 @@ fn main() -> Result<()> {
         package.join("App/AppInfo/appinfo.ini"),
         pafbuild::appinfo_ini(&details),
     )?;
-    let compiled = pafbuild::compile(
+    let compiled = pafbuild::compile_official_with_cancel(
         &package,
         "ProbePortable",
-        &PaTools::default(),
-        &work.0.join("data"),
+        &tools,
+        false,
         &|s| println!("upgrade: {s}"),
+        &|| false,
     )?;
     run(
         &compiled.paf.context("upgrade installer missing")?,
@@ -274,6 +296,7 @@ fn main() -> Result<()> {
     if !installed.join("Data/probe.txt").is_file() {
         return Err(anyhow!("upgraded launcher failed"));
     }
-    println!("Verified: real launcher compilation, installer build, silent install, portable launch, folder relocation and upgrade preserving Data (InstallScope installer; not the official Installer frontend)");
+    println!("Verified: real launcher compilation, installer build, silent install, portable launch, folder relocation and upgrade preserving Data (official frontends supplied by the test environment; not certification)");
+    work.1 = false;
     Ok(())
 }

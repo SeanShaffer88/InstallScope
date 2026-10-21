@@ -79,8 +79,14 @@ Unsupported versions, unknown project/component fields, malformed JSON and recor
 over 1 MiB are rejected. Opening another project or closing the regular application
 requires confirmation for unsaved answers; active project writes/preparation must
 finish first. New-project reset is protected too. Answers and the current step can
-be resumed; reopening a snapshot does not automatically revalidate or reconnect a
-previously prepared folder. Official build/resume integration remains pending.
+be resumed. Opening the original companion `project.json` reconnects its prepared
+folder only when its completion marker, bounded report, generated configurations
+and recorded application-file sizes/SHA-256 values pass a fresh worker check.
+Changed or incomplete output leaves the answers available with an explanatory
+warning; no tools execute automatically. Standalone snapshots restore answers
+only. These checks do not cover unrecorded extra files, icons, host writes or
+portability, and the companion report is not a signed authenticity record.
+Official build execution/log capture in this wizard remains pending.
 
 Filesystem checks, hashing, conversion, copying and snapshot I/O use workers.
 Mapping rows are rendered on demand instead of allocating/rendering the entire
@@ -127,7 +133,7 @@ custom NSIS entry points need explicit per-attempt consent. The legacy source-bu
 API remains for development compatibility, not a desktop fallback.
 
 This wizard still does not extract archives, run official frontends, capture their
-compiler logs, restore a prepared-folder association on reopen, or export an
+compiler logs, or export an
 installable artifact/final validation report. Complete language-value checking,
 notice-file verification, file/registry redirection assistance and current-tool
 lifecycle verification also remain. Static PE checks establish header signatures,
@@ -144,3 +150,30 @@ scaling, file-dialog and close-confirmation interaction remain unverified.
 The legacy official-source Launcher plus InstallScope-installer fixture still
 stopped at its first Launcher dialog. It is not evidence that the official
 Installer frontend or this new wizard passed a complete package lifecycle test.
+
+### Verified historical distributions and test baseline
+
+For development research, Installer 3.9.18 and Launcher 2.2.9 were downloaded
+from the official PortableApps SourceForge project, SHA-256 checked against the
+[Installer](https://portableapps.com/apps/development/portableapps.com_installer)
+and [Launcher](https://portableapps.com/apps/development/portableapps.com_launcher)
+page values, then extracted without running their self-extractors. The CI fixture
+pins these same hashes and calls the extracted official frontends separately.
+This is a historical regression baseline, not a latest-release or certification
+claim. A configured test is not a passing result.
+
+Inspected Installer 3.9.18 distribution files (tool behavior, not format rules):
+`Other/Source/InstallerWizard.nsi`, `.onInit` accepts the package directory as
+its command line; `Section Main` writes `Data/PortableApps.comInstallerLog.txt`,
+replaces generated installer source/artwork, and invokes its bundled NSIS.
+`App/installer/PortableApps.comInstaller.nsi` selects the generated welcome bitmap.
+Placing a custom bitmap at that generated path is therefore not a supported
+customization mechanism in this inspected version. Launcher 2.2.9's
+`Other/Source/GeneratorWizard.nsi` similarly accepts a package directory and writes
+`Data/PortableApps.comLauncherGeneratorLog.txt`.
+
+The bundled `Other/Source/Readme.txt` and `License.txt` identify GPL-2.0-or-later
+Installer code. Its welcome text also describes unmodified use for open-source
+and freeware packages and contacting PortableApps.com for commercial software.
+Treat this as a licensing/trademark question for human/upstream review; this
+project makes no legal conclusion and copies no GPL implementation into MIT code.

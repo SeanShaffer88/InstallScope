@@ -42,6 +42,109 @@ pub struct Prepared {
     pub files: usize,
     pub bytes: u64,
 }
+/// Reconnect only the original companion snapshot of a completed preparation.
+/// Rechecks copied application bytes; this is not build or portability validation.
+pub fn reopen(
+    record: &Path,
+    project: &Project,
+    cancel: &dyn Fn() -> bool,
+) -> Result<Option<Prepared>> {
+    if record.file_name().and_then(|n| n.to_str()) != Some("project.json") {
+        return Ok(None);
+    }
+    let root = record.parent().context("Project has no parent folder")?;
+    let marker = root.join("preparation-complete.txt");
+    if !marker.try_exists()? {
+        return Ok(None);
+    }
+    cancelled(cancel)?;
+    plain(root)?;
+    check_chain(root, record)?;
+    let read = |path: &Path, limit: u64| -> Result<Vec<u8>> {
+        check_chain(root, path)?;
+        if !plain(path)?.is_file() {
+            return Err(anyhow!("Expected a regular file: {}", path.display()));
+        }
+        let mut bytes = Vec::new();
+        File::open(path)?.take(limit + 1).read_to_end(&mut bytes)?;
+        if bytes.len() as u64 > limit {
+            return Err(anyhow!("Preparation companion exceeds its size limit"));
+        }
+        Ok(bytes)
+    };
+    let expected = b"Preparation completed. This is not a build, portability test, or official approval. Original sources were not modified.\r\n";
+    if read(&marker, 1024)? != expected {
+        return Err(anyhow!("Unrecognized preparation completion marker"));
+    }
+    // drafts() validates the identifier before it can become a filesystem path.
+    let drafts = project.drafts()?;
+    let package = root.join(&project.app_id);
+    check_chain(root, &package)?;
+    for (name, text) in drafts {
+        cancelled(cancel)?;
+        let mut expected = vec![0xff, 0xfe];
+        for word in text.encode_utf16() {
+            expected.extend_from_slice(&word.to_le_bytes());
+        }
+        if read(&package.join(name), 128 * 1024)? != expected {
+            return Err(anyhow!("Prepared configuration differs from the saved answers; review the package before building"));
+        }
+    }
+    let report = root.join("preparation-report.json");
+    let value = crate::json::parse_bytes(&read(&report, 64 * 1024 * 1024)?)?;
+    if value["schema"].as_u64() != Some(1) {
+        return Err(anyhow!("Unsupported preparation report schema"));
+    }
+    let entries = value["source_files"]
+        .as_array()
+        .context("Missing prepared file list")?;
+    if entries.len() > MAX_ENTRIES {
+        return Err(anyhow!("Too many prepared files"));
+    }
+    let mut bytes = 0u64;
+    let mut seen = BTreeSet::new();
+    for entry in entries {
+        cancelled(cancel)?;
+        let relative = entry["package_relative"]
+            .as_str()
+            .context("Missing package path")?;
+        let validated = portable_builder_kit::relative_path(relative)?;
+        let path = validated.as_path();
+        if path
+            .components()
+            .any(|c| !matches!(c, std::path::Component::Normal(_)))
+            || !seen.insert(relative.to_uppercase())
+        {
+            return Err(anyhow!("Unsafe or duplicate prepared file path"));
+        }
+        let destination = package.join(path);
+        check_chain(root, &destination)?;
+        let size = entry["bytes"]
+            .as_u64()
+            .context("Missing prepared file size")?;
+        bytes = bytes
+            .checked_add(size)
+            .filter(|n| *n <= MAX_BYTES)
+            .context("Prepared contents exceed size limit")?;
+        if !plain(&destination)?.is_file() || plain(&destination)?.len() != size {
+            return Err(anyhow!("Prepared file is missing or changed: {relative}"));
+        }
+        let digest: String = hash(&destination, size, cancel)?
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        if entry["sha256"].as_str() != Some(digest.as_str()) {
+            return Err(anyhow!("Prepared file changed: {relative}"));
+        }
+    }
+    Ok(Some(Prepared {
+        package,
+        record: record.to_path_buf(),
+        report,
+        files: entries.len(),
+        bytes,
+    }))
+}
 fn cancelled(cancel: &dyn Fn() -> bool) -> Result<()> {
     if cancel() {
         Err(anyhow!("Preparation cancelled"))
@@ -481,6 +584,78 @@ mod tests {
             ..Default::default()
         };
         (temp, p)
+    }
+    #[test]
+    fn reconnects_only_complete_unchanged_preparation() {
+        let (_temp, p) = fixture();
+        let output = StagePlan::create(&p, &|| false, &|_| {})
+            .unwrap()
+            .prepare(&|| false, &|_| {})
+            .unwrap();
+        let restored = reopen(&output.record, &p, &|| false).unwrap().unwrap();
+        assert_eq!(restored.package, output.package);
+        assert_eq!(
+            (restored.files, restored.bytes),
+            (output.files, output.bytes)
+        );
+        assert!(reopen(&output.record, &p, &|| true).is_err());
+        let application = output.package.join("App/Example/example.exe");
+        let original = fs::read(&application).unwrap();
+        let mut changed = original.clone();
+        changed[80] ^= 1;
+        fs::write(&application, changed).unwrap();
+        assert!(reopen(&output.record, &p, &|| false)
+            .unwrap_err()
+            .to_string()
+            .contains("changed"));
+        fs::write(&application, original).unwrap();
+        fs::write(output.package.join("App/AppInfo/appinfo.ini"), b"changed").unwrap();
+        assert!(reopen(&output.record, &p, &|| false).is_err());
+        fs::remove_file(
+            output
+                .record
+                .parent()
+                .unwrap()
+                .join("preparation-complete.txt"),
+        )
+        .unwrap();
+        assert!(reopen(&output.record, &p, &|| false).unwrap().is_none());
+    }
+    #[test]
+    fn reconnect_rejects_report_traversal_and_invalid_marker() {
+        let (_temp, p) = fixture();
+        let output = StagePlan::create(&p, &|| false, &|_| {})
+            .unwrap()
+            .prepare(&|| false, &|_| {})
+            .unwrap();
+        let mut report = crate::json::parse_bytes(&fs::read(&output.report).unwrap()).unwrap();
+        if let crate::json::Value::Object(fields) = &mut report {
+            let entries = fields
+                .iter_mut()
+                .find(|(k, _)| k == "source_files")
+                .unwrap();
+            if let crate::json::Value::Array(entries) = &mut entries.1 {
+                if let crate::json::Value::Object(fields) = &mut entries[0] {
+                    fields
+                        .iter_mut()
+                        .find(|(k, _)| k == "package_relative")
+                        .unwrap()
+                        .1 = crate::json::Value::String("../project.json".into());
+                }
+            }
+        }
+        fs::write(&output.report, crate::json::to_json_string_pretty(&report)).unwrap();
+        assert!(reopen(&output.record, &p, &|| false).is_err());
+        fs::write(
+            output
+                .record
+                .parent()
+                .unwrap()
+                .join("preparation-complete.txt"),
+            b"incomplete",
+        )
+        .unwrap();
+        assert!(reopen(&output.record, &p, &|| false).is_err());
     }
     #[test]
     fn stages_into_new_folder_preserving_originals_and_unicode_metadata() {

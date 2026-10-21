@@ -10,7 +10,7 @@ use installscope_core::{
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
-type ProjectIo = Result<(PathBuf, Project), String>;
+type ProjectIo = Result<(PathBuf, Project, Option<Result<Option<Prepared>, String>>), String>;
 
 #[derive(Clone)]
 enum PendingProject {
@@ -141,7 +141,7 @@ impl Wizard {
             if a11y::explain(ui.button("Save snapshot…"),"Save all answers and the current step to a new JSON file. Existing files are never overwritten; use a new filename for each revision.").clicked() {
                 if let Some(p)=save_file("Save project snapshot",&format!("portable-project-{}.json",installscope_core::util::new_id()),"Project","json") {
                     let project=self.project.clone();
-                    self.io_job=Some(super::Job::spawn(&ctx,move |_| project.save_new(&p).map(|_|(p,project)).map_err(|e|format!("{e:#}"))));
+                    self.io_job=Some(super::Job::spawn(&ctx,move |_| project.save_new(&p).map(|_|(p,project,None)).map_err(|e|format!("{e:#}"))));
                 }
             }
             if self.project != self.saved { ui.label("Unsaved changes"); }
@@ -516,7 +516,7 @@ impl Wizard {
         if let Some(result) = self.io_job.as_ref().and_then(|j| j.poll()) {
             self.io_job = None;
             match result {
-                Ok((path, project)) => {
+                Ok((path, project, restored)) => {
                     if self.project != project {
                         if let Some(job) = &self.review_job {
                             job.cancel();
@@ -537,6 +537,17 @@ impl Wizard {
                     self.error = None;
                     self.message =
                         "Project snapshot ready. No source files or tools were executed.".into();
+                    if let Some(restored) = restored {
+                        self.prepared = None;
+                        match restored {
+                            Ok(Some(prepared)) => {
+                                self.prepared = Some(prepared);
+                                self.message = "Prepared package reconnected. Recorded application bytes and generated configurations match; build and portability testing remain required.".into();
+                            }
+                            Ok(None) => {}
+                            Err(e) => self.error = Some(format!("Answers restored, but the prepared package could not be reconnected: {e}")),
+                        }
+                    }
                     self.checked = None;
                 }
                 Err(e) => self.error = Some(e),
@@ -565,9 +576,14 @@ impl Wizard {
         }
     }
     fn open(&mut self, ctx: &egui::Context, path: PathBuf) {
-        self.io_job = Some(super::Job::spawn(ctx, move |_| {
+        self.io_job = Some(super::Job::spawn(ctx, move |progress| {
             Project::load(&path)
-                .map(|p| (path, p))
+                .map(|p| {
+                    let restored =
+                        installscope_core::pafstage::reopen(&path, &p, &|| progress.cancelled())
+                            .map_err(|e| format!("{e:#}"));
+                    (path, p, Some(restored))
+                })
                 .map_err(|e| format!("{e:#}"))
         }));
     }
