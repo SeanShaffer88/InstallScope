@@ -443,6 +443,15 @@ Its dark/red app shell and sidebar follow the product screenshots; Programs is t
 
 Already shipped features are what's documented above. Planned work — **not available yet** — includes: full parity for the native Win32 interface (including restore-point integration in the preview), a browser extension inventory with reversible disable/restore, published setup/archive compatibility tiers, a guided setup-package project wizard, an in-app Disposable Runner, a read-only volume shadow copy browser, a temporary scratch volume, and developer-workflow exports. These appear in the interface only as disabled **Planned** entries, if at all. See [ROADMAP.md](ROADMAP.md) for scope, priorities, and safety boundaries.
 
+### Guided PAF project planning
+
+The PortableApps Forge page now includes **Guided PAF project**: ten planning
+screens with save/reopen snapshots, explicit license declarations, a component
+inventory, source-linked findings and metadata/launcher configuration previews.
+This is a planning foundation: package assembly, icon conversion, official-tool
+execution and artifact/report export are not connected yet. The separate existing
+installation-capture workflow remains available. See [wizard status and limits](docs/paf-wizard.md).
+
 ### Reusable portable package SDK
 
 Developers embedding package creation can use the native Rust

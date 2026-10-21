@@ -594,8 +594,8 @@ impl App {
         // Read from the stored queue (not a new scan), so showing it never
         // performs detection behind the user's back.
         let waiting = self.gatekeeper.pending();
-        let gatekeeper_badge = (self.settings.gatekeeper_enabled && waiting > 0)
-            .then(|| waiting.to_string());
+        let gatekeeper_badge =
+            (self.settings.gatekeeper_enabled && waiting > 0).then(|| waiting.to_string());
         egui::SidePanel::left("nav")
             .resizable(false)
             .exact_width(214.0)
@@ -1612,6 +1612,7 @@ impl eframe::App for App {
     }
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        self.builder.wizard.guard_close(ctx);
         self.frame += 1;
         // Benchmarks: record why each frame was drawn (INSTALLSCOPE_REPAINT_LOG=file).
         if let Some(path) = std::env::var_os("INSTALLSCOPE_REPAINT_LOG") {

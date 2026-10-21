@@ -16,6 +16,8 @@ use std::sync::{Arc, Mutex};
 
 #[derive(Default)]
 pub struct BuilderState {
+    pub(super) wizard: super::pafwizard::Wizard,
+    show_capture: bool,
     pub installer: String,
     kind: Option<InstallerKind>,
     pub details: AppDetails,
@@ -273,7 +275,15 @@ impl App {
                             theme::warning_banner(ui, e);
                             ui.add_space(6.0);
                         }
-                        if self.builder.busy() {
+                        if !self.builder.busy() {
+                            ui.horizontal(|ui| {
+                                super::a11y::explain(ui.selectable_value(&mut self.builder.show_capture, false, "Guided PAF project"), "Plan and save a project from existing application files, with source-linked configuration previews.");
+                                super::a11y::explain(ui.selectable_value(&mut self.builder.show_capture, true, "Installation capture"), "Use the existing installation capture workflow. This can install software on this PC or in Windows Sandbox.");
+                            });
+                        }
+                        if !self.builder.show_capture && !self.builder.busy() {
+                            self.builder.wizard.ui(ui);
+                        } else if self.builder.busy() {
                             self.ui_builder_running(ui);
                         } else if self.builder.package.is_some() {
                             self.ui_builder_result(ui);

@@ -19,6 +19,7 @@ mod logs;
 mod monitor;
 #[cfg(all(windows, feature = "native-ui-preview"))]
 mod native_programs;
+mod pafwizard;
 mod plan;
 mod precheck;
 mod programs;

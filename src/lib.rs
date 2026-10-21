@@ -37,6 +37,7 @@ pub mod nlquery;
 pub mod noise;
 pub mod orphans;
 pub mod pafbuild;
+pub mod pafproject;
 pub mod patools;
 pub mod platform;
 pub mod png;

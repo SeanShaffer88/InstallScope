@@ -6,6 +6,9 @@ All notable changes to InstallScope are documented here. The format follows
 
 ## [Unreleased]
 
+### Guided PAF projects
+- Added a ten-screen project planning workflow with versioned save/reopen snapshots, explicit license declarations, component inventory, background path checks, source-linked findings and configuration previews. Saving never overwrites an existing snapshot. Opening another project or closing the regular app requires confirmation when answers are unsaved. This is a foundation, not a finished builder: source assembly, artwork conversion, official-tool execution and package/report export remain unconnected and are labeled accordingly.
+
 ### Developer SDK
 - Added an independent MIT Rust `portable-builder-kit` crate with bounded metadata parsing, Windows filename/path checks, actionable preflight findings, DOS/PE signature checks and host-supplied SHA-256 build receipts. Includes a native preflight example and Windows/Linux contract CI. Runtime portability and real official-tool execution still require Windows release verification.
 - Added a shell-free compiler supervisor with timeouts, cancellation and Windows Job Object cleanup of compiler descendants. Packaging now uses it for tool downloads and compiler execution. The packaging screen has an accessible Cancel build control; captured files are retained, incomplete output is not reported as a successful package, and failed NSIS builds report a bounded diagnostic tail with the full local log path.
