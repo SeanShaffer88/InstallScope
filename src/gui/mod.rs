@@ -25,6 +25,7 @@ mod programs;
 mod restore_ui;
 mod settings_tab;
 mod shell_ui;
+mod slowdown_ui;
 mod startup_tab;
 mod theme;
 mod transfer_ui;

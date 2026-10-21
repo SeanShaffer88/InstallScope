@@ -27,6 +27,7 @@ pub enum Tab {
     ExtInv,
     /// Opt-in review queue for programs that start with Windows.
     Gatekeeper,
+    Slowdown,
     Settings,
 }
 
@@ -143,6 +144,7 @@ pub struct App {
     pub extinv: super::extinv_ui::ExtInvState,
     /// Autostart Gatekeeper review queue (opt-in).
     pub gatekeeper: super::gatekeeper_ui::GatekeeperState,
+    pub slowdown: super::slowdown_ui::SlowdownState,
     pub alt: super::alt_ui::AltState,
     /// "Ask InstallScope" plain-language search (Ctrl+K).
     pub ask_ui: super::ask::AskState,
@@ -229,6 +231,7 @@ impl App {
             debloat: Default::default(),
             extinv: Default::default(),
             gatekeeper: Default::default(),
+            slowdown: Default::default(),
             shown_tab: None,
             tab_since: 0.0,
             alt: Default::default(),
@@ -594,8 +597,8 @@ impl App {
         // Read from the stored queue (not a new scan), so showing it never
         // performs detection behind the user's back.
         let waiting = self.gatekeeper.pending();
-        let gatekeeper_badge = (self.settings.gatekeeper_enabled && waiting > 0)
-            .then(|| waiting.to_string());
+        let gatekeeper_badge =
+            (self.settings.gatekeeper_enabled && waiting > 0).then(|| waiting.to_string());
         egui::SidePanel::left("nav")
             .resizable(false)
             .exact_width(214.0)
@@ -771,6 +774,14 @@ impl App {
                         {
                             self.tab = Tab::ExtInv;
                         }
+                        if a11y::explain(theme::nav_item_with_hint(
+                            ui, "◷", &t("Slowdown Detective"),
+                            self.tab == Tab::Slowdown, None,
+                            Some(&t("Review recorded changes and measured startup impact; timing alone does not prove a cause")),
+                        ), &t("Open the read-only history report; no programs or settings are changed.")).clicked() {
+                            self.tab = Tab::Slowdown;
+                            self.on_tab_opened(ctx, Tab::Slowdown);
+                        }
                         if theme::nav_item_with_hint(
                             ui,
                             "🔔",
@@ -883,6 +894,10 @@ impl App {
                 "Autostart Gatekeeper",
                 "Review the programs that start with Windows and decide whether they stay",
             ),
+            Tab::Slowdown => (
+                "Slowdown Detective",
+                "Review changes around the time your PC became slower",
+            ),
             Tab::Settings => ("Settings", ""),
         };
         let help = page_help(self.tab);
@@ -946,6 +961,7 @@ impl App {
             // Re-read the stored queue each time the page opens, so a scan run
             // from the command line shows up without restarting InstallScope.
             Tab::Gatekeeper => self.refresh_gatekeeper(),
+            Tab::Slowdown => self.refresh_slowdown(ctx),
             Tab::Settings => self.settings_ui.load(&self.settings),
             Tab::Lab => self.on_lab_opened(),
             _ => {}
@@ -1263,6 +1279,11 @@ fn page_help(tab: Tab) -> &'static [&'static str] {
             "Disable moves an extension's files into InstallScope's own data folder: nothing is deleted, and the rest of the profile (bookmarks, history, settings) is never touched. Restore puts the files back exactly where they were.",
             "Close the browser before disabling or restoring, and restart it afterwards for the change to take effect.",
         ],
+        Tab::Slowdown => &[
+            "Choose an inclusive date range and click Refresh to read locally recorded installs, updates, removals and autostart changes.",
+            "Startup figures are current Windows measurements, not before-and-after comparisons. A nearby change is a clue, not proof of what caused a slowdown. Unmeasured changes are never treated as zero impact.",
+            "This page changes nothing. Use Programs or Startup to investigate further through their existing review and safety workflows. Services and scheduled-task history are not covered yet.",
+        ],
         Tab::Gatekeeper => &[
             "The Gatekeeper compares the programs that start with Windows — Run and RunOnce entries and Startup-folder shortcuts — with a saved baseline, so anything new or changed can be reviewed.",
             "It is off until you turn it on, and it never blocks an installer or removes anything by itself. A scan only fills this list; each entry waits until you click Keep or Remove.",
@@ -1533,6 +1554,7 @@ impl App {
                 order.insert(10, Tab::Debloat);
                 order.insert(11, Tab::Shell);
                 order.insert(12, Tab::Gatekeeper);
+                order.insert(13, Tab::Slowdown);
                 let pos = order.iter().position(|t| *t == self.tab).unwrap_or(0);
                 let n = order.len();
                 let next = if back {
@@ -1567,6 +1589,7 @@ impl App {
                 // Refreshing this page means running a detection pass, which
                 // is what someone pressing F5 here is asking for.
                 Tab::Gatekeeper => self.scan_gatekeeper(),
+                Tab::Slowdown => self.refresh_slowdown(ctx),
                 Tab::Logs => self.reload_logs(),
                 Tab::Backups => self.reload_backups(),
                 _ => {}
@@ -1665,6 +1688,7 @@ impl eframe::App for App {
             Tab::Debloat => self.ui_debloat(ctx),
             Tab::ExtInv => self.ui_extinv(ctx),
             Tab::Gatekeeper => self.ui_gatekeeper(ctx),
+            Tab::Slowdown => self.ui_slowdown(ctx),
             Tab::Settings => self.ui_settings(ctx),
         }
         self.page_transition(ctx);

@@ -193,6 +193,10 @@ Choose what starts with Windows.
 - **Other autostarts** (Advanced mode): Winlogon, Active Setup, program replacements (IFEO), AppInit DLLs, Explorer extensions, icon overlays, browser helper objects, boot-time programs, and WMI subscriptions. Entries whose file is gone are flagged.
 - **Protection:** entries that Windows, security software, or hardware need can't be switched off in Simple mode, and deleted entries are backed up.
 
+### Slowdown Detective
+
+Open **Slowdown Detective** under Utilities, choose From and To dates (inclusive), then **Refresh** (F5). Review locally recorded installs, updates, removals and autostart changes alongside current startup measurements where Windows has them. Unmeasured entries remain explicitly unknown. These are clues, not proof of a cause or before-and-after performance measurements. Use **Review programs** or **Review startup** to investigate through existing workflows; this page changes nothing. Capture history with `installscope history` or `installscope slowdown`, then run it again after changes; the GUI Refresh reads the saved history without capturing a new baseline. Fresh history needs time to accumulate; services and scheduled-task history are not covered yet. Read errors are shown with recovery guidance.
+
 ### Autostart Gatekeeper (opt-in)
 
 Watches for programs that add themselves to Windows startup.

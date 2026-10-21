@@ -96,13 +96,12 @@ states what has shipped and what is still open.
   Still open: a **Fix** action on a finding, an "Undo this operation" shortcut
   beside it, and running the same pass after cleaning operations (today it
   runs on removal plans).
-- **Slowdown Detective** — answer "why is my PC slower than it was?": the user
-  picks a baseline date; diff installs, updates, autostarts, scheduled tasks,
-  and services since then; rank contributors by measured data (boot
-  diagnostics, usage-tracker's startup/CPU cost); offer one-click **Delay
-  start**, **Disable**, **Uninstall…**, or **Keep**. History accumulates locally
-  over time — ship the capture early, and show honest empty states on fresh
-  installs.
+- **Slowdown Detective** — history capture, CLI reports and a read-only GUI now
+  cover recorded installs, updates, removals and autostart changes, with inclusive
+  date filters and current startup measurements where available. Remaining:
+  services/scheduled-task history, before/after measurements, and contextual
+  Delay/Disable/Uninstall actions through reviewed safety workflows. Timing alone
+  must never be presented as proof of causation.
 - **Autostart Gatekeeper** — opt-in (Advanced) review of the programs that
   start with Windows. Detection, attribution and the Decrapifier verdicts are
   wired to both the command line (`installscope gatekeeper`) and an
