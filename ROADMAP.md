@@ -93,9 +93,10 @@ states what has shipped and what is still open.
   DLL is gone, an association that no longer resolves, a protected location the
   operation touched). It stays high-precision, checks existence only, loads no
   removed code and uses no network; the removal's backup remains the undo.
-  Still open: a **Fix** action on a finding, an "Undo this operation" shortcut
-  beside it, and running the same pass after cleaning operations (today it
-  runs on removal plans).
+  Still open: a **Fix** action on a finding and running the same pass after
+  cleaning operations (today it runs on removal plans). A contextual **Undo
+  this removal** action is available when Canary reports findings and the
+  operation has a finalized backup.
 - **Slowdown Detective** — answer "why is my PC slower than it was?": the user
   picks a baseline date; diff installs, updates, autostarts, scheduled tasks,
   and services since then; rank contributors by measured data (boot

@@ -1,7 +1,7 @@
 //! Reviewing and executing a removal plan (shared by uninstall, log revert,
 //! leftover scans and broken-entry cleanup).
 
-use super::app::App;
+use super::app::{App, Confirm};
 use super::theme;
 use super::widgets::*;
 use super::Job;
@@ -147,6 +147,21 @@ fn summary_lines(outcome: &BackupOutcome, restore_point: bool) -> Vec<String> {
         });
     }
     lines
+}
+
+/// Offer an in-context rollback only when Canary found a post-operation
+/// health issue and this exact run produced a finalized backup.
+fn canary_undo_backup(outcome: &BackupOutcome, results: &[ActionResult]) -> Option<String> {
+    match outcome {
+        BackupOutcome::Written(id)
+            if results
+                .iter()
+                .any(|r| !r.ok && r.description.starts_with("Health check:")) =>
+        {
+            Some(id.clone())
+        }
+        _ => None,
+    }
 }
 
 /// Hover text for the "also remove files the program created after
@@ -461,6 +476,7 @@ impl App {
         }
         let mut start = false;
         let mut close = false;
+        let mut undo_request: Option<(String, String)> = None;
         let mut open = flow.open;
         egui::Window::new(flow.title.clone())
             .id(egui::Id::new("removal"))
@@ -497,6 +513,18 @@ impl App {
                     }
                     ui.add_space(6.0);
                     results_ui(ui, results);
+                    if let Some(backup_id) = canary_undo_backup(outcome, results) {
+                        ui.add_space(6.0);
+                        if super::a11y::explain(
+                            theme::primary_button(ui, t("Undo this removal")),
+                            &t("Restore this removal's complete backup. This can put the removed program back, not just repair the issue Canary found."),
+                        )
+                        .clicked()
+                        {
+                            undo_request = Some((backup_id, flow.names.join(", ")));
+                            close = true;
+                        }
+                    }
                     ui.add_space(8.0);
                     super::alt_ui::alternatives_widget(ui, alt, &installed, &flow.names);
                     ui.add_space(8.0);
@@ -662,6 +690,25 @@ impl App {
         if close {
             self.removal = None;
         }
+        if let Some((backup_id, name)) = undo_request {
+            let body = if self.settings.backup_enabled() {
+                tf(
+                    "Canary found a post-removal problem for {name}. Restoring this removal's backup puts back everything it changed, so the program may be installed again. InstallScope will save the current state as another backup first, so this restore can also be undone.",
+                    &[("name", name)],
+                )
+            } else {
+                tf(
+                    "Canary found a post-removal problem for {name}. Restoring this removal's backup puts back everything it changed, so the program may be installed again. Backups are off, so the current state will not be saved first and this restore cannot be undone from the Backups page.",
+                    &[("name", name)],
+                )
+            };
+            self.ask(
+                "Undo removal?",
+                body,
+                "Restore backup",
+                Confirm::RestoreBackup(backup_id),
+            );
+        }
     }
 
     pub fn poll_removal(&mut self) {
@@ -695,7 +742,41 @@ impl App {
 
 #[cfg(test)]
 mod tests {
-    use super::{progress_text, review_text, summary_lines, unlogged_hint, BackupOutcome};
+    use super::{
+        canary_undo_backup, progress_text, review_text, summary_lines, unlogged_hint, BackupOutcome,
+    };
+    use installscope_core::backup::ActionResult;
+
+    #[test]
+    fn canary_undo_is_offered_only_for_findings_with_a_finalized_backup() {
+        let finding = ActionResult::err(
+            "Health check: Autostart entry",
+            "Example — its target file is missing.",
+        );
+        assert_eq!(
+            canary_undo_backup(
+                &BackupOutcome::Written("backup-1".into()),
+                &[finding.clone()]
+            ),
+            Some("backup-1".into())
+        );
+        assert_eq!(
+            canary_undo_backup(&BackupOutcome::Written("backup-1".into()), &[]),
+            None
+        );
+        assert_eq!(
+            canary_undo_backup(
+                &BackupOutcome::Written("backup-1".into()),
+                &[ActionResult::err("Delete file", "Access denied")],
+            ),
+            None
+        );
+        assert_eq!(
+            canary_undo_backup(&BackupOutcome::Off, &[finding.clone()]),
+            None
+        );
+        assert_eq!(canary_undo_backup(&BackupOutcome::Failed, &[finding]), None);
+    }
 
     // Audit P1-4: removal text must describe the run's actual safety
     // net. These pin the selection logic for every combination of
