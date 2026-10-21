@@ -35,7 +35,6 @@ fn main() -> ExitCode {
                 // Its DESTINATION base is concatenated with AppID and needs a separator.
                 // This child inherits the fixture's supervised Windows Job Object.
                 Command::new(executable)
-                    .raw_arg("/S")
                     .raw_arg(format!(
                         "/DESTINATION=\"{}\\\"",
                         destination.trim_end_matches('\\')

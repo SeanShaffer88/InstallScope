@@ -27,6 +27,7 @@ pub struct Project {
     pub schema: u32,
     pub step: usize,
     pub workspace: String,
+    pub prepared_record: String,
     pub source: String,
     pub app_id: String,
     pub name: String,
@@ -52,7 +53,7 @@ pub struct Project {
     pub components: Vec<Component>,
     pub tests: Vec<String>,
 }
-crate::json_struct!(Project, { schema, step, workspace, source, app_id, name, publisher, homepage, description, category, language, package_version, display_version, program, arguments, directory_move, portability_notes, icon, installer, generator, rights, open_source, freeware, commercial_use, shareable, components, tests });
+crate::json_struct!(Project, { schema, step, workspace, prepared_record, source, app_id, name, publisher, homepage, description, category, language, package_version, display_version, program, arguments, directory_move, portability_notes, icon, installer, generator, rights, open_source, freeware, commercial_use, shareable, components, tests });
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Component {
@@ -69,6 +70,7 @@ impl Default for Project {
             schema: 1,
             step: 0,
             workspace: String::new(),
+            prepared_record: String::new(),
             source: String::new(),
             app_id: String::new(),
             name: String::new(),

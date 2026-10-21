@@ -27,6 +27,7 @@ pub struct Wizard {
     message: String,
     io_job: Option<super::Job<ProjectIo>>,
     io_cancellable: bool,
+    reconnect_job: Option<super::Job<(Project, Result<Prepared, String>)>>,
     confirm_close: bool,
     allow_close: bool,
     check_job: Option<super::Job<(Project, Vec<Finding>)>>,
@@ -92,6 +93,7 @@ impl Wizard {
         self.poll_io();
         self.poll_preparation();
         self.poll_build();
+        self.poll_reconnect();
         if let Some(job) = &self.build_job {
             ui.heading("Building with the official tools");
             ui.spinner();
@@ -162,6 +164,7 @@ impl Wizard {
             }
             if a11y::explain(ui.button("Save snapshot…"),"Save all answers and the current step to a new JSON file. Existing files are never overwritten; use a new filename for each revision.").clicked() {
                 if let Some(p)=save_file("Save project snapshot",&format!("portable-project-{}.json",installscope_core::util::new_id()),"Project","json") {
+                    if let Some(prepared)=&self.prepared {self.project.prepared_record=prepared.record.to_string_lossy().into_owned();}
                     let project=self.project.clone();self.io_cancellable=false;
                     self.io_job=Some(super::Job::spawn(&ctx,move |_| project.save_new(&p).map(|_|(p,project,None)).map_err(|e|format!("{e:#}"))));
                 }
@@ -370,7 +373,7 @@ impl Wizard {
                             .request_repaint_after(std::time::Duration::from_millis(100));
                     }
                     if let Some(plan) = &self.plan {
-                        if plan.project() == p {
+                        if plan.matches_project(p) {
                             ui.label(format!(
                                 "{} application files, {} bytes. Proposed new output: {}",
                                 plan.file_count(),
@@ -467,6 +470,7 @@ impl Wizard {
                 small_muted(ui,"Answers changed after the last path check. Check again before using these paths.");
             }
         }
+        self.reconnect_panel(ui);
         if let Some(prepared) = &self.prepared {
             ui.label(RichText::new("Prepared files — build and testing still required").strong());
             ui.label(format!(
@@ -535,6 +539,10 @@ impl Wizard {
         self.plan = None;
         self.plan_texture = None;
         self.prepared = None;
+        if let Some(job) = &self.reconnect_job {
+            job.cancel();
+        }
+        self.reconnect_job = None;
         if let Some(job) = &self.build_review_job {
             job.cancel();
         }
@@ -562,6 +570,7 @@ impl Wizard {
             match result {
                 Ok(output) => {
                     self.path = Some(output.record.clone());
+                    self.project.prepared_record = output.record.to_string_lossy().into_owned();
                     self.saved = self.project.clone();
                     self.message="Files prepared in a new folder. Original sources are intact; build and testing remain required.".into();
                     self.prepared = Some(output);
@@ -597,6 +606,10 @@ impl Wizard {
                     self.message =
                         "Project snapshot ready. No source files or tools were executed.".into();
                     if let Some(restored) = restored {
+                        if let Some(job) = &self.reconnect_job {
+                            job.cancel();
+                        }
+                        self.reconnect_job = None;
                         if let Some(job) = &self.build_review_job {
                             job.cancel();
                         }
@@ -624,6 +637,7 @@ impl Wizard {
         self.poll_io();
         self.poll_preparation();
         self.poll_build();
+        self.poll_reconnect();
         if ctx.input(|i| i.viewport().close_requested())
             && !self.allow_close
             && (self.project != self.saved
@@ -643,6 +657,49 @@ impl Wizard {
                     self.allow_close=true;self.confirm_close=false;ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             });
+        }
+    }
+    fn poll_reconnect(&mut self) {
+        if let Some((project, result)) = self.reconnect_job.as_ref().and_then(|j| j.poll()) {
+            self.reconnect_job = None;
+            if project != self.project {
+                self.error=Some("Answers changed during reconnect. Reconnect again to check the current answers.".into());
+                return;
+            }
+            match result {
+                Ok(prepared) => {
+                    self.prepared = Some(prepared);
+                    self.error = None;
+                    self.message="Prepared files reconnected after verification. No files or tools were executed.".into();
+                }
+                Err(e) => self.error = Some(e),
+            }
+        }
+    }
+    fn reconnect_panel(&mut self, ui: &mut Ui) {
+        if self.prepared.is_some() {
+            return;
+        }
+        ui.separator();
+        ui.label("Resume a previously prepared package");
+        if !self.project.prepared_record.is_empty() {
+            ui.label(format!(
+                "Referenced preparation record: {}",
+                self.project.prepared_record
+            ));
+        }
+        if a11y::explain(ui.button("Locate prepared project.json…"),"Select the companion project.json beside a completed prepared folder. Current answers are retained; selecting a file does not execute tools or start filesystem verification.").clicked(){if let Some(path)=pick_file("Locate prepared project.json","Project",&["json"]){self.project.prepared_record=path.to_string_lossy().into_owned();}}
+        if a11y::explain(ui.add_enabled(self.reconnect_job.is_none() && !self.project.prepared_record.is_empty(),egui::Button::new("Reconnect prepared files")),"Read the referenced preparation record's folder and verify its completion marker, generated configurations and recorded application hashes against the current answers. This can read network/removable paths if selected. No files change and no programs execute.").clicked(){
+            let project=self.project.clone();let path=PathBuf::from(&project.prepared_record);
+            if !path.is_absolute(){self.error=Some("Choose an absolute path to the companion project.json.".into());}
+            else {self.reconnect_job=Some(super::Job::spawn(ui.ctx(),move |progress|{
+                let result=installscope_core::pafstage::reopen(&path,&project,&||progress.cancelled()).and_then(|p|p.ok_or_else(||anyhow::anyhow!("No completed preparation was found beside that record"))).map_err(|e|format!("{e:#}"));(project,result)
+            }));}
+        }
+        if let Some(job) = &self.reconnect_job {
+            ui.spinner();
+            ui.label("Verifying recorded package files…");
+            if a11y::explain(ui.button("Cancel reconnect"),"Stop verification between file reads and retain your answers. No source files or saved records are changed.").clicked(){job.cancel();}
         }
     }
     fn poll_build(&mut self) {

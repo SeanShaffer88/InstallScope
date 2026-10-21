@@ -207,6 +207,12 @@ impl StagePlan {
     pub fn output(&self) -> &Path {
         &self.output
     }
+    /// The saved output locator is derived state, not a source-mapping edit.
+    pub fn matches_project(&self, project: &Project) -> bool {
+        let mut candidate = project.clone();
+        candidate.prepared_record = self.project.prepared_record.clone();
+        candidate == self.project
+    }
     pub fn project(&self) -> &Project {
         &self.project
     }
@@ -399,7 +405,9 @@ impl StagePlan {
         let package = wrapper.join(&self.project.app_id);
         let record = wrapper.join("project.json");
         let work = || -> Result<Prepared> {
-            self.project.save_new(&record)?;
+            let mut snapshot = self.project.clone();
+            snapshot.prepared_record = record.to_string_lossy().into_owned();
+            snapshot.save_new(&record)?;
             fs::create_dir(&package)?;
             for dir in [
                 "App/AppInfo/Launcher",
@@ -622,6 +630,33 @@ mod tests {
                 .starts_with("build-")));
     }
     #[test]
+    fn standalone_snapshot_retains_locator_without_implicitly_reading_it() {
+        let (temp, p) = fixture();
+        let plan = StagePlan::create(&p, &|| false, &|_| {}).unwrap();
+        let prepared = plan.prepare(&|| false, &|_| {}).unwrap();
+        let mut saved = Project::load(&prepared.record).unwrap();
+        assert_eq!(saved.prepared_record, prepared.record.to_string_lossy());
+        assert!(plan.matches_project(&saved));
+        let snapshot = temp.path().join("resumed-answers.json");
+        saved.save_new(&snapshot).unwrap();
+        let loaded = Project::load(&snapshot).unwrap();
+        assert_eq!(
+            reopen(Path::new(&loaded.prepared_record), &loaded, &|| false)
+                .unwrap()
+                .unwrap()
+                .package,
+            prepared.package
+        );
+        saved.prepared_record = temp
+            .path()
+            .join("missing/project.json")
+            .to_string_lossy()
+            .into_owned();
+        let snapshot = temp.path().join("missing-reference.json");
+        saved.save_new(&snapshot).unwrap();
+        assert_eq!(Project::load(&snapshot).unwrap(), saved);
+    }
+    #[test]
     fn reconnects_only_complete_unchanged_preparation() {
         let (_temp, p) = fixture();
         let output = StagePlan::create(&p, &|| false, &|_| {})
@@ -707,7 +742,9 @@ mod tests {
             portable_builder_kit::package_app_id(&output.package).unwrap(),
             p.app_id
         );
-        assert_eq!(Project::load(&output.record).unwrap(), p);
+        let mut expected = p.clone();
+        expected.prepared_record = output.record.to_string_lossy().into_owned();
+        assert_eq!(Project::load(&output.record).unwrap(), expected);
         assert_eq!(
             fs::read(Path::new(&p.source).join("example.exe")).unwrap(),
             original

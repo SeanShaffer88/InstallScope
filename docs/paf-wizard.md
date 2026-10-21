@@ -94,8 +94,10 @@ be resumed. Opening the original companion `project.json` reconnects its prepare
 folder only when its completion marker, bounded report, generated configurations
 and recorded application-file sizes/SHA-256 values pass a fresh worker check.
 Changed or incomplete output leaves the answers available with an explanatory
-warning; no tools execute automatically. Standalone snapshots restore answers
-only. These checks do not cover unrecorded extra files, icons, host writes or
+warning; no tools execute automatically. Standalone snapshots retain their preparation locator and restore answers
+without following that locator automatically. Use **Reconnect prepared files**
+to explicitly verify a referenced preparation, or **Locate prepared project.json**
+if the folder moved. This preserves answers and unsaved-change tracking. These checks do not cover unrecorded extra files, icons, host writes or
 portability, and the companion report is not a signed authenticity record.
 Build review can be resumed after reconnecting the original preparation. Official execution remains gated pending the lifecycle result.
 
@@ -237,7 +239,14 @@ of the base directory with AppID. The test-only helper now supplies NSIS value
 quoting and a trailing directory separator using Rust `CommandExt::raw_arg`,
 without a shell. It remains inside the supervised Job Object. This is a test
 invocation change, not an official-script modification or product CLI feature.
-The remaining install/launch/upgrade result is still pending.
+The verified source resets normal mode in `.onInit`; its `/SILENT=true` handling
+is conditional on a genuine running PortableApps.com Platform. The standalone
+fixture therefore operates the normal English installer wizard: it advances the
+known welcome page, verifies the destination before Install, and finishes only
+after expected files exist. PID/executable checks restrict actions to its own
+generated installer; unexpected dialogs are reported and never acknowledged.
+No Platform identity, official receipt or silent-mode eligibility is fabricated.
+The install/launch/upgrade result remains pending.
 
 Build attempts also write `validation-report.json` with separate blocking errors,
 log-capture warnings and user-reported manual observations. It records the output

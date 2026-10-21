@@ -7,6 +7,7 @@ All notable changes to InstallScope are documented here. The format follows
 ## [Unreleased]
 
 ### Guided PAF projects
+- Saved snapshots retain their prepared-folder locator and offer an explicit verified reconnect action; reading a standalone snapshot does not follow external paths automatically. Original companion snapshots include their own locator.
 - Added the documented folder-move policy while retaining the official warning default. Build attempts can retain a partial validation report separating blocking errors, log warnings and user-observed manual tests; it never asserts complete validation, portability or official approval. The real-tool fixture now uses project staging and build-session code instead of hand-written metadata.
 - Recognized custom-code consent now includes current and legacy Launcher Debug.nsh entry points found in the inspected official source. Build-input/output hashing checks cancellation between reader buffers.
 - Added read-only official build-command review and retained-attempt support with tool-change checks, an invocation journal and bounded copies of changed official compiler logs. Wizard execution remains gated pending the official frontend lifecycle result.

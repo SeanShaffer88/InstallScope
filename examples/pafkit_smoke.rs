@@ -44,6 +44,19 @@ fn run(exe: &Path, arguments: Vec<std::ffi::OsString>) -> Result<()> {
         )?,
         reported: String::new(),
         reports: 0,
+        install: if arguments.first().is_some_and(|s| s == "nsis-install") {
+            Some((
+                portable_builder_kit::process::resolve_tool_path(
+                    arguments
+                        .get(2)
+                        .context("NSIS test invocation lacks a destination")?,
+                )?
+                .join("ProbePortable"),
+                0,
+            ))
+        } else {
+            None
+        },
     });
     run_tool(
         &ToolRequest {
@@ -74,6 +87,7 @@ struct FixtureDialog {
     executable: PathBuf,
     reported: String,
     reports: usize,
+    install: Option<(PathBuf, u8)>,
 }
 
 #[cfg(windows)]
@@ -139,6 +153,55 @@ unsafe extern "system" fn fixture_dialog(
     }
     let mut text = String::new();
     EnumChildWindows(window, Some(child_text), &mut text as *mut String as isize);
+    if let Some((destination, phase)) = &mut state.install {
+        let button = GetDlgItem(window, 1);
+        let mut caption = [0u16; 64];
+        let mut count = 0usize;
+        if !button.is_null()
+            && IsWindowEnabled(button) != 0
+            && SendMessageTimeoutW(
+                button,
+                WM_GETTEXT,
+                caption.len(),
+                caption.as_mut_ptr() as isize,
+                SMTO_ABORTIFHUNG | SMTO_BLOCK,
+                100,
+                &mut count,
+            ) != 0
+            && count < caption.len()
+        {
+            let caption = String::from_utf16_lossy(&caption[..count]).replace('&', "");
+            let advance =
+                match *phase {
+                    0 => caption.trim() == "Next >"
+                        && text.contains(
+                            "This wizard will guide you through the installation of Probe Portable",
+                        ),
+                    1 => {
+                        caption.trim() == "Install"
+                            && text.contains("Choose Install Location")
+                            && text
+                                .to_lowercase()
+                                .contains(&destination.to_string_lossy().to_lowercase())
+                    }
+                    2 => {
+                        caption.trim() == "Finish"
+                            && text.contains("Probe Portable")
+                            && destination.join("ProbePortable.exe").is_file()
+                            && destination.join("App/AppInfo/appinfo.ini").is_file()
+                    }
+                    _ => false,
+                };
+            if advance && PostMessageW(button, BM_CLICK, 0, 0) != 0 {
+                println!(
+                    "Fixture installer wizard: confirmed phase {} at {}",
+                    phase,
+                    destination.display()
+                );
+                *phase += 1;
+            }
+        }
+    }
     if state.reported != text && state.reports < 10 {
         println!("Fixture dialog from {}: {text}", state.executable.display());
         state.reported = text;
@@ -164,6 +227,7 @@ fn compile(prepared: &Prepared, project: &Project, _tools: &PaTools) -> Result<p
                 executable: std::fs::canonicalize(path)?,
                 reported: String::new(),
                 reports: 0,
+                install: None,
             });
         }
         std::cell::RefCell::new(states)
@@ -353,7 +417,7 @@ fn main() -> Result<()> {
     if !installed.join("Data/probe.txt").is_file() {
         return Err(anyhow!("upgraded launcher failed"));
     }
-    println!("Verified: wizard project staging/reconnect/build review, official launcher/installer build, log/report retention, silent install, portable launch, folder relocation and upgrade preserving Data (official frontends supplied by the test environment; not certification)");
+    println!("Verified: wizard project staging/reconnect/build review, official launcher/installer build, log/report retention, installer wizard, portable launch, folder relocation and upgrade preserving Data (official frontends supplied by the test environment; not certification)");
     work.1 = false;
     Ok(())
 }

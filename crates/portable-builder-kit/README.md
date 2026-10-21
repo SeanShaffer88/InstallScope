@@ -122,7 +122,7 @@ for exit codes, timeout, cancellation and Unicode/quoted arguments; Windows also
 tests descendant cleanup, path resolution and a parent that exits before its
 child. CI additionally verifies pinned official Generator/Installer distributions,
 stages a harmless project through the guided workflow and checks build/log/report
-retention, silent install, launch, folder relocation and Data-preserving upgrade.
+retention, installer-wizard installation, launch, folder relocation and Data-preserving upgrade.
 It does not dismiss launch warnings, forge an official Installer receipt, modify
 official source or substitute another installer. This remains distinct from a
 Windows desktop UI test, clean-account test or cross-drive portability test.
