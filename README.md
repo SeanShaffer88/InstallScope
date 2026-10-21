@@ -208,6 +208,17 @@ Watches for programs that add themselves to Windows startup.
 
 ### Cleaner (junk cleaner)
 
+After a reviewed cleanup, **Cleanup details** lists removed files, files already
+gone, files skipped because their size or type changed, and failures with the
+operating system's reason. **Copy full cleanup report** copies every outcome and
+full local path; review private paths before sharing. The visible list shows up
+to 1,000 outcomes, while totals and copying include the entire report. The latest
+report survives rescans but is replaced by the next cleanup and lost on exit.
+It is not a backup: junk deletion remains permanent. Byte totals describe logical
+file sizes, which can differ from physical space reclaimed. Recycle Bin results
+are aggregate only; empty-folder tidy-up is best effort and not itemized.
+
+
 <img src="docs/screenshots/cleaner.png" alt="Junk cleaner" width="720">
 
 Free the space taken by temporary files and caches.

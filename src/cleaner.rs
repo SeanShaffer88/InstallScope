@@ -434,6 +434,44 @@ pub fn clean(cat: &Category) -> ScanResult {
     freed
 }
 
+/// Outcome for one reviewed file. Skips never count as removed bytes.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CleanOutcome {
+    Removed,
+    Missing,
+    ChangedSize,
+    NotRegularFile,
+    Failed(String),
+}
+
+impl CleanOutcome {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::Removed => "Removed",
+            Self::Missing => "Already gone",
+            Self::ChangedSize => "Skipped: size changed; scan again to review",
+            Self::NotRegularFile => "Skipped: now a link or non-file; inspect before retrying",
+            Self::Failed(_) => "Failed: check access or close the program using this file",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CleanResult {
+    pub path: PathBuf,
+    pub outcome: CleanOutcome,
+}
+
+/// In-memory results for a reviewed clean; contains local paths, never uploaded.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CleanReport {
+    pub freed: ScanResult,
+    pub results: Vec<CleanResult>,
+    /// Recycle Bin emptying is one shell operation, not per-file removal.
+    pub recycle_bin: bool,
+    pub error: Option<String>,
+}
+
 /// Delete exactly the files in `files` (a reviewed scan's deletion
 /// set), then remove folders the deletions left empty, like [`clean`]
 /// does. Files that can't be deleted (in use, already gone) are
@@ -444,24 +482,44 @@ pub fn clean(cat: &Category) -> ScanResult {
 /// file that was never in the list — protected or simply unscanned —
 /// are untouched.
 pub fn clean_files(cat: &Category, files: &[CleanFile]) -> ScanResult {
+    clean_files_report(cat, files).freed
+}
+
+/// Execute the reviewed deletion list and retain a reason for every outcome.
+/// Recycle Bin results are aggregate only. Directory tidy-up is best effort.
+pub fn clean_files_report(cat: &Category, files: &[CleanFile]) -> CleanReport {
     if cat.id == "recycle_bin" {
-        // The Bin can't be emptied item by item through the shell API.
-        return clean(cat);
-    }
-    let mut freed = ScanResult::default();
-    for f in files {
-        // Never follow a replacement link or delete a file whose reviewed size
-        // is stale. Metadata errors are conservative skips, like locked files.
-        let Ok(meta) = std::fs::symlink_metadata(&f.path) else {
-            continue;
+        let before = recycle_bin_size();
+        let ok = empty_recycle_bin();
+        return CleanReport {
+            freed: if ok { before } else { ScanResult::default() },
+            recycle_bin: true,
+            error: (!ok)
+                .then(|| "Could not empty the Recycle Bin; check access and try again.".into()),
+            ..Default::default()
         };
-        if !meta.file_type().is_file() || meta.len() != f.bytes {
-            continue;
-        }
-        if crate::platform::delete_file(&f.path).is_ok() {
-            freed.files += 1;
-            freed.bytes += f.bytes;
-        }
+    }
+    let mut report = CleanReport::default();
+    for f in files {
+        let outcome = match std::fs::symlink_metadata(&f.path) {
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => CleanOutcome::Missing,
+            Err(e) => CleanOutcome::Failed(e.to_string()),
+            Ok(meta) if !meta.file_type().is_file() => CleanOutcome::NotRegularFile,
+            Ok(meta) if meta.len() != f.bytes => CleanOutcome::ChangedSize,
+            Ok(_) => match crate::platform::delete_file(&f.path) {
+                Ok(()) => {
+                    report.freed.files += 1;
+                    report.freed.bytes += f.bytes;
+                    CleanOutcome::Removed
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => CleanOutcome::Missing,
+                Err(e) => CleanOutcome::Failed(e.to_string()),
+            },
+        };
+        report.results.push(CleanResult {
+            path: f.path.clone(),
+            outcome,
+        });
     }
     // Folder tidy-up, mirroring clean(): patterns' targets stay,
     // subfolders the deletions emptied go.
@@ -483,7 +541,7 @@ pub fn clean_files(cat: &Category, files: &[CleanFile]) -> ScanResult {
             }
         }
     }
-    freed
+    report
 }
 
 fn recycle_bin_size() -> ScanResult {
@@ -758,6 +816,88 @@ mod review_tests {
             .file_type()
             .is_symlink());
         assert_eq!(std::fs::read(target).unwrap(), b"data");
+    }
+
+    #[test]
+    fn cleanup_report_explains_each_reviewed_outcome() {
+        let tmp = crate::util::tempdir().unwrap();
+        let removed = tmp.path().join("removed");
+        let changed = tmp.path().join("changed");
+        let directory = tmp.path().join("directory");
+        let missing = tmp.path().join("missing");
+        std::fs::write(&removed, b"1234").unwrap();
+        std::fs::write(&changed, b"longer than reviewed").unwrap();
+        std::fs::create_dir(&directory).unwrap();
+        let cat = Category {
+            patterns: vec![],
+            ..test_category("t", "unused")
+        };
+        let files = vec![
+            CleanFile {
+                path: removed.clone(),
+                bytes: 4,
+            },
+            CleanFile {
+                path: changed.clone(),
+                bytes: 1,
+            },
+            CleanFile {
+                path: directory.clone(),
+                bytes: 0,
+            },
+            CleanFile {
+                path: missing.clone(),
+                bytes: 0,
+            },
+        ];
+        let report = clean_files_report(&cat, &files);
+        assert_eq!(report.freed, ScanResult { files: 1, bytes: 4 });
+        assert_eq!(
+            report
+                .results
+                .iter()
+                .map(|r| r.path.clone())
+                .collect::<Vec<_>>(),
+            files.iter().map(|f| f.path.clone()).collect::<Vec<_>>()
+        );
+        assert_eq!(
+            report
+                .results
+                .iter()
+                .map(|r| r.outcome.clone())
+                .collect::<Vec<_>>(),
+            vec![
+                CleanOutcome::Removed,
+                CleanOutcome::ChangedSize,
+                CleanOutcome::NotRegularFile,
+                CleanOutcome::Missing
+            ]
+        );
+        assert!(!removed.exists());
+        assert!(directory.is_dir());
+        assert_eq!(std::fs::read(changed).unwrap(), b"longer than reviewed");
+        assert!(!report.recycle_bin);
+        assert!(report.error.is_none());
+    }
+
+    #[test]
+    fn cleanup_report_preserves_metadata_failure_reason() {
+        let cat = Category {
+            patterns: vec![],
+            ..test_category("t", "unused")
+        };
+        let report = clean_files_report(
+            &cat,
+            &[CleanFile {
+                path: PathBuf::from("invalid\0path"),
+                bytes: 10,
+            }],
+        );
+        assert_eq!(report.freed, ScanResult::default());
+        assert_eq!(report.results.len(), 1);
+        assert!(
+            matches!(&report.results[0].outcome, CleanOutcome::Failed(reason) if !reason.is_empty())
+        );
     }
 
     #[test]

@@ -20,7 +20,8 @@ pub struct CleanerState {
     pub deep_run: Option<(DeepItem, Job<Result<(), String>>)>,
     pub deep_restore_point: bool,
     pub scan_job: Option<Job<Vec<CategoryScan>>>,
-    pub clean_job: Option<Job<Vec<installscope_core::cleaner::ScanResult>>>,
+    pub clean_job: Option<Job<Vec<cleaner::CleanReport>>>,
+    pub reports: Vec<cleaner::CleanReport>,
     pub freed: Option<u64>,
     /// Protected-paths editor text (one pattern per line); `None` until
     /// first shown, when it is loaded from the persisted setting.
@@ -47,6 +48,7 @@ impl Default for CleanerState {
             deep_restore_point: true,
             scan_job: None,
             clean_job: None,
+            reports: Vec::new(),
             freed: None,
             protect_text: None,
             schedule: None,
@@ -141,7 +143,6 @@ impl App {
             .map(|(c, _, _)| c.clone())
             .collect();
         let protect = self.settings.cleaner_protect.clone();
-        self.cleaner.freed = None;
         self.cleaner.scan_job = Some(Job::spawn(&self.ctx, move |pr| {
             cats.iter()
                 .map(|c| {
@@ -178,8 +179,8 @@ impl App {
         self.cleaner.clean_job = Some(Job::spawn(&self.ctx, move |_| {
             jobs.iter()
                 .map(|(c, files)| match files {
-                    Some(files) => cleaner::clean_files(c, files),
-                    None => cleaner::clean(c),
+                    Some(files) => cleaner::clean_files_report(c, files),
+                    None => cleaner::clean_files_report(c, &[]),
                 })
                 .collect()
         }));
@@ -384,9 +385,13 @@ impl App {
         }
         if let Some(r) = self.cleaner.clean_job.as_ref().and_then(|j| j.poll()) {
             self.cleaner.clean_job = None;
-            let freed: u64 = r.iter().map(|s| s.bytes).sum();
+            let freed: u64 = r.iter().map(|s| s.freed.bytes).sum();
+            self.cleaner.reports = r;
             self.cleaner.freed = Some(freed);
-            self.set_status(tf("Freed {size}", &[("size", human_size(freed))]));
+            self.set_status(tf(
+                "Cleanup report: {size} in removed files",
+                &[("size", human_size(freed))],
+            ));
             self.start_scan();
         }
     }
@@ -463,8 +468,42 @@ impl App {
             a11y::focus_hint(ui, theme::MUTED);
             if let Some(f) = self.cleaner.freed {
                 theme::card(ui, |ui| {
-                    ui.label(RichText::new(tf("✔ Freed {size}", &[("size", human_size(f))])).color(theme::OK).strong());
-                    small_muted(ui, t("Files that could not be removed, changed size since review, or became links were skipped. Scan again to review remaining files."));
+                    ui.label(RichText::new(tf("Cleanup report: {size} in removed files", &[("size", human_size(f))])).strong());
+                    small_muted(ui, t("Latest cleanup: logical file sizes removed, not guaranteed physical disk space reclaimed. Rescanning keeps this report; the next cleanup replaces it."));
+                    let removed = self.cleaner.reports.iter().flat_map(|r| &r.results).filter(|r| matches!(r.outcome, cleaner::CleanOutcome::Removed)).count();
+                    let failed = self.cleaner.reports.iter().flat_map(|r| &r.results).filter(|r| matches!(r.outcome, cleaner::CleanOutcome::Failed(_))).count();
+                    let total: usize = self.cleaner.reports.iter().map(|r| r.results.len()).sum();
+                    ui.label(format!("{}: {removed} · {}: {} · {}: {failed}", t("Removed"), t("Skipped / already gone"), total - removed - failed, t("Failed")));
+                    for report in &self.cleaner.reports {
+                        if report.recycle_bin { ui.label(t("Recycle Bin: aggregate shell result only; individual files are not listed.")); }
+                        if let Some(error) = &report.error { ui.colored_label(theme::BAD, error); }
+                    }
+                    if a11y::explain(ui.button(t("Copy full cleanup report")), &t("Copy all outcomes, full local file paths and errors to the clipboard, including rows beyond the display limit. Review private paths before sharing.")).clicked() {
+                        let mut text = String::new();
+                        for report in &self.cleaner.reports {
+                            if report.recycle_bin { text.push_str(&t("Recycle Bin: aggregate shell result only; individual files are not listed.")); text.push('\n'); }
+                            if let Some(error) = &report.error { text.push_str(error); text.push('\n'); }
+                            for result in &report.results {
+                                text.push_str(&format!("{} — {}", t(result.outcome.label()), result.path.display()));
+                                if let cleaner::CleanOutcome::Failed(error) = &result.outcome { text.push_str(&format!(" — {error}")); }
+                                text.push('\n');
+                            }
+                        }
+                        ui.ctx().copy_text(text);
+                    }
+                    let details = egui::CollapsingHeader::new(t("Cleanup details"))
+                        .show(ui, |ui| {
+                            small_muted(ui, t("Full paths and outcomes are selectable for copying. This report is kept only until the next cleanup or app exit. Files are permanently deleted; this report is not a backup."));
+                            egui::ScrollArea::vertical().id_salt("cleanup_results").max_height(180.0).show(ui, |ui| {
+                                for result in self.cleaner.reports.iter().flat_map(|r| &r.results).take(1000) {
+                                    let mut text = format!("{} — {}", t(result.outcome.label()), result.path.display());
+                                    if let cleaner::CleanOutcome::Failed(error) = &result.outcome { text.push_str(&format!(" — {error}")); }
+                                    ui.add(egui::Label::new(text).selectable(true));
+                                }
+                                if total > 1000 { ui.label(t("Showing the first 1,000 outcomes; summary counts and Copy full cleanup report include all reviewed files.")); }
+                            });
+                        });
+                    a11y::explain(details.header_response, &t("Expand the latest cleanup outcomes; the first 1,000 are shown, and Copy full cleanup report includes all rows."));
                 });
                 ui.add_space(8.0);
             }

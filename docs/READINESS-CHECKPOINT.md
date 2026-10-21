@@ -78,3 +78,24 @@ overlapping patterns including protected items, a size change after scanning,
 and a replacement symlink with a surviving target (Unix only). Formatting,
 diff whitespace checks, and all-target Clippy passed; existing Clippy warnings
 remain. Windows runtime and Windows reparse-point behavior remain unverified.
+
+## Cleanup reporting checkpoint — good stopping point
+
+Reviewed cleaning now retains a structured in-memory result for each supplied
+file: removed, already gone, size changed, no longer a regular file, or failed
+with the OS error. The GUI shows counts, selectable full paths, and an explicitly
+bounded 1,000-row list; Copy full cleanup report includes all outcomes. Its button
+and disclosure have hover, keyboard-focus, and accessibility descriptions through
+the existing helper. Reports survive automatic/manual rescans and are replaced
+by the next cleanup or lost at exit. Recycle Bin results are aggregate only;
+empty-directory tidy-up remains best effort and is not itemized. No persistence
+format changed, and the summary-only API remains available to existing callers.
+
+Verification: 276 library and 30 application tests passed on Linux; three tests
+remain ignored by the suite. New tests exercise mixed per-file results and an
+invalid path producing an explicit error. Full formatting, whitespace checks,
+and all-target Clippy pass with existing warnings. Windows interaction, clipboard,
+screen-reader runtime, locked-file failure and Recycle Bin operation are not
+verified here. This is a completed implementation batch, not release approval.
+Pause after publishing this batch; next validate the PR on Windows and exercise
+review → clean → inspect report → copy report → rescan on disposable data.
