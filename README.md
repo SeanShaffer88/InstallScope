@@ -450,7 +450,11 @@ Developers embedding package creation can use the native Rust
 preflight and verified build-artifact selection without adding a Python runtime.
 InstallScope uses it to reject failed external tools and stale or ambiguous
 installer output. Package compilation supports cancellation and bounded compiler
-execution, with compiler-tree cleanup on Windows. These checks do not certify full format compliance or runtime
+execution, with compiler-tree cleanup on Windows. When using InstallScope's
+installer, the pinned official Launcher may show an unsupported-install warning
+on first launch or upgrade because it expects an official Installer receipt.
+InstallScope preserves that warning and explains the distinction; use the
+official Installer for official distribution. These checks do not certify full format compliance or runtime
 portability; the SDK README records verification boundaries and release gates.
 
 ## Contributing

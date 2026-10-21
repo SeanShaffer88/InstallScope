@@ -19,6 +19,12 @@ impl Drop for Work {
 }
 fn run(exe: &Path, arguments: Vec<std::ffi::OsString>) -> Result<()> {
     println!("Running {}", exe.display());
+    #[cfg(windows)]
+    let dialog = std::cell::RefCell::new(FixtureDialog {
+        executable: std::fs::canonicalize(exe)?,
+        reported: false,
+        acknowledged: false,
+    });
     run_tool(
         &ToolRequest {
             executable: exe.to_path_buf(),
@@ -26,11 +32,104 @@ fn run(exe: &Path, arguments: Vec<std::ffi::OsString>) -> Result<()> {
             working_directory: None,
             timeout: Duration::from_secs(60),
         },
-        &|| false,
+        &|| {
+            #[cfg(windows)]
+            if exe.file_name().is_some_and(|n| n == "ProbePortable.exe")
+                && !dialog.borrow().acknowledged
+            {
+                // Acknowledge only this fixture's documented upstream warning.
+                // No production warning is disabled or official receipt forged.
+                unsafe {
+                    windows_sys::Win32::UI::WindowsAndMessaging::EnumWindows(
+                        Some(fixture_dialog),
+                        &mut *dialog.borrow_mut() as *mut FixtureDialog as isize,
+                    );
+                }
+            }
+            false
+        },
     )
     .with_context(|| format!("running {}", exe.display()))?;
     Ok(())
 }
+#[cfg(windows)]
+struct FixtureDialog {
+    executable: PathBuf,
+    reported: bool,
+    acknowledged: bool,
+}
+
+#[cfg(windows)]
+unsafe extern "system" fn fixture_dialog(
+    window: windows_sys::Win32::Foundation::HWND,
+    data: isize,
+) -> i32 {
+    use std::os::windows::ffi::OsStringExt;
+    use windows_sys::Win32::{
+        Foundation::CloseHandle,
+        System::Threading::{
+            OpenProcess, QueryFullProcessImageNameW, PROCESS_QUERY_LIMITED_INFORMATION,
+        },
+        UI::WindowsAndMessaging::*,
+    };
+    let state = &mut *(data as *mut FixtureDialog);
+    let mut class = [0u16; 64];
+    let count = GetClassNameW(window, class.as_mut_ptr(), class.len() as i32);
+    if count <= 0 || String::from_utf16_lossy(&class[..count as usize]) != "#32770" {
+        return 1;
+    }
+    let mut pid = 0;
+    GetWindowThreadProcessId(window, &mut pid);
+    let process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, 0, pid);
+    if process.is_null() {
+        return 1;
+    }
+    let mut image = vec![0u16; 32768];
+    let mut size = image.len() as u32;
+    let ok = QueryFullProcessImageNameW(process, 0, image.as_mut_ptr(), &mut size);
+    CloseHandle(process);
+    if ok == 0 {
+        return 1;
+    }
+    let image = PathBuf::from(std::ffi::OsString::from_wide(&image[..size as usize]));
+    if std::fs::canonicalize(image).ok().as_ref() != Some(&state.executable) {
+        return 1;
+    }
+    unsafe extern "system" fn child_text(
+        window: windows_sys::Win32::Foundation::HWND,
+        data: isize,
+    ) -> i32 {
+        let text = &mut *(data as *mut String);
+        let mut buffer = [0u16; 4096];
+        let count = windows_sys::Win32::UI::WindowsAndMessaging::GetWindowTextW(
+            window,
+            buffer.as_mut_ptr(),
+            buffer.len() as i32,
+        );
+        if count > 0 {
+            text.push_str(&String::from_utf16_lossy(&buffer[..count as usize]));
+            text.push(' ');
+        }
+        1
+    }
+    let mut text = String::new();
+    EnumChildWindows(window, Some(child_text), &mut text as *mut String as isize);
+    if !state.reported {
+        println!("Fixture launcher dialog: {text}");
+        state.reported = true;
+    }
+    if text.contains("Integrity Failure Warning:")
+        && text.contains("installed or upgraded without using its installer")
+    {
+        let button = GetDlgItem(window, 1); // IDOK, this fixture's known warning only
+        if !button.is_null() && PostMessageW(button, BM_CLICK, 0, 0) != 0 {
+            state.acknowledged = true;
+            println!("CI explicitly acknowledged the upstream unsupported-install warning; no official installer receipt is fabricated");
+        }
+    }
+    1
+}
+
 fn main() -> Result<()> {
     if !cfg!(windows) {
         return Err(anyhow!("This integration test must run on Windows"));

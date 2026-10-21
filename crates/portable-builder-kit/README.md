@@ -114,7 +114,11 @@ for exit codes, timeout, cancellation and Unicode/quoted arguments; Windows also
 tests descendant cleanup and a parent that exits before its child. CI additionally
 compiles an official-source Launcher and an InstallScope installer, silently
 installs the package, runs its test payload, relocates it and verifies an upgrade
-preserves `Data`. That is not a test of the official Installer frontend, nor a
+preserves `Data`. The pinned official Launcher warns when it has no official
+Installer receipt. The test explicitly acknowledges that warning for its own
+harmless fixture; it neither disables the production warning nor forges an
+upstream receipt. InstallScope explains this limitation when its own installer
+is selected. That is not a test of the official Installer frontend, nor a
 complete clean-environment or cross-drive portability test. CI configuration by
 itself is not a passing result.
 

@@ -584,8 +584,8 @@ impl App {
                     small_muted(ui, p.display().to_string());
                 }
                 None => {
-                    ui.label(t("Installer: built in"));
-                    small_muted(ui, t("to publish on portableapps.com, install the official PortableApps.com Installer and InstallScope uses it instead"));
+                    ui.label(t("Installer: InstallScope"));
+                    small_muted(ui, t("The official Launcher can show an unsupported-install warning on first launch and after upgrades with this installer. Use the official PortableApps.com Installer to avoid that warning and for official distribution."));
                 }
             }
         });
