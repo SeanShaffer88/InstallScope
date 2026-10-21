@@ -7,7 +7,7 @@ This is an independent project; no PortableApps.com endorsement is implied.
 
 This native core succeeds the initial Python reference implementation for
 InstallScope integration. It deliberately reuses the host's cryptography,
-compiler provisioning, with an optional reusable process supervisor. It does not duplicate the existing
+compiler provisioning and offers an optional reusable process supervisor. It does not duplicate the existing
 capture engine or claim to turn every installed application into a portable app.
 
 ## Integrate
@@ -94,14 +94,22 @@ claim Windows-style process-tree ownership. This runner is for trusted developer
 tools, not containment of hostile software or a security sandbox. Tool handles
 are not inherited by children; no UAC escalation or breakaway permission is added.
 
-InstallScope's packaging UI exposes **Cancel build** with keyboard/screen-reader
-explanations. It retains captured files; incomplete compiler output may remain
-and must be rebuilt. Compilers time out after ten minutes, downloads after three
-minutes. File preparation/unpacking checks cancellation between phases; they are
-not interrupted mid-write. The compiler's last 64 KiB of diagnostics are read for
-error reporting. Failed NSIS builds retain the complete temporary log and report
-its path; successful builds remove the log. No telemetry or automatic retries of
-failed compilation are added.
+Use `resolve_tool_path` when preparing reviews of tool and package paths. It
+resolves absolute paths and, on Windows, avoids verbatim prefixes for short,
+ordinary names only when the conventional spelling resolves to the same path.
+This helps older compilers find their bundled includes; it is not a publisher
+check, path sandbox or promise of long-path support. `run_tool` applies the same
+resolution to its executable and working directory; arguments remain distinct
+caller-supplied values.
+
+InstallScope's capture workflow exposes **Cancel build**, requires both official
+frontends, and retains working files on failure. Its newer guided workflow adds
+project persistence, reviewed staging, official command review and retained build
+attempts. Execution there remains gated on its real-tool lifecycle result. Each
+attempt distinguishes an invocation journal, observed compiler-log copies and a
+partial validation report. See the host's [current workflow status](../../docs/paf-wizard.md).
+Legacy source-compiler APIs remain separate development compatibility paths;
+the desktop does not select them as a missing-tool fallback.
 
 For process-lifecycle tests, enable the developer-only `test-fixture` feature:
 
@@ -111,16 +119,14 @@ cargo test --manifest-path crates/portable-builder-kit/Cargo.toml --all-targets 
 
 The fixture binary is excluded from normal builds. Tests execute real processes
 for exit codes, timeout, cancellation and Unicode/quoted arguments; Windows also
-tests descendant cleanup and a parent that exits before its child. CI additionally
-compiles an official-source Launcher and an InstallScope installer, silently
-installs the package, runs its test payload, relocates it and verifies an upgrade
-preserves `Data`. The pinned official Launcher warns when it has no official
-Installer receipt. The test explicitly acknowledges that warning for its own
-harmless fixture; it neither disables the production warning nor forges an
-upstream receipt. The desktop capture workflow now requires the official Launcher Generator and
-Installer and does not select this development fallback. That is not a test of the official Installer frontend, nor a
-complete clean-environment or cross-drive portability test. CI configuration by
-itself is not a passing result.
+tests descendant cleanup, path resolution and a parent that exits before its
+child. CI additionally verifies pinned official Generator/Installer distributions,
+stages a harmless project through the guided workflow and checks build/log/report
+retention, silent install, launch, folder relocation and Data-preserving upgrade.
+It does not dismiss launch warnings, forge an official Installer receipt, modify
+official source or substitute another installer. This remains distinct from a
+Windows desktop UI test, clean-account test or cross-drive portability test.
+CI configuration by itself is not a passing result.
 
 ## Native developer utility
 

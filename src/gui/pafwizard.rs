@@ -311,6 +311,7 @@ impl Wizard {
                 6 => {
                     file(ui,"Official Installer",&mut p.installer,&["exe"],"Locate PortableApps.comInstaller.exe from the official distribution. No download or execution occurs here.");
                     file(ui,"Official Launcher Generator",&mut p.generator,&["exe"],"Locate PortableApps.comLauncherGenerator.exe. Selecting a filename does not establish provenance or compatibility.");
+                    ui.label("Official tools have their own license and branding terms. Review them before packaging; commercial software use may require contacting PortableApps.com. Selecting a tool does not establish permission.");
                     ui.label("Installer configuration: use documented defaults. No installer.ini is generated when no custom options have been selected. Existing advanced configuration must be reviewed before a future build.");
                     ui.hyperlink_to(
                         "Official Installer download and documentation",
@@ -437,7 +438,7 @@ impl Wizard {
                             p.tests.retain(|s|s!=item);if done {p.tests.push(item.to_string());}
                         }
                     }
-                    ui.label("Save a project snapshot to retain drafts, notes and test records. Prepared folders become installable artifacts only after a successful build; testing remains separate. Build results and available logs appear below. The manual test record is not a complete automated validation report.");
+                    ui.label("Save a project snapshot to retain drafts, notes and test records. The prepared folder needs a successful build to produce an installer; testing remains separate. Build results and available logs appear below. The manual test record is not a complete automated validation report.");
                 }
             }
         });

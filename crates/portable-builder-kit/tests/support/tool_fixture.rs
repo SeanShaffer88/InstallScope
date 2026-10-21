@@ -12,6 +12,48 @@ fn main() -> ExitCode {
     match args.next().as_deref().and_then(|s| s.to_str()) {
         Some("success") => ExitCode::SUCCESS,
         Some("fail") => ExitCode::from(23),
+        #[cfg(windows)]
+        Some("nsis-install") => {
+            use std::os::windows::process::CommandExt;
+            let Some(executable) = args.next() else {
+                return ExitCode::from(2);
+            };
+            let Some(destination) = args.next() else {
+                return ExitCode::from(2);
+            };
+            let result = (|| -> std::io::Result<std::process::ExitStatus> {
+                let executable = portable_builder_kit::process::resolve_tool_path(executable)?;
+                let destination = portable_builder_kit::process::resolve_tool_path(destination)?;
+                portable_builder_kit::validate_executable(&executable)?;
+                let destination = destination
+                    .to_str()
+                    .ok_or_else(|| std::io::Error::other("Test destination is not Unicode"))?;
+                if destination.contains(['"', '\r', '\n', '\0']) {
+                    return Err(std::io::Error::other("Unsafe test destination"));
+                }
+                // The official NSIS script parses the raw command line, not C argv.
+                // Its DESTINATION base is concatenated with AppID and needs a separator.
+                // This child inherits the fixture's supervised Windows Job Object.
+                Command::new(executable)
+                    .raw_arg("/S")
+                    .raw_arg(format!(
+                        "/DESTINATION=\"{}\\\"",
+                        destination.trim_end_matches('\\')
+                    ))
+                    .status()
+            })();
+            match result {
+                Ok(status) if status.success() => ExitCode::SUCCESS,
+                Ok(status) => {
+                    eprintln!("Official installer exited with {:?}", status.code());
+                    ExitCode::from(1)
+                }
+                Err(error) => {
+                    eprintln!("Test-only NSIS invocation failed: {error}");
+                    ExitCode::from(1)
+                }
+            }
+        }
         Some("sleep") => {
             thread::sleep(Duration::from_secs(20));
             ExitCode::SUCCESS

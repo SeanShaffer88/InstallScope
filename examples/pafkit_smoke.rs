@@ -31,7 +31,17 @@ fn run(exe: &Path, arguments: Vec<std::ffi::OsString>) -> Result<()> {
     println!("Running {}", exe.display());
     #[cfg(windows)]
     let dialog = std::cell::RefCell::new(FixtureDialog {
-        executable: std::fs::canonicalize(exe)?,
+        executable: std::fs::canonicalize(
+            if arguments.first().is_some_and(|s| s == "nsis-install") {
+                Path::new(
+                    arguments
+                        .get(1)
+                        .context("NSIS test invocation lacks an installer")?,
+                )
+            } else {
+                exe
+            },
+        )?,
         reported: String::new(),
         reports: 0,
     });
@@ -44,7 +54,7 @@ fn run(exe: &Path, arguments: Vec<std::ffi::OsString>) -> Result<()> {
         },
         &|| {
             #[cfg(windows)]
-            if exe.file_name().is_some_and(|n| n == "ProbePortable.exe") {
+            {
                 // Report this fixture's own dialog only; never dismiss warnings.
                 unsafe {
                     windows_sys::Win32::UI::WindowsAndMessaging::EnumWindows(
@@ -225,7 +235,7 @@ fn main() -> Result<()> {
     let workspace = work.0.join("workspace");
     std::fs::create_dir(&source)?;
     std::fs::create_dir(&workspace)?;
-    std::fs::copy(payload, source.join("probe.exe"))?;
+    std::fs::copy(&payload, source.join("probe.exe"))?;
     let icon = work.0.join("icon.png");
     std::fs::write(
         &icon,
@@ -250,10 +260,11 @@ fn main() -> Result<()> {
     let destination = work.0.join("installed");
     std::fs::create_dir(&destination)?;
     run(
-        &installer,
+        &payload,
         vec![
-            "/S".into(),
-            format!("/DESTINATION={}", destination.display()).into(),
+            "nsis-install".into(),
+            installer.as_os_str().to_os_string(),
+            destination.as_os_str().to_os_string(),
         ],
     )?;
     let installed = destination.join("ProbePortable");
@@ -306,10 +317,14 @@ fn main() -> Result<()> {
     )?;
     let compiled = compile(&prepared, &project, &tools)?;
     run(
-        &compiled.paf.context("upgrade installer missing")?,
+        &payload,
         vec![
-            "/S".into(),
-            format!("/DESTINATION={}", relocated.display()).into(),
+            "nsis-install".into(),
+            compiled
+                .paf
+                .context("upgrade installer missing")?
+                .into_os_string(),
+            relocated.as_os_str().to_os_string(),
         ],
     )?;
     if std::fs::read(installed.join("Data/keep.txt"))? != b"user settings survive upgrade" {

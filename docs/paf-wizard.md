@@ -225,7 +225,19 @@ The logged script path carried a verbatim Windows prefix introduced by process
 canonicalization. The adapter now uses conventional Windows spellings for short,
 ordinary paths only when they resolve to the same canonical path; special/long
 paths retain their existing spelling. Official source/binaries are unchanged.
-The correction requires another real-tool run before enabling wizard execution.
+The next real-tool run confirmed that launcher generation succeeds with the
+corrected path handling and reaches Installer 3.9.22. That run then stopped for
+missing homepage metadata in the old hand-written fixture. The fixture now uses
+the wizard's required metadata and complete staging/build-session path; the guided staging/build-session run subsequently built a real installer and
+retained both official compiler logs with a passing partial static report.
+Its silent-install fixture then timed out. Inspection of Installer 3.9.22
+`App/installer/PortableApps.comInstaller.nsi` and its bundled
+`App/nsis/Include/FileFunc.nsh` shows raw `/DESTINATION=` parsing and concatenation
+of the base directory with AppID. The test-only helper now supplies NSIS value
+quoting and a trailing directory separator using Rust `CommandExt::raw_arg`,
+without a shell. It remains inside the supervised Job Object. This is a test
+invocation change, not an official-script modification or product CLI feature.
+The remaining install/launch/upgrade result is still pending.
 
 Build attempts also write `validation-report.json` with separate blocking errors,
 log-capture warnings and user-reported manual observations. It records the output
