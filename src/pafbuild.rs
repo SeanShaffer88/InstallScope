@@ -1470,24 +1470,84 @@ pub fn compile_official_with_cancel(
     })
 }
 
+/// Exact shell-free requests used by the official frontend adapter. Read-only.
+/// Tool selection is user supplied; PE checks do not authenticate the publisher.
+pub fn official_build_requests(
+    package: &Path,
+    tools: &PaTools,
+) -> Result<[portable_builder_kit::process::ToolRequest; 2]> {
+    let generator = tools
+        .launcher_generator
+        .as_ref()
+        .context("Locate the official Launcher Generator")?;
+    let installer = tools
+        .installer
+        .as_ref()
+        .context("Locate the official Installer")?;
+    Ok([
+        package_tool_request(generator, package)?,
+        package_tool_request(installer, package)?,
+    ])
+}
+fn package_tool_request(
+    tool: &Path,
+    package: &Path,
+) -> Result<portable_builder_kit::process::ToolRequest> {
+    let tool = std::fs::canonicalize(tool)?;
+    portable_builder_kit::validate_executable(&tool)?;
+    let package = std::fs::canonicalize(package)?;
+    if !package.is_dir() {
+        return Err(anyhow!("Package must be a directory"));
+    }
+    Ok(portable_builder_kit::process::ToolRequest {
+        arguments: vec![package.into_os_string()],
+        working_directory: tool.parent().map(Path::to_path_buf),
+        executable: tool,
+        timeout: std::time::Duration::from_secs(600),
+    })
+}
 fn run_package_tool(
     tool: &Path,
     package: &Path,
     cancel: &dyn Fn() -> bool,
 ) -> Result<portable_builder_kit::process::ToolOutcome> {
-    let tool = std::fs::canonicalize(tool)?;
-    let request = portable_builder_kit::process::ToolRequest {
-        arguments: vec![std::fs::canonicalize(package)?.into_os_string()],
-        working_directory: tool.parent().map(Path::to_path_buf),
-        executable: tool,
-        timeout: std::time::Duration::from_secs(600),
-    };
+    let request = package_tool_request(tool, package)?;
     Ok(portable_builder_kit::process::run_tool(&request, cancel)?)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn official_requests_keep_package_as_one_argument() {
+        let temp = crate::util::tempdir().unwrap();
+        let package = temp.path().join("Package 工具 with spaces");
+        std::fs::create_dir(&package).unwrap();
+        let tool = temp.path().join("official tool.exe");
+        let mut bytes = vec![0u8; 88];
+        bytes[..2].copy_from_slice(b"MZ");
+        bytes[60..64].copy_from_slice(&64u32.to_le_bytes());
+        bytes[64..68].copy_from_slice(b"PE\0\0");
+        std::fs::write(&tool, bytes).unwrap();
+        let tools = PaTools {
+            launcher_generator: Some(tool.clone()),
+            installer: Some(tool.clone()),
+            ..Default::default()
+        };
+        for request in official_build_requests(&package, &tools).unwrap() {
+            assert_eq!(request.executable, std::fs::canonicalize(&tool).unwrap());
+            assert_eq!(
+                request.arguments,
+                vec![std::fs::canonicalize(&package).unwrap().into_os_string()]
+            );
+            assert_eq!(
+                request.working_directory,
+                request.executable.parent().map(Path::to_path_buf)
+            );
+            assert_eq!(request.timeout.as_secs(), 600);
+        }
+    }
 
     #[test]
     fn official_build_rejects_custom_code_without_consent() {

@@ -24,9 +24,12 @@ pub enum Tab {
     Builder,
     Shell,
     Debloat,
+    Privacy,
     ExtInv,
     /// Opt-in review queue for programs that start with Windows.
     Gatekeeper,
+    Slowdown,
+    Storage,
     Settings,
 }
 
@@ -37,6 +40,8 @@ pub enum Confirm {
     RestoreBackup(String),
     DeleteBackup(String),
     CleanJunk,
+    SaveCleanupReport,
+    DeleteCleanupReport,
     DeleteStartup(usize),
     DeleteTask(usize),
     /// Disable a browser extension (reversibly, nothing is deleted).
@@ -53,13 +58,14 @@ pub enum Confirm {
     /// Turn an optional Windows feature on (true) or off.
     /// Run one deep (Windows) cleanup.
     DeepClean(installscope_core::slimmer::DeepItem),
-    /// Apply the ticked Anti-Telemetry changes.
     /// Remove the ticked pre-installed apps, deprovisioning the named
     /// Store apps for new user accounts at the same time.
     DeprovisionBloat(
         Vec<String>,
         Vec<installscope_core::programs::InstalledProgram>,
     ),
+    /// Apply or clear one documented Windows privacy registry value.
+    PrivacyChange(installscope_core::privacy::Control, bool),
     SetProtection(bool),
     RestoreTo(u32),
     DeleteRestorePoint(u32),
@@ -67,24 +73,23 @@ pub enum Confirm {
 
 impl Confirm {
     /// Actions that always ask, even when the user turned confirmations off
-    /// in Advanced mode: restoring the whole PC (with a restart), deleting a
-    /// backup, deep cleaning, and deprovisioning are hard or impossible to
-    /// undo, so the "Ask before deleting things" setting must not silence
-    /// them.
+    /// in Advanced mode: consequential system settings, restoring the whole PC,
+    /// deleting a backup, deep cleaning, and deprovisioning.
     pub fn always_confirm(&self) -> bool {
         matches!(
             self,
             Confirm::RestoreTo(_)
+                | Confirm::SaveCleanupReport
+                | Confirm::DeleteCleanupReport
                 | Confirm::DeleteBackup(_)
                 | Confirm::DeepClean(_)
                 | Confirm::DeprovisionBloat(_, _)
+                | Confirm::PrivacyChange(_, _)
         )
     }
 
-    /// Actions whose confirm button must not start focused in the dialog,
-    /// so a stray Enter cannot run them: anything that deletes, restores,
-    /// restarts, cleans, resets, or deprovisions. The dialog starts on
-    /// Cancel for these; benign actions keep starting on the confirm button.
+    /// Actions whose confirm button must not start focused in the dialog, so a
+    /// stray Enter cannot run a destructive or consequential system change.
     pub fn is_destructive(&self) -> bool {
         matches!(
             self,
@@ -92,6 +97,8 @@ impl Confirm {
                 | Confirm::RestoreBackup(_)
                 | Confirm::DeleteBackup(_)
                 | Confirm::CleanJunk
+                | Confirm::SaveCleanupReport
+                | Confirm::DeleteCleanupReport
                 | Confirm::DeleteStartup(_)
                 | Confirm::DeleteTask(_)
                 | Confirm::GatekeeperRemove(_)
@@ -101,6 +108,7 @@ impl Confirm {
                 | Confirm::RestoreTo(_)
                 | Confirm::DeleteRestorePoint(_)
                 | Confirm::DeprovisionBloat(_, _)
+                | Confirm::PrivacyChange(_, _)
                 // Turning System Protection off makes Windows delete every
                 // existing restore point; turning it on is harmless.
                 | Confirm::SetProtection(false)
@@ -143,6 +151,8 @@ pub struct App {
     pub extinv: super::extinv_ui::ExtInvState,
     /// Autostart Gatekeeper review queue (opt-in).
     pub gatekeeper: super::gatekeeper_ui::GatekeeperState,
+    pub slowdown: super::slowdown_ui::SlowdownState,
+    pub storage: super::storage_ui::StorageState,
     pub alt: super::alt_ui::AltState,
     /// "Ask InstallScope" plain-language search (Ctrl+K).
     pub ask_ui: super::ask::AskState,
@@ -229,6 +239,8 @@ impl App {
             debloat: Default::default(),
             extinv: Default::default(),
             gatekeeper: Default::default(),
+            slowdown: Default::default(),
+            storage: Default::default(),
             shown_tab: None,
             tab_since: 0.0,
             alt: Default::default(),
@@ -376,6 +388,8 @@ impl App {
             Confirm::RestoreBackup(id) => self.restore_backup(&id),
             Confirm::DeleteBackup(id) => self.delete_backup(&id),
             Confirm::CleanJunk => self.start_clean(),
+            Confirm::SaveCleanupReport => self.save_cleanup_report(),
+            Confirm::DeleteCleanupReport => self.delete_cleanup_report(),
             Confirm::DeepClean(item) => self.start_deep(item),
             Confirm::SetProtection(on) => self.set_protection(on),
             Confirm::RestoreTo(seq) => self.restore_to_point(seq),
@@ -391,6 +405,9 @@ impl App {
                 // wizard discards them unrun (see Wizard::deprovision).
                 self.start_uninstall_with_deprovision(programs, names);
                 self.debloat.items = None;
+            }
+            Confirm::PrivacyChange(control, limit) => {
+                self.apply_privacy_change(control, limit);
             }
             Confirm::ResetSettings => {
                 let lang = self.settings.language.clone();
@@ -759,6 +776,19 @@ impl App {
                         }
                         if theme::nav_item_with_hint(
                             ui,
+                            "◉",
+                            &t("Windows Privacy"),
+                            self.tab == Tab::Privacy,
+                            None,
+                            Some(&t("Review documented privacy settings and back up each change")),
+                        )
+                        .clicked()
+                        {
+                            self.tab = Tab::Privacy;
+                            self.on_tab_opened(ctx, Tab::Privacy);
+                        }
+                        if theme::nav_item_with_hint(
+                            ui,
                             "🧩",
                             &t("Browser extensions"),
                             self.tab == Tab::ExtInv,
@@ -770,6 +800,20 @@ impl App {
                         .clicked()
                         {
                             self.tab = Tab::ExtInv;
+                        }
+                        if a11y::explain(theme::nav_item_with_hint(
+                            ui, "▤", &t("Storage overview"), self.tab == Tab::Storage, None,
+                            Some(&t("Read-only folder sizes with visible partial results")),
+                        ), &t("Choose a folder to inspect logical sizes; this page never deletes files.")).clicked() {
+                            self.tab = Tab::Storage;
+                        }
+                        if a11y::explain(theme::nav_item_with_hint(
+                            ui, "◷", &t("Slowdown Detective"),
+                            self.tab == Tab::Slowdown, None,
+                            Some(&t("Review recorded changes and measured startup impact; timing alone does not prove a cause")),
+                        ), &t("Open the read-only history report; no programs or settings are changed.")).clicked() {
+                            self.tab = Tab::Slowdown;
+                            self.on_tab_opened(ctx, Tab::Slowdown);
                         }
                         if theme::nav_item_with_hint(
                             ui,
@@ -875,6 +919,10 @@ impl App {
                 "Bloatware Shield",
                 "Remove the trials, promotions and pre-installed apps that came with this PC",
             ),
+            Tab::Privacy => (
+                "Windows Privacy",
+                "Review a few documented privacy settings, with exact-state backups",
+            ),
             Tab::ExtInv => (
                 "Browser extensions",
                 "See every browser extension, with safe disable and restore",
@@ -882,6 +930,14 @@ impl App {
             Tab::Gatekeeper => (
                 "Autostart Gatekeeper",
                 "Review the programs that start with Windows and decide whether they stay",
+            ),
+            Tab::Storage => (
+                "Storage overview",
+                "See where space goes before deciding what to remove",
+            ),
+            Tab::Slowdown => (
+                "Slowdown Detective",
+                "Review changes around the time your PC became slower",
             ),
             Tab::Settings => ("Settings", ""),
         };
@@ -946,6 +1002,7 @@ impl App {
             // Re-read the stored queue each time the page opens, so a scan run
             // from the command line shows up without restarting InstallScope.
             Tab::Gatekeeper => self.refresh_gatekeeper(),
+            Tab::Slowdown => self.refresh_slowdown(ctx),
             Tab::Settings => self.settings_ui.load(&self.settings),
             Tab::Lab => self.on_lab_opened(),
             _ => {}
@@ -1258,10 +1315,25 @@ fn page_help(tab: Tab) -> &'static [&'static str] {
             "New PCs come with antivirus trials, sponsored games, promotions and maker apps. The Bloatware Shield finds them, including the Store apps that ordinary uninstallers skip.",
             "Recommended items are ticked; optional maker tools are not. Drivers, audio and hotkey tools and Windows' own parts are never listed. Removal goes through the usual review, and everything is backed up first, unless you have turned backups off in Settings.",
         ],
+        Tab::Privacy => &[
+            "This page controls three documented Windows settings: the Windows advertising ID, recommendations tailored from diagnostic data, and typing/inking personalization.",
+            "Each row reads the current registry value and shows whether it is set to limit or allow collection, absent, or unrecognized. This is a registry observation, not proof Windows enforced the setting. Applying or clearing a value always creates a backup first; restore it from Backups.",
+            "These changes affect only the listed setting. They do not disable required diagnostic data, stop all data collection, block network traffic, or disable security and update services. Windows version, edition, and organization policy may affect behavior.",
+        ],
         Tab::ExtInv => &[
             "This page lists every extension installed in the supported Chromium-based and Firefox-based browsers, grouped by browser and profile.",
             "Disable moves an extension's files into InstallScope's own data folder: nothing is deleted, and the rest of the profile (bookmarks, history, settings) is never touched. Restore puts the files back exactly where they were.",
             "Close the browser before disabling or restoring, and restart it afterwards for the change to take effect.",
+        ],
+        Tab::Storage => &[
+            "Choose a folder or drive and scan it to rank the largest 200 immediate entries by logical file size, including descendants of each folder. Nothing is scanned automatically or deleted.",
+            "Logical sizes can double-count hard links and differ from allocated or recoverable space. Observed links and reparse entries are skipped. Errors, cancellation and a directory-depth limit produce partial results; read the details before drawing conclusions.",
+            "Scans run in the background and can be cancelled at filesystem checkpoints. Network or device calls can take time to return. Full paths are selectable; no file contents are read or uploaded.",
+        ],
+        Tab::Slowdown => &[
+            "Choose an inclusive date range and click Refresh to read locally recorded installs, updates, removals and autostart changes.",
+            "Startup figures are current Windows measurements, not before-and-after comparisons. A nearby change is a clue, not proof of what caused a slowdown. Unmeasured changes are never treated as zero impact.",
+            "This page changes nothing. Use Programs or Startup to investigate further through their existing review and safety workflows. Services and scheduled-task history are not covered yet.",
         ],
         Tab::Gatekeeper => &[
             "The Gatekeeper compares the programs that start with Windows — Run and RunOnce entries and Startup-folder shortcuts — with a saved baseline, so anything new or changed can be reviewed.",
@@ -1533,6 +1605,8 @@ impl App {
                 order.insert(10, Tab::Debloat);
                 order.insert(11, Tab::Shell);
                 order.insert(12, Tab::Gatekeeper);
+                order.insert(13, Tab::Slowdown);
+                order.insert(14, Tab::Storage);
                 let pos = order.iter().position(|t| *t == self.tab).unwrap_or(0);
                 let n = order.len();
                 let next = if back {
@@ -1567,6 +1641,8 @@ impl App {
                 // Refreshing this page means running a detection pass, which
                 // is what someone pressing F5 here is asking for.
                 Tab::Gatekeeper => self.scan_gatekeeper(),
+                Tab::Slowdown => self.refresh_slowdown(ctx),
+                Tab::Storage => self.start_storage_scan(ctx),
                 Tab::Logs => self.reload_logs(),
                 Tab::Backups => self.reload_backups(),
                 _ => {}
@@ -1664,8 +1740,11 @@ impl eframe::App for App {
             Tab::Builder => self.ui_builder(ctx),
             Tab::Shell => self.ui_shell(ctx),
             Tab::Debloat => self.ui_debloat(ctx),
+            Tab::Privacy => self.ui_privacy(ctx),
             Tab::ExtInv => self.ui_extinv(ctx),
             Tab::Gatekeeper => self.ui_gatekeeper(ctx),
+            Tab::Slowdown => self.ui_slowdown(ctx),
+            Tab::Storage => self.ui_storage(ctx),
             Tab::Settings => self.ui_settings(ctx),
         }
         self.page_transition(ctx);
@@ -1690,11 +1769,17 @@ mod confirm_tests {
     use installscope_core::slimmer::DeepItem;
 
     #[test]
-    fn only_the_irreversible_actions_always_confirm() {
+    fn consequential_actions_always_confirm() {
         assert!(Confirm::RestoreTo(1).always_confirm());
+        assert!(Confirm::SaveCleanupReport.always_confirm());
+        assert!(Confirm::DeleteCleanupReport.always_confirm());
         assert!(Confirm::DeleteBackup("b".into()).always_confirm());
         assert!(Confirm::DeepClean(DeepItem::ComponentStore).always_confirm());
         assert!(Confirm::DeprovisionBloat(vec!["a".into()], vec![]).always_confirm());
+        assert!(
+            Confirm::PrivacyChange(installscope_core::privacy::Control::AdvertisingId, true)
+                .always_confirm()
+        );
         // Everything else follows the user's confirmation setting.
         assert!(!Confirm::DeleteLog("l".into()).always_confirm());
         assert!(!Confirm::RestoreBackup("b".into()).always_confirm());
@@ -1717,6 +1802,8 @@ mod confirm_tests {
             Confirm::RestoreBackup("b".into()),
             Confirm::DeleteBackup("b".into()),
             Confirm::CleanJunk,
+            Confirm::SaveCleanupReport,
+            Confirm::DeleteCleanupReport,
             Confirm::DeleteStartup(0),
             Confirm::DeleteTask(0),
             Confirm::GatekeeperRemove("g".into()),
@@ -1726,6 +1813,10 @@ mod confirm_tests {
             Confirm::RestoreTo(1),
             Confirm::DeleteRestorePoint(1),
             Confirm::DeprovisionBloat(vec!["a".into()], vec![]),
+            Confirm::PrivacyChange(
+                installscope_core::privacy::Control::TypingPersonalization,
+                false,
+            ),
             // Turning protection off deletes every restore point.
             Confirm::SetProtection(false),
         ] {

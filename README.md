@@ -99,6 +99,7 @@ InstallScope is organized into pages, each with its own job. Every page has buil
 | Portable-app packaging | Portable packaging |
 | Silent redeployment package from a recorded install | Install logs > **Create Setup Package…** |
 | Removal of bundled trial and promotion software | Bloatware Shield |
+| Reviewed Windows privacy settings with per-change backups | Windows Privacy page |
 | Context-menu management | Right-click menu page |
 | Reviewing new startup entries (opt-in) | Autostart Gatekeeper page |
 | Plain-language questions about your programs | **Ask InstallScope** (Ctrl+K) |
@@ -193,6 +194,10 @@ Choose what starts with Windows.
 - **Other autostarts** (Advanced mode): Winlogon, Active Setup, program replacements (IFEO), AppInit DLLs, Explorer extensions, icon overlays, browser helper objects, boot-time programs, and WMI subscriptions. Entries whose file is gone are flagged.
 - **Protection:** entries that Windows, security software, or hardware need can't be switched off in Simple mode, and deleted entries are backed up.
 
+### Slowdown Detective
+
+Open **Slowdown Detective** under Utilities, choose From and To dates (inclusive), then **Refresh** (F5). Review locally recorded installs, updates, removals and autostart changes alongside current startup measurements where Windows has them. Unmeasured entries remain explicitly unknown. These are clues, not proof of a cause or before-and-after performance measurements. Use **Review programs** or **Review startup** to investigate through existing workflows; this page changes nothing. Capture history with `installscope history` or `installscope slowdown`, then run it again after changes; the GUI Refresh reads the saved history without capturing a new baseline. Fresh history needs time to accumulate; services and scheduled-task history are not covered yet. Read errors are shown with recovery guidance.
+
 ### Autostart Gatekeeper (opt-in)
 
 Watches for programs that add themselves to Windows startup.
@@ -202,7 +207,48 @@ Watches for programs that add themselves to Windows startup.
 - **Honest attribution:** each entry names the install log that explains it, with the evidence, or says the origin is unknown. The Installer Decrapifier's verdict and reasons are shown alongside.
 - **You choose when it looks:** scans run when you click *Scan now* (F5) or run `installscope gatekeeper scan`. Nothing runs in the background, and the navigation shows how many entries are waiting. Services and scheduled tasks stay on the Startup page.
 
+### Storage overview
+
+Inspect a folder or drive without deleting anything. Choose a folder (or type a
+path), then **Scan storage**. The regular interface ranks the largest 200 immediate
+files and subfolders by logical file size, including scanned descendants of each
+folder. Full paths are selectable. **Cancel scan** requests cancellation at the
+next filesystem checkpoint and keeps explicitly labeled partial results; blocked
+network/device calls may take time to return. F5 repeats a scan for the entered path.
+
+Summary totals include all measured entries, even when only 200 rows are shown.
+Skipped links/reparse points, access failures, and the 256-level subtree depth
+limit produce partial results; the first 100 error details remain visible.
+Observed links and Windows reparse entries are skipped, but concurrent filesystem
+changes can race checks. The selected path may resolve through an ancestor link.
+The scan is not a filesystem snapshot or a security boundary.
+
+Sizes are logical file lengths, not allocated space or a promise of reclaimable
+bytes. Hard-linked files can be counted more than once. There is no treemap,
+file deletion, automatic scan, saved scan history, or file-content hashing in
+this first view. Windows interaction, reparse handling and accessibility still
+require client verification.
+
 ### Cleaner (junk cleaner)
+
+After a reviewed cleanup, **Cleanup details** lists removed files, files already
+gone, files skipped because their size or type changed, and failures with the
+operating system's reason. **Copy full cleanup report** copies every outcome and
+full local path; review private paths before sharing. The visible list shows up
+to 1,000 outcomes, while totals and copying include the entire report. The latest
+displayed report survives rescans but is replaced by the next cleanup and lost on exit
+unless explicitly saved. **Save report locally…** keeps one latest report as
+`cleanup-report.json` in InstallScope's data folder (maximum 16 MiB).
+**Load saved report** restores the displayed results after restart; it never
+cleans or restores any listed file. **Delete saved report…** removes only that
+saved report after confirmation. Saving replaces a previous valid report after
+confirmation; damaged or unsupported-format reports are left untouched and an
+error is shown. Saved reports contain full paths and OS errors, are not encrypted,
+and remain until you explicitly replace or delete them. They are never uploaded.
+It is not a backup: junk deletion remains permanent. Byte totals describe logical
+file sizes, which can differ from physical space reclaimed. Recycle Bin results
+are aggregate only; empty-folder tidy-up is best effort and not itemized.
+
 
 <img src="docs/screenshots/cleaner.png" alt="Junk cleaner" width="720">
 
@@ -263,6 +309,12 @@ Remove what came with the PC but you never asked for.
 - **Recommended and optional:** trials, ads and promotions are ticked; maker tools some people use, such as support assistants, are listed but left unticked. Drivers, audio and hotkey tools and Windows' own parts are never listed.
 - **Also for new accounts:** stop Windows from installing the removed Store apps for user accounts created later.
 - **Reviewed and reversible:** programs are uninstalled one after another and their leftovers go through the usual review, with everything backed up.
+
+### Windows Privacy
+
+Review three documented Windows settings: the Windows advertising ID, recommendations tailored from diagnostic data, and typing/inking personalization. The typing/inking control handles both registry values Microsoft documents, together. Each row reads the current registry value, explains the effect and tradeoff, and shows whether the value is set to limit or allow collection, absent, mixed, or unrecognized. The badge reports those registry values; it cannot prove Windows enforced them. Changes are always confirmed and backed up before writing; restore the exact previous values from **Backups**.
+
+The advertising ID control applies to the whole PC and requires Administrator rights. The other two apply to the current Windows account. Windows version and edition, or an organization-managed policy, can affect behavior. These controls do not disable required diagnostic data or block network traffic. See Microsoft's documentation for [advertising ID and typing/inking settings](https://learn.microsoft.com/en-us/windows/privacy/manage-connections-from-windows-operating-system-components-to-microsoft-services), [tailored experiences](https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-experience), and [typing and inking policy](https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-textinput).
 
 ### Right-click menu
 
