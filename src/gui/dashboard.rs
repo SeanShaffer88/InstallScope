@@ -218,6 +218,72 @@ impl App {
                     ui.add_space(10.0);
                 }
 
+                let today = installscope_core::time::Date::today_local();
+                let digest_count = self
+                    .settings
+                    .gatekeeper_enabled
+                    .then(|| self.gatekeeper.queue.as_ref())
+                    .flatten()
+                    .filter(|queue| queue.digest_due_on(today))
+                    .map(|queue| queue.pending().len());
+                if let Some(count) = digest_count {
+                    let mut digest_action = None;
+                    theme::deck_panel(ui, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.vertical(|ui| {
+                                ui.label(RichText::new(t("Startup review digest")).strong());
+                                muted(
+                                    ui,
+                                    tf(
+                                        "{count} startup change(s) are waiting for your decision.",
+                                        &[("count", count.to_string())],
+                                    ),
+                                );
+                            });
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if super::a11y::explain(
+                                        ui.button(t("Remind me in 7 days")),
+                                        &t("Hide this dashboard reminder for seven days. Pending entries remain in the Gatekeeper queue and navigation badge."),
+                                    )
+                                    .clicked()
+                                    {
+                                        digest_action = Some(false);
+                                    }
+                                    if super::a11y::explain(
+                                        theme::primary_button(ui, t("Review startup changes")),
+                                        &t("Record that this reminder was shown and open the Gatekeeper review queue. Nothing changes until you decide for each entry."),
+                                    )
+                                    .clicked()
+                                    {
+                                        digest_action = Some(true);
+                                    }
+                                },
+                            );
+                        });
+                    });
+                    ui.add_space(10.0);
+                    if let Some(open_queue) = digest_action {
+                        if let Some(mut queue) = self.gatekeeper.queue.clone() {
+                            queue.digest_last_shown = today.to_string();
+                            match queue.save(&self.store) {
+                                Ok(_) => {
+                                    self.gatekeeper.queue = Some(queue);
+                                    if open_queue {
+                                        self.tab = Tab::Gatekeeper;
+                                        self.on_tab_opened(ctx, Tab::Gatekeeper);
+                                    }
+                                }
+                                Err(error) => self.set_status(tf(
+                                    "Could not save the reminder date: {error}",
+                                    &[("error", format!("{error:#}"))],
+                                )),
+                            }
+                        }
+                    }
+                }
+
                 let programs = self.programs.list.len();
                 let monitored = self.monitored_keys().len();
                 let broken = self.programs.broken.len();
