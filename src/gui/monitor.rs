@@ -149,6 +149,21 @@ impl App {
             ..Default::default()
         };
         self.monitor.before_job = Some(Job::spawn(ctx, move |pr| {
+            if settings.gatekeeper_enabled && settings.gatekeeper_scan_after_install {
+                let mut queue = installscope_core::gatekeeper::Queue::load(
+                    &Store::at(&root).map_err(|e| e.to_string())?,
+                )
+                .map_err(|e| e.to_string())?;
+                let current: Vec<_> = installscope_core::startup::list_startup(reg.as_ref())
+                    .iter()
+                    .map(installscope_core::gatekeeper::WatchedEntry::from)
+                    .collect();
+                if installscope_core::gatekeeper::seed_baseline_if_empty(&mut queue, &current) {
+                    queue
+                        .save(&Store::at(&root).map_err(|e| e.to_string())?)
+                        .map_err(|e| e.to_string())?;
+                }
+            }
             if trial {
                 // A second safety net besides the log and the backup. Best
                 // effort: System Protection may be off, or one was made today.
@@ -227,6 +242,9 @@ impl App {
             match r {
                 Ok(log) => {
                     let trial = self.monitor.trial;
+                    let scan_after_install = !trial
+                        && self.settings.gatekeeper_enabled
+                        && self.settings.gatekeeper_scan_after_install;
                     self.store.clear_pending();
                     self.monitor = Default::default();
                     self.reload_logs();
@@ -234,10 +252,28 @@ impl App {
                     if trial {
                         self.undo_trial(&log);
                     } else {
-                        self.set_status(tf(
+                        let saved = tf(
                             "Saved install log for {name}",
                             &[("name", log.name.clone())],
-                        ));
+                        );
+                        if scan_after_install {
+                            match gatekeeper_scan_after_install(self.reg.as_ref(), &self.store) {
+                                Ok(count) if count > 0 => self.set_status(tf(
+                                    "{saved}; Gatekeeper queued {count} startup change(s) for review",
+                                    &[("saved", saved), ("count", count.to_string())],
+                                )),
+                                Ok(_) => self.set_status(tf(
+                                    "{saved}; Gatekeeper found no new startup changes",
+                                    &[("saved", saved)],
+                                )),
+                                Err(error) => self.set_status(tf(
+                                    "{saved}; Gatekeeper scan failed: {error}",
+                                    &[("saved", saved), ("error", error.to_string())],
+                                )),
+                            }
+                        } else {
+                            self.set_status(saved);
+                        }
                         self.logs.selected = Some(log.id);
                     }
                 }
@@ -842,6 +878,21 @@ impl App {
             self.ask("Discard install log?", body, "Discard", action);
         }
     }
+}
+
+fn gatekeeper_scan_after_install(
+    reg: &dyn installscope_core::platform::Registry,
+    store: &Store,
+) -> anyhow::Result<usize> {
+    let mut queue = installscope_core::gatekeeper::Queue::load(store)?;
+    let current: Vec<_> = installscope_core::startup::list_startup(reg)
+        .iter()
+        .map(installscope_core::gatekeeper::WatchedEntry::from)
+        .collect();
+    let summary = installscope_core::gatekeeper::run_scan(&mut queue, &current, &store.list_logs());
+    let count = summary.added.len() + summary.changed.len();
+    queue.save(store)?;
+    Ok(count)
 }
 
 impl App {

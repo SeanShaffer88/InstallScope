@@ -558,6 +558,21 @@ impl App {
                         )
                         .changed();
                         small_muted(ui, t("Opt-in and off by default. Nothing runs in the background: a scan happens when you click Scan now on the Autostart Gatekeeper page, or run \"installscope gatekeeper scan\". Run and RunOnce entries and Startup-folder shortcuts are covered; services and scheduled tasks stay on the Startup page."));
+                        let mut after_install = self.settings.gatekeeper_scan_after_install;
+                        let scan_explanation = t("Seed a baseline before a monitored installation, then queue new or changed Run and Startup-folder entries after you save its install log. This only scans; you still decide whether to keep or remove each entry.");
+                        let scan_response = ui.add_enabled(
+                            self.settings.gatekeeper_enabled,
+                            egui::Checkbox::new(
+                                &mut after_install,
+                                t("Scan after monitored installs"),
+                            ),
+                        );
+                        let scan_changed = a11y::explain(scan_response, &scan_explanation).changed();
+                        if scan_changed {
+                            self.settings.gatekeeper_scan_after_install = after_install;
+                        }
+                        changed |= scan_changed;
+                        small_muted(ui, t("Runs only for installations recorded from this app’s Monitor page. It scans before and after the install, and never blocks the installer or changes startup entries."));
                         if a11y::explain(
                             ui.button(format!("→ {}", t("Open the review queue"))),
                             &t("Go to the Autostart Gatekeeper page, where every new startup entry waits until you keep or remove it."),
