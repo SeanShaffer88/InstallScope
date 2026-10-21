@@ -199,26 +199,38 @@ impl App {
             ui.add_space(8.0);
             ui.horizontal_wrapped(|ui| {
                 let busy = pc.sandbox_work.is_some();
-                if theme::primary_button(ui, format!("⏺ {}", t("Install with monitoring"))).clicked() {
+                if super::a11y::explain(
+                    theme::primary_button(ui, format!("⏺ {}", t("Install with monitoring"))),
+                    &t("Installs the program on this PC for real: monitoring records every change so it can be undone, but this check can't guarantee the program is safe."),
+                )
+                .clicked()
+                {
                     install = true;
                 }
                 if sandbox
-                    && ui
-                        .add_enabled(!busy, egui::Button::new(format!("🧪 {}", t("Test in Windows Sandbox first"))))
-                        .on_hover_text(t("Runs the installer in a throwaway copy of Windows and shows everything it changes. Your PC is untouched."))
-                        .clicked()
+                    && super::a11y::explain(
+                        ui.add_enabled(!busy, egui::Button::new(format!("🧪 {}", t("Test in Windows Sandbox first")))),
+                        &t("Runs the installer in a throwaway copy of Windows and shows everything it changes. Your PC is untouched."),
+                    )
+                    .clicked()
                 {
                     preview = true;
                 }
                 if !sandbox
-                    && ui
-                        .button(format!("🧪 {}", t("Try it, then undo")))
-                        .on_hover_text(t("Installs it on this PC while recording every change, shows you what it did, then removes all of it. InstallScope tries to make a restore point first, as an extra safety net."))
-                        .clicked()
+                    && super::a11y::explain(
+                        ui.button(format!("🧪 {}", t("Try it, then undo"))),
+                        &t("Installs it on this PC while recording every change, shows you what it did, then removes all of it. InstallScope tries to make a restore point first, as an extra safety net."),
+                    )
+                    .clicked()
                 {
                     trial = true;
                 }
-                if ui.button(t("Cancel")).clicked() {
+                if super::a11y::explain(
+                    ui.button(t("Cancel")),
+                    &t("Closes this check without installing or changing anything."),
+                )
+                .clicked()
+                {
                     cancel = true;
                 }
             });
