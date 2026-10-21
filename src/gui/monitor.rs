@@ -32,13 +32,15 @@ pub struct MonitorState {
     pub name: String,
     pub installer: String,
     pub started: String,
-    pub before_job: Option<Job<Result<(), String>>>,
+    pub before_job: Option<Job<Result<Option<String>, String>>>,
     pub after_job: Option<Job<Result<InstallLog, String>>>,
     pub child: Option<ChildProcess>,
     pub review: Option<InstallLog>,
     /// Saving the reviewed log (large logs take a moment to write).
     pub save_job: Option<Job<Result<InstallLog, (InstallLog, String)>>>,
     pub error: String,
+    /// Optional Gatekeeper pre-scan problem; it must not prevent monitoring.
+    pub gatekeeper_scan_note: Option<String>,
     /// "Try it, then undo": everything recorded is removed after review.
     pub trial: bool,
     /// Installer Decrapifier checklist for the log under review: each
@@ -149,19 +151,22 @@ impl App {
             ..Default::default()
         };
         self.monitor.before_job = Some(Job::spawn(ctx, move |pr| {
+            let mut gatekeeper_note = None;
             if settings.gatekeeper_enabled && settings.gatekeeper_scan_after_install {
-                let mut queue = installscope_core::gatekeeper::Queue::load(
-                    &Store::at(&root).map_err(|e| e.to_string())?,
-                )
-                .map_err(|e| e.to_string())?;
-                let current: Vec<_> = installscope_core::startup::list_startup(reg.as_ref())
-                    .iter()
-                    .map(installscope_core::gatekeeper::WatchedEntry::from)
-                    .collect();
-                if installscope_core::gatekeeper::seed_baseline_if_empty(&mut queue, &current) {
-                    queue
-                        .save(&Store::at(&root).map_err(|e| e.to_string())?)
-                        .map_err(|e| e.to_string())?;
+                let prepared = (|| -> anyhow::Result<()> {
+                    let store = Store::at(&root)?;
+                    let mut queue = installscope_core::gatekeeper::Queue::load(&store)?;
+                    let current: Vec<_> = installscope_core::startup::list_startup(reg.as_ref())
+                        .iter()
+                        .map(installscope_core::gatekeeper::WatchedEntry::from)
+                        .collect();
+                    if installscope_core::gatekeeper::seed_baseline_if_empty(&mut queue, &current) {
+                        queue.save(&store)?;
+                    }
+                    Ok(())
+                })();
+                if let Err(error) = prepared {
+                    gatekeeper_note = Some(error.to_string());
                 }
             }
             if trial {
@@ -174,7 +179,8 @@ impl App {
             let store = Store::at(&root).map_err(|e| e.to_string())?;
             store
                 .save_pending(&session, &snap)
-                .map_err(|e| e.to_string())
+                .map_err(|e| e.to_string())?;
+            Ok(gatekeeper_note)
         }));
     }
 
@@ -244,7 +250,9 @@ impl App {
                     let trial = self.monitor.trial;
                     let scan_after_install = !trial
                         && self.settings.gatekeeper_enabled
-                        && self.settings.gatekeeper_scan_after_install;
+                        && self.settings.gatekeeper_scan_after_install
+                        && self.monitor.gatekeeper_scan_note.is_none();
+                    let scan_note = self.monitor.gatekeeper_scan_note.take();
                     self.store.clear_pending();
                     self.monitor = Default::default();
                     self.reload_logs();
@@ -271,6 +279,11 @@ impl App {
                                     &[("saved", saved), ("error", error.to_string())],
                                 )),
                             }
+                        } else if let Some(note) = scan_note {
+                            self.set_status(tf(
+                                "{saved}; Gatekeeper scan skipped because its pre-install baseline failed: {error}",
+                                &[("saved", saved), ("error", note)],
+                            ));
                         } else {
                             self.set_status(saved);
                         }
@@ -286,7 +299,8 @@ impl App {
         if let Some(r) = self.monitor.before_job.as_ref().and_then(|j| j.poll()) {
             self.monitor.before_job = None;
             match r {
-                Ok(()) => {
+                Ok(gatekeeper_note) => {
+                    self.monitor.gatekeeper_scan_note = gatekeeper_note;
                     self.monitor.phase = Phase::Installing;
                     let inst = self.monitor.installer.clone();
                     if !inst.is_empty() {
