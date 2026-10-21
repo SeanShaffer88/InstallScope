@@ -7,6 +7,9 @@ projects for the official PortableApps.com tools; it introduces no package forma
 
 ## Available in this revision
 
+- New project with unanswered permission defaults; unsaved-answer confirmation
+  before resetting the form. Timestamped suggested snapshot filenames reduce
+  accidental selection of an existing revision.
 - Ten planning screens: welcome/workspace, source files, identity, portability,
   launcher, icons, installer, licenses/components, review, and manual test records.
 - Save incomplete answers and the current step to a new JSON snapshot; open it to

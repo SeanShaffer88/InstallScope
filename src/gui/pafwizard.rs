@@ -7,12 +7,18 @@ use std::path::PathBuf;
 
 type ProjectIo = Result<(PathBuf, Project), String>;
 
+#[derive(Clone)]
+enum PendingProject {
+    New,
+    Open(PathBuf),
+}
+
 #[derive(Default)]
 pub struct Wizard {
     project: Project,
     saved: Project,
     path: Option<PathBuf>,
-    pending_open: Option<PathBuf>,
+    pending: Option<PendingProject>,
     error: Option<String>,
     message: String,
     io_job: Option<super::Job<ProjectIo>>,
@@ -78,24 +84,27 @@ impl Wizard {
         let ctx = ui.ctx().clone();
         ui.label("Prepare a saved project and review configuration drafts. Package assembly, icon conversion and the official build adapter are not connected in this revision. No source files are copied, edited or executed.");
         ui.horizontal_wrapped(|ui| {
+            if a11y::explain(ui.button("New project"),"Start a new project with unanswered permissions. Unsaved answers require confirmation before replacement.").clicked() {
+                if self.project!=self.saved {self.pending=Some(PendingProject::New);} else {self.reset();}
+            }
             if a11y::explain(ui.button("Open project…"),"Open a saved InstallScope PAF project. Unsaved work requires confirmation before replacement.").clicked() {
                 if let Some(p)=pick_file("Open package project","Project",&["json"]) {
-                    if self.project != self.saved { self.pending_open=Some(p); } else { self.open(&ctx,p); }
+                    if self.project != self.saved { self.pending=Some(PendingProject::Open(p)); } else { self.open(&ctx,p); }
                 }
             }
             if a11y::explain(ui.button("Save snapshot…"),"Save all answers and the current step to a new JSON file. Existing files are never overwritten; use a new filename for each revision.").clicked() {
-                if let Some(p)=save_file("Save project snapshot","portable-project.json","Project","json") {
+                if let Some(p)=save_file("Save project snapshot",&format!("portable-project-{}.json",installscope_core::util::new_id()),"Project","json") {
                     let project=self.project.clone();
                     self.io_job=Some(super::Job::spawn(&ctx,move |_| project.save_new(&p).map(|_|(p,project)).map_err(|e|format!("{e:#}"))));
                 }
             }
             if self.project != self.saved { ui.label("Unsaved changes"); }
         });
-        if let Some(path) = self.pending_open.clone() {
-            theme::warning_banner(ui,"Opening another project replaces the unsaved answers currently on this screen. Save a snapshot first if you want to keep them.");
+        if let Some(action) = self.pending.clone() {
+            theme::warning_banner(ui,"Starting or opening another project replaces the unsaved answers currently on this screen. Save a snapshot first if you want to keep them.");
             ui.horizontal(|ui| {
-                if a11y::explain(ui.button("Discard unsaved answers and open"),"Discard the current in-memory answers and open the selected project. Saved files are untouched.").clicked() { self.open(&ctx,path); self.pending_open=None; }
-                if a11y::explain(ui.button("Keep working"),"Cancel opening the other project and retain all current answers.").clicked() {self.pending_open=None;}
+                if a11y::explain(ui.button("Discard unsaved answers and continue"),"Discard the current in-memory answers and start or open the requested project. Saved files are untouched.").clicked() { match action {PendingProject::New=>self.reset(),PendingProject::Open(path)=>self.open(&ctx,path)} self.pending=None; }
+                if a11y::explain(ui.button("Keep working"),"Cancel opening the other project and retain all current answers.").clicked() {self.pending=None;}
             });
         }
         if self.io_job.is_some() {
@@ -313,6 +322,15 @@ impl Wizard {
             if a11y::explain(ui.add_enabled(step+1<STEPS.len(),egui::Button::new("Next")),"Continue reviewing the project. Unresolved findings remain visible and block configuration generation where applicable; navigation does not imply validation passed.").clicked(){self.project.step+=1;}
         });
         small_muted(ui,format!("{} unresolved checks across the project. Navigation is allowed so you can return with missing information.",findings.iter().filter(|f|f.blocking).count()));
+    }
+    fn reset(&mut self) {
+        self.project = Project::default();
+        self.saved = self.project.clone();
+        self.path = None;
+        self.pending = None;
+        self.checked = None;
+        self.error = None;
+        self.message = "New project. Permissions are unanswered.".into();
     }
     fn poll_io(&mut self) {
         if let Some(result) = self.io_job.as_ref().and_then(|j| j.poll()) {
