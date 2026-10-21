@@ -12,6 +12,11 @@ use installscope_core::i18n::{t, tf};
 use installscope_core::model::human_size;
 use installscope_core::slimmer::{self, Analysis, DeepItem};
 
+pub(super) enum ReceiptUpdate {
+    Loaded(i64, Vec<cleaner::CleanReport>),
+    Message(String),
+}
+
 pub struct CleanerState {
     pub cats: Vec<(Category, bool, Option<CategoryScan>)>,
     /// Deep cleanup: analysis per item (same order as `DeepItem::ALL`).
@@ -22,6 +27,10 @@ pub struct CleanerState {
     pub scan_job: Option<Job<Vec<CategoryScan>>>,
     pub clean_job: Option<Job<Vec<cleaner::CleanReport>>>,
     pub reports: Vec<cleaner::CleanReport>,
+    pub(super) receipt_job: Option<Job<Result<ReceiptUpdate, String>>>,
+    pub receipt_message: Option<String>,
+    pub receipt_error: Option<String>,
+    pub loaded_receipt_at: Option<i64>,
     pub freed: Option<u64>,
     /// Protected-paths editor text (one pattern per line); `None` until
     /// first shown, when it is loaded from the persisted setting.
@@ -49,6 +58,10 @@ impl Default for CleanerState {
             scan_job: None,
             clean_job: None,
             reports: Vec::new(),
+            receipt_job: None,
+            receipt_message: None,
+            receipt_error: None,
+            loaded_receipt_at: None,
             freed: None,
             protect_text: None,
             schedule: None,
@@ -135,6 +148,80 @@ fn cat_text(id: &str) -> (&'static str, &'static str) {
 }
 
 impl App {
+    pub fn save_cleanup_report(&mut self) {
+        if self.cleaner.receipt_job.is_some() || self.cleaner.clean_job.is_some() {
+            return;
+        }
+        let root = self.store.root.clone();
+        let reports = self.cleaner.reports.clone();
+        self.cleaner.receipt_error = None;
+        self.cleaner.receipt_message = None;
+        self.cleaner.receipt_job = Some(Job::spawn(&self.ctx, move |_| {
+            installscope_core::cleanup_receipt::save(&root, &reports)
+                .map(|()| ReceiptUpdate::Message(t("Cleanup report saved locally. It contains full paths and replaces the previous saved report.")))
+                .map_err(|e| format!("{e:#}"))
+        }));
+    }
+
+    pub fn delete_cleanup_report(&mut self) {
+        if self.cleaner.receipt_job.is_some() {
+            return;
+        }
+        let root = self.store.root.clone();
+        self.cleaner.receipt_error = None;
+        self.cleaner.receipt_message = None;
+        self.cleaner.receipt_job = Some(Job::spawn(&self.ctx, move |_| {
+            installscope_core::cleanup_receipt::delete(&root)
+                .map(|()| ReceiptUpdate::Message(t("Saved cleanup report deleted. Displayed results and files mentioned in the report were not changed.")))
+                .map_err(|e| format!("{e:#}"))
+        }));
+    }
+
+    fn ui_cleanup_receipt(&mut self, ui: &mut egui::Ui) {
+        ui.label(t("Saving reports is optional. Saved reports contain full local paths, are not encrypted, remain until replaced or deleted, and are not backups. Loading replaces the displayed results."));
+        let busy = self.cleaner.receipt_job.is_some() || self.cleaner.clean_job.is_some();
+        let mut save = false;
+        let mut load = false;
+        let mut delete = false;
+        ui.horizontal_wrapped(|ui| {
+            save = a11y::explain(ui.add_enabled(!busy && self.cleaner.freed.is_some(), egui::Button::new(t("Save report locally…"))), &t("Confirm saving the displayed results in the data folder. Replaces the previous valid saved report; damaged or newer reports are left untouched. Contains private paths. Finish cleanup or load a report first.")).clicked();
+            load = a11y::explain(ui.add_enabled(!busy, egui::Button::new(t("Load saved report"))), &t("Read the last explicitly saved report and replace the displayed results. Does not clean or restore any files. Wait for the current operation to finish.")).clicked();
+            delete = a11y::explain(ui.add_enabled(!busy, egui::Button::new(t("Delete saved report…"))), &t("Confirm permanently deleting only cleanup-report.json in the data folder. No file named inside it is touched. Displayed results stay available.")).clicked();
+            if busy { ui.spinner(); }
+        });
+        if let Some(error) = &self.cleaner.receipt_error {
+            ui.colored_label(theme::BAD, error);
+        }
+        if let Some(message) = &self.cleaner.receipt_message {
+            ui.label(message);
+        }
+        if let Some(at) = self.cleaner.loaded_receipt_at {
+            ui.label(format!(
+                "{} {} UTC",
+                t("Loaded historical report saved:"),
+                installscope_core::time::DateTime::from_unix_utc(at).ymd_hm()
+            ));
+        }
+        if save {
+            self.ask("Save cleanup report?", t("Save the displayed cleanup results, including full paths and operating-system errors, to cleanup-report.json in InstallScope's data folder. This replaces the previous valid saved report and cannot undo deletions. A damaged or unsupported report will not be overwritten. No network is used."), "Save report", Confirm::SaveCleanupReport);
+        }
+        if delete {
+            self.ask("Delete saved cleanup report?", t("Permanently delete cleanup-report.json from InstallScope's data folder. This cannot be undone. Displayed results remain available, and no file mentioned inside the report will be touched."), "Delete report", Confirm::DeleteCleanupReport);
+        }
+        if load {
+            let root = self.store.root.clone();
+            self.cleaner.receipt_error = None;
+            self.cleaner.receipt_message = None;
+            self.cleaner.receipt_job = Some(Job::spawn(&self.ctx, move |_| {
+                installscope_core::cleanup_receipt::load(&root)
+                    .map(|report| match report {
+                        Some((at, reports)) => ReceiptUpdate::Loaded(at, reports),
+                        None => ReceiptUpdate::Message(t("No saved cleanup report. Save results after a reviewed cleanup to keep them between launches.")),
+                    }).map_err(|e| format!("{e:#}"))
+            }));
+        }
+    }
+
     fn start_scan(&mut self) {
         let cats: Vec<Category> = self
             .cleaner
@@ -154,6 +241,9 @@ impl App {
     }
 
     pub fn start_clean(&mut self) {
+        if self.cleaner.receipt_job.is_some() || self.cleaner.clean_job.is_some() {
+            return;
+        }
         let advanced = self.settings.advanced_mode;
         // Delete exactly the files the user reviewed: the retained scan
         // results of the ticked categories. A ticked category that was
@@ -365,6 +455,19 @@ impl App {
     }
 
     pub fn poll_cleaner(&mut self) {
+        if let Some(result) = self.cleaner.receipt_job.as_ref().and_then(Job::poll) {
+            self.cleaner.receipt_job = None;
+            match result {
+                Ok(ReceiptUpdate::Loaded(at, reports)) => {
+                    self.cleaner.freed = Some(reports.iter().map(|r| r.freed.bytes).sum());
+                    self.cleaner.reports = reports;
+                    self.cleaner.loaded_receipt_at = Some(at);
+                    self.cleaner.receipt_message = Some(t("Historical results loaded. File state may have changed since cleanup; this report performs no file operations."));
+                }
+                Ok(ReceiptUpdate::Message(message)) => self.cleaner.receipt_message = Some(message),
+                Err(error) => self.cleaner.receipt_error = Some(error),
+            }
+        }
         if let Some(r) = self.cleaner.deep_job.as_ref().and_then(|j| j.poll()) {
             self.cleaner.deep_job = None;
             self.cleaner.deep = r.into_iter().map(Some).collect();
@@ -387,6 +490,7 @@ impl App {
             self.cleaner.clean_job = None;
             let freed: u64 = r.iter().map(|s| s.freed.bytes).sum();
             self.cleaner.reports = r;
+            self.cleaner.loaded_receipt_at = None;
             self.cleaner.freed = Some(freed);
             self.set_status(tf(
                 "Cleanup report: {size} in removed files",
@@ -466,10 +570,11 @@ impl App {
             // The focused control's explanation line, for keyboard
             // and touch users (see a11y::explain).
             a11y::focus_hint(ui, theme::MUTED);
+            self.ui_cleanup_receipt(ui);
             if let Some(f) = self.cleaner.freed {
                 theme::card(ui, |ui| {
                     ui.label(RichText::new(tf("Cleanup report: {size} in removed files", &[("size", human_size(f))])).strong());
-                    small_muted(ui, t("Latest cleanup: logical file sizes removed, not guaranteed physical disk space reclaimed. Rescanning keeps this report; the next cleanup replaces it."));
+                    small_muted(ui, t("Cleanup results: logical file sizes removed, not guaranteed physical disk space reclaimed. Rescanning keeps the displayed report; the next cleanup replaces it. Save explicitly to keep a local copy."));
                     let removed = self.cleaner.reports.iter().flat_map(|r| &r.results).filter(|r| matches!(r.outcome, cleaner::CleanOutcome::Removed)).count();
                     let failed = self.cleaner.reports.iter().flat_map(|r| &r.results).filter(|r| matches!(r.outcome, cleaner::CleanOutcome::Failed(_))).count();
                     let total: usize = self.cleaner.reports.iter().map(|r| r.results.len()).sum();
@@ -493,7 +598,7 @@ impl App {
                     }
                     let details = egui::CollapsingHeader::new(t("Cleanup details"))
                         .show(ui, |ui| {
-                            small_muted(ui, t("Full paths and outcomes are selectable for copying. This report is kept only until the next cleanup or app exit. Files are permanently deleted; this report is not a backup."));
+                            small_muted(ui, t("Full paths and outcomes are selectable for copying. Unsaved results are kept only until the next cleanup or app exit. Files are permanently deleted; this report is not a backup."));
                             egui::ScrollArea::vertical().id_salt("cleanup_results").max_height(180.0).show(ui, |ui| {
                                 for result in self.cleaner.reports.iter().flat_map(|r| &r.results).take(1000) {
                                     let mut text = format!("{} — {}", t(result.outcome.label()), result.path.display());
@@ -507,7 +612,7 @@ impl App {
                 });
                 ui.add_space(8.0);
             }
-            let busy = self.cleaner.scan_job.is_some() || self.cleaner.clean_job.is_some();
+            let busy = self.cleaner.scan_job.is_some() || self.cleaner.clean_job.is_some() || self.cleaner.receipt_job.is_some();
             egui::ScrollArea::vertical().auto_shrink([false, false]).max_height(ui.available_height() - 52.0).show(ui, |ui| {
                 let elevated = self.elevated;
                 let advanced = self.settings.advanced_mode;

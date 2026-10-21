@@ -99,3 +99,34 @@ screen-reader runtime, locked-file failure and Recycle Bin operation are not
 verified here. This is a completed implementation batch, not release approval.
 Pause after publishing this batch; next validate the PR on Windows and exercise
 review → clean → inspect report → copy report → rescan on disposable data.
+
+## Opt-in saved cleanup report
+
+Added a version-1 display-only receipt at cleanup-report.json in the data folder.
+Save and Delete always confirm with Cancel focused; Load replaces only displayed
+results. All I/O runs through existing background jobs. Reports are never saved
+automatically, uploaded, or treated as executable actions. One file and a 16 MiB
+limit bound retention. Full paths and OS error text are local, unencrypted data.
+Loading reports is explicit; new cleanup results do not overwrite a saved report.
+Invalid/future versions, unreadable or oversized data and overflowing byte totals
+are reported, not silently discarded or overwritten. Staged writes are synced
+before rename, and failed staging attempts remove the current temporary file.
+Multi-instance/external modification races and full power-loss durability are not
+verified; an abrupt process death may leave a uniquely named temporary file.
+This is report persistence, not an operation recovery journal or undo engine.
+
+Prior PR head e5cf685 passed GitHub Windows tests/build, Arm64 build and Linux
+core checks; the scheduled performance check was skipped. This does not verify
+Windows accessibility or runtime behavior of the new saved-report controls.
+Current local checks: 281 library tests and 30 application tests passed; three
+suite tests ignored. New tests cover all outcomes, replacement, delete-without-
+acting-on-targets, corrupt/future files, v1 fixture compatibility, oversized
+reads, failed saves and integer-overflow rejection. Formatting and all-target
+Clippy pass (pre-existing warnings retained). Windows client, low-disk/crash,
+clipboard and assistive-tech interaction remain pending for this new batch.
+
+The final Linux debug build also passed, along with changed-file whitespace
+checks against the preserved source baseline. New report controls use translation
+keys with English fallback; translated strings and actual Windows UI behavior
+still require review. The source baseline was compared by Git blob hash against
+the remote PR tree before publication; no unrelated remote file was replaced.

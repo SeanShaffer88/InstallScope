@@ -213,7 +213,15 @@ gone, files skipped because their size or type changed, and failures with the
 operating system's reason. **Copy full cleanup report** copies every outcome and
 full local path; review private paths before sharing. The visible list shows up
 to 1,000 outcomes, while totals and copying include the entire report. The latest
-report survives rescans but is replaced by the next cleanup and lost on exit.
+displayed report survives rescans but is replaced by the next cleanup and lost on exit
+unless explicitly saved. **Save report locally…** keeps one latest report as
+`cleanup-report.json` in InstallScope's data folder (maximum 16 MiB).
+**Load saved report** restores the displayed results after restart; it never
+cleans or restores any listed file. **Delete saved report…** removes only that
+saved report after confirmation. Saving replaces a previous valid report after
+confirmation; damaged or unsupported-format reports are left untouched and an
+error is shown. Saved reports contain full paths and OS errors, are not encrypted,
+and remain until you explicitly replace or delete them. They are never uploaded.
 It is not a backup: junk deletion remains permanent. Byte totals describe logical
 file sizes, which can differ from physical space reclaimed. Recycle Bin results
 are aggregate only; empty-folder tidy-up is best effort and not itemized.

@@ -38,6 +38,8 @@ pub enum Confirm {
     RestoreBackup(String),
     DeleteBackup(String),
     CleanJunk,
+    SaveCleanupReport,
+    DeleteCleanupReport,
     DeleteStartup(usize),
     DeleteTask(usize),
     /// Disable a browser extension (reversibly, nothing is deleted).
@@ -76,6 +78,8 @@ impl Confirm {
         matches!(
             self,
             Confirm::RestoreTo(_)
+                | Confirm::SaveCleanupReport
+                | Confirm::DeleteCleanupReport
                 | Confirm::DeleteBackup(_)
                 | Confirm::DeepClean(_)
                 | Confirm::DeprovisionBloat(_, _)
@@ -93,6 +97,8 @@ impl Confirm {
                 | Confirm::RestoreBackup(_)
                 | Confirm::DeleteBackup(_)
                 | Confirm::CleanJunk
+                | Confirm::SaveCleanupReport
+                | Confirm::DeleteCleanupReport
                 | Confirm::DeleteStartup(_)
                 | Confirm::DeleteTask(_)
                 | Confirm::GatekeeperRemove(_)
@@ -379,6 +385,8 @@ impl App {
             Confirm::RestoreBackup(id) => self.restore_backup(&id),
             Confirm::DeleteBackup(id) => self.delete_backup(&id),
             Confirm::CleanJunk => self.start_clean(),
+            Confirm::SaveCleanupReport => self.save_cleanup_report(),
+            Confirm::DeleteCleanupReport => self.delete_cleanup_report(),
             Confirm::DeepClean(item) => self.start_deep(item),
             Confirm::SetProtection(on) => self.set_protection(on),
             Confirm::RestoreTo(seq) => self.restore_to_point(seq),
@@ -1715,6 +1723,8 @@ mod confirm_tests {
     #[test]
     fn only_the_irreversible_actions_always_confirm() {
         assert!(Confirm::RestoreTo(1).always_confirm());
+        assert!(Confirm::SaveCleanupReport.always_confirm());
+        assert!(Confirm::DeleteCleanupReport.always_confirm());
         assert!(Confirm::DeleteBackup("b".into()).always_confirm());
         assert!(Confirm::DeepClean(DeepItem::ComponentStore).always_confirm());
         assert!(Confirm::DeprovisionBloat(vec!["a".into()], vec![]).always_confirm());
@@ -1740,6 +1750,8 @@ mod confirm_tests {
             Confirm::RestoreBackup("b".into()),
             Confirm::DeleteBackup("b".into()),
             Confirm::CleanJunk,
+            Confirm::SaveCleanupReport,
+            Confirm::DeleteCleanupReport,
             Confirm::DeleteStartup(0),
             Confirm::DeleteTask(0),
             Confirm::GatekeeperRemove("g".into()),

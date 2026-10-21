@@ -7,6 +7,7 @@ All notable changes to InstallScope are documented here. The format follows
 ## [Unreleased]
 
 ### Added
+- Optional local save/load/delete for the latest cleanup report: versioned JSON, a 16 MiB limit, staged synced writes, refusal to replace corrupt or unsupported reports, and confirmations for saving/replacing or deleting. Reports contain private paths, are not encrypted, and never authorize cleanup or recovery operations.
 - Reviewed cleanup now retains an itemized in-memory report with removed, already-gone, changed, non-file, and failed outcomes. Full paths and errors can be copied; rescanning no longer clears the last cleanup result. Recycle Bin results remain aggregate only.
 - **Slowdown Detective page:** inclusive date filters, recorded change details, current startup measurements where available, honest empty/error states, F5 refresh and links to Programs and Startup. Reads run in the background; every control has hover, keyboard-focus and screen-reader explanations. This is a read-only investigation view, not a causal performance diagnosis.
 

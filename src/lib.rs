@@ -16,6 +16,7 @@ pub mod boot;
 pub mod cache;
 pub mod canary;
 pub mod cleaner;
+pub mod cleanup_receipt;
 pub mod debloat;
 pub mod decrap;
 pub mod deflate;
