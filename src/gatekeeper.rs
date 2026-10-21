@@ -1,6 +1,6 @@
 //! Autostart Gatekeeper: an opt-in review queue for new autostart entries.
 //!
-//! When turned on (Settings, or `installscope gatekeeper enable`), each scan
+//! When turned on (Settings, or `setupsweep gatekeeper enable`), each scan
 //! compares the programs that start with Windows — Run and RunOnce values and
 //! Startup-folder shortcuts, the set [`crate::startup::list_startup`] reports —
 //! against a stored baseline. Entries that are new or changed since the
@@ -8,12 +8,12 @@
 //! that explains it when the evidence supports that, and judged by the
 //! Installer Decrapifier rules. The user then decides: **allow** (keep the
 //! entry; the baseline advances to include it) or **remove** (delete it,
-//! backed up first like every other removal in InstallScope).
+//! backed up first like every other removal in SetupSweep).
 //!
 //! The Gatekeeper never blocks an installer while it runs and never removes
 //! anything on its own: with no decision from the user, an item stays pending
 //! and its entry stays exactly as it is. Detection runs only when something
-//! asks for a scan (the app, or `installscope gatekeeper scan`); there is no
+//! asks for a scan (the app, or `setupsweep gatekeeper scan`); there is no
 //! background watcher in this slice.
 
 use crate::backup::BackupWriter;
@@ -200,7 +200,7 @@ impl Queue {
             .with_context(|| format!("reading {}", path.display()))?;
         if q.version != QUEUE_VERSION {
             anyhow::bail!(
-                "{} was written by a different InstallScope version (format {}); \
+                "{} was written by a different SetupSweep version (format {}); \
                  it was left untouched",
                 path.display(),
                 q.version

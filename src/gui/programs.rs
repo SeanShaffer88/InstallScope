@@ -7,14 +7,14 @@ use super::widgets::*;
 use super::Job;
 use egui::RichText;
 use egui_extras::{Column, TableBuilder};
-use installscope_core::i18n::{t, tf};
-use installscope_core::leftovers::{find_leftovers, LeftoverScope};
-use installscope_core::model::{fold, human_size};
-use installscope_core::platform::{self, ChildProcess};
-use installscope_core::programs::{self, InstalledProgram, Source};
-use installscope_core::revert::{build_plan, Action, Plan, PlanItem};
-use installscope_core::silent::{self, Engine, ExitMeaning};
-use installscope_core::trust::{self, Trust};
+use setupsweep_core::i18n::{t, tf};
+use setupsweep_core::leftovers::{find_leftovers, LeftoverScope};
+use setupsweep_core::model::{fold, human_size};
+use setupsweep_core::platform::{self, ChildProcess};
+use setupsweep_core::programs::{self, InstalledProgram, Source};
+use setupsweep_core::revert::{build_plan, Action, Plan, PlanItem};
+use setupsweep_core::silent::{self, Engine, ExitMeaning};
+use setupsweep_core::trust::{self, Trust};
 use std::collections::{BTreeSet, HashMap, HashSet};
 use std::time::Instant;
 
@@ -64,8 +64,8 @@ pub struct ProgramsState {
     pub broken: HashSet<String>,
     pub sizes: HashMap<String, u64>,
     /// Last opened, memory, CPU and startup delay, by program key.
-    pub usage: HashMap<String, installscope_core::usage::ProgramUsage>,
-    pub usage_job: Option<Job<HashMap<String, installscope_core::usage::ProgramUsage>>>,
+    pub usage: HashMap<String, setupsweep_core::usage::ProgramUsage>,
+    pub usage_job: Option<Job<HashMap<String, setupsweep_core::usage::ProgramUsage>>>,
     pub job: Option<Job<(Vec<InstalledProgram>, HashSet<String>)>>,
     pub store_job: Option<Job<Vec<InstalledProgram>>>,
     pub size_job: Option<Job<HashMap<String, u64>>>,
@@ -76,7 +76,7 @@ pub struct ProgramsState {
     /// Digital-signature status by registry key (checked in the background).
     pub trust: HashMap<String, Trust>,
     /// Sizes and signature results kept between launches.
-    pub cache: std::sync::Arc<std::sync::Mutex<installscope_core::cache::Cache>>,
+    pub cache: std::sync::Arc<std::sync::Mutex<setupsweep_core::cache::Cache>>,
     pub trust_job: Option<Job<Vec<(String, Trust)>>>,
     pub restore_job: Option<Job<Result<(), String>>>,
     pub filter: String,
@@ -111,7 +111,7 @@ enum ItemStatus {
     TimedOut,
 }
 
-/// Unattended limits: one uninstaller may run this long before InstallScope moves on…
+/// Unattended limits: one uninstaller may run this long before SetupSweep moves on…
 const UNATTENDED_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(15 * 60);
 /// …and an uninstaller that exited gets this long for its entry to disappear
 /// (many relaunch themselves from %TEMP% and finish in the background).
@@ -276,7 +276,7 @@ pub fn merge_plans(into: &mut Plan, other: Plan) {
     into.info.extend(other.info);
 }
 
-pub use installscope_core::programs::log_for;
+pub use setupsweep_core::programs::log_for;
 
 impl App {
     pub fn refresh_programs(&mut self, ctx: &egui::Context) {
@@ -318,11 +318,11 @@ impl App {
         let u = self.programs.usage.get(&p.key)?;
         match u.last_opened {
             Some(ts) => {
-                let now = installscope_core::time::unix_now();
+                let now = setupsweep_core::time::unix_now();
                 Some(UnusedBasis::LastOpened((now - ts) / 86_400))
             }
-            None => installscope_core::nlquery::parse_date(&p.install_date).map(|d| {
-                UnusedBasis::Installed(installscope_core::time::Date::today_local().days_since(d))
+            None => setupsweep_core::nlquery::parse_date(&p.install_date).map(|d| {
+                UnusedBasis::Installed(setupsweep_core::time::Date::today_local().days_since(d))
             }),
         }
     }
@@ -349,7 +349,7 @@ impl App {
             let root = self.store.root.clone();
             let list = self.programs.list.clone();
             self.programs.usage_job = Some(Job::spawn(ctx, move |_| {
-                let data = installscope_core::usage::UsageData::gather(reg.as_ref(), &root);
+                let data = setupsweep_core::usage::UsageData::gather(reg.as_ref(), &root);
                 list.iter()
                     .map(|p| (p.key.clone(), data.for_program(p)))
                     .collect()
@@ -367,7 +367,7 @@ impl App {
                 .map(|p| (p.key.clone(), p.install_location.clone()))
                 .collect();
             // Forget programs that were uninstalled; reuse sizes measured recently.
-            let now = installscope_core::cache::now();
+            let now = setupsweep_core::cache::now();
             let versions: HashMap<String, String> = self
                 .programs
                 .list
@@ -391,7 +391,7 @@ impl App {
                     .collect()
             };
             if !todo.is_empty() {
-                let protected = installscope_core::util::protected_dirs();
+                let protected = setupsweep_core::util::protected_dirs();
                 let cache = self.programs.cache.clone();
                 self.programs.size_job = Some(Job::spawn(ctx, move |pr| {
                     let mut m = HashMap::new();
@@ -399,7 +399,7 @@ impl App {
                         if pr.cancelled() {
                             break;
                         }
-                        if !installscope_core::util::is_protected_dir(&loc, &protected)
+                        if !setupsweep_core::util::is_protected_dir(&loc, &protected)
                             && std::path::Path::new(&loc).is_dir()
                         {
                             let bytes = programs::dir_size(&loc);
@@ -458,7 +458,7 @@ impl App {
                     let Some(path) = trust::trust_target(p, reg.as_ref()) else {
                         return (p.key.clone(), Trust::Unknown);
                     };
-                    let stamp = installscope_core::cache::file_stamp(&path);
+                    let stamp = setupsweep_core::cache::file_stamp(&path);
                     if let Some(t) = cache.lock().unwrap().trust(&p.key, &path, stamp) {
                         return (p.key.clone(), t);
                     }
@@ -541,7 +541,7 @@ impl App {
                 return m.clone();
             }
         }
-        use installscope_core::model::fold;
+        use setupsweep_core::model::fold;
         let by_key: HashSet<String> = self
             .logs
             .logs
@@ -701,7 +701,7 @@ impl App {
                         }
                         if super::a11y::explain(
                             ui.button(format!("➕ {}", t("Add program…"))),
-                            &t("Add a program Windows doesn't list (for example a portable program) by choosing its folder, so InstallScope can analyze and remove it with everything it left behind."),
+                            &t("Add a program Windows doesn't list (for example a portable program) by choosing its folder, so SetupSweep can analyze and remove it with everything it left behind."),
                         )
                         .clicked()
                         {
@@ -766,7 +766,7 @@ impl App {
                         (
                             View::Monitored,
                             t("Monitored"),
-                            t("Show only programs InstallScope recorded being installed. Those can be removed precisely, from their install log."),
+                            t("Show only programs SetupSweep recorded being installed. Those can be removed precisely, from their install log."),
                         ),
                         (
                             View::Broken,
@@ -1109,7 +1109,7 @@ impl App {
                 field(ui, "Location", &p.install_location);
                 if let Some(u) = self.programs.usage.get(&p.key) {
                     let ago = |ts: i64| {
-                        let days = (installscope_core::time::unix_now() - ts) / 86_400;
+                        let days = (setupsweep_core::time::unix_now() - ts) / 86_400;
                         match days {
                             0 => t("today"),
                             1 => t("yesterday"),
@@ -1203,7 +1203,7 @@ impl App {
                 && silent::quick_engine(p).is_silent()
                 && super::a11y::explain(
                     ui.button(t("Uninstall silently")),
-                    &t("No windows or prompts; InstallScope runs the uninstaller in its silent mode."),
+                    &t("No windows or prompts; SetupSweep runs the uninstaller in its silent mode."),
                 )
                 .clicked()
             {
@@ -1217,7 +1217,7 @@ impl App {
                 && self.settings.advanced_mode
                 && super::a11y::explain(
                     ui.button(t("Forced removal")),
-                    &t("Skip the program's own uninstaller and remove everything InstallScope can find."),
+                    &t("Skip the program's own uninstaller and remove everything SetupSweep can find."),
                 )
                 .clicked()
             {
@@ -1245,7 +1245,7 @@ impl App {
                 && self.settings.advanced_mode
                 && super::a11y::explain(
                     ui.button(t("Open in Registry Editor")),
-                    &t("Open this program's uninstall entry in Registry Editor. Changes there apply immediately, outside InstallScope."),
+                    &t("Open this program's uninstall entry in Registry Editor. Changes there apply immediately, outside SetupSweep."),
                 )
                 .clicked()
             {
@@ -1292,7 +1292,7 @@ impl App {
             let id = log.id.clone();
             egui::Frame::group(ui.style()).show(ui, |ui| {
                 ui.label(RichText::new(format!("⏺ {}", t("Monitored installation"))).color(theme::ACCENT_TEXT).strong());
-                small_muted(ui, t("InstallScope recorded this installation, so it can remove exactly what was added."));
+                small_muted(ui, t("SetupSweep recorded this installation, so it can remove exactly what was added."));
                 if super::a11y::explain(
                     ui.link(t("View install log")),
                     &t("Open the Install Logs page with this installation selected, to see everything it changed."),
@@ -1478,22 +1478,22 @@ impl App {
                     .map(|(p, _)| p.name.clone())
                     .collect();
                 let (go, skipped) =
-                    installscope_core::debloat::partition_deprovision(&pending, &removed);
+                    setupsweep_core::debloat::partition_deprovision(&pending, &removed);
                 self.debloat.deprovision_job = Some(Job::spawn(ctx, move |_| {
-                    let mut rows: Vec<installscope_core::backup::ActionResult> = go
+                    let mut rows: Vec<setupsweep_core::backup::ActionResult> = go
                         .iter()
-                        .map(|n| match installscope_core::debloat::deprovision(n) {
-                            Ok(()) => installscope_core::backup::ActionResult::ok(
+                        .map(|n| match setupsweep_core::debloat::deprovision(n) {
+                            Ok(()) => setupsweep_core::backup::ActionResult::ok(
                                 n,
                                 t("Deprovisioned: new user accounts won't get this app"),
                             ),
                             Err(e) => {
-                                installscope_core::backup::ActionResult::err(n, format!("{e:#}"))
+                                setupsweep_core::backup::ActionResult::err(n, format!("{e:#}"))
                             }
                         })
                         .collect();
                     rows.extend(skipped.iter().map(|n| {
-                        installscope_core::backup::ActionResult::err(
+                        setupsweep_core::backup::ActionResult::err(
                             n,
                             t("Not deprovisioned: the app is still installed"),
                         )
@@ -1583,9 +1583,9 @@ impl App {
                 match w.stage {
                     Stage::Confirm => {
                         ui.label(if w.force {
-                            t("InstallScope will skip the programs' own uninstallers and remove everything it can find:")
+                            t("SetupSweep will skip the programs' own uninstallers and remove everything it can find:")
                         } else {
-                            t("These programs will be uninstalled, then InstallScope scans for leftovers:")
+                            t("These programs will be uninstalled, then SetupSweep scans for leftovers:")
                         });
                         let detecting = w.detect_job.is_some();
                         egui::ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
@@ -1614,16 +1614,16 @@ impl App {
                         });
                         ui.add_space(6.0);
                         if !w.force {
-                            ui.label(t("Each program's own uninstaller runs first. InstallScope cannot undo changes made by a program's own uninstaller."));
+                            ui.label(t("Each program's own uninstaller runs first. SetupSweep cannot undo changes made by a program's own uninstaller."));
                             ui.label(if self.settings.backup_enabled() {
-                                t("Afterwards, InstallScope removes any leftovers it finds. That removal is backed up first, so it can be undone from the Backups page.")
+                                t("Afterwards, SetupSweep removes any leftovers it finds. That removal is backed up first, so it can be undone from the Backups page.")
                             } else {
-                                t("Afterwards, InstallScope removes any leftovers it finds. Backups are off in Settings, so that removal will not be backed up and cannot be undone.")
+                                t("Afterwards, SetupSweep removes any leftovers it finds. Backups are off in Settings, so that removal will not be backed up and cannot be undone.")
                             });
                             ui.add_space(6.0);
                             super::a11y::explain(
                                 ui.checkbox(&mut w.quiet, t("Unattended: no windows, prompts or restarts")),
-                                &t("InstallScope uses each uninstaller's silent mode, runs them one at a time, holds back restarts until the end, and moves on if one gets stuck. You can walk away."),
+                                &t("SetupSweep uses each uninstaller's silent mode, runs them one at a time, holds back restarts until the end, and moves on if one gets stuck. You can walk away."),
                             );
                             if w.quiet {
                                 let manual = w.engines.iter().filter(|e| **e == Engine::Manual).count();
@@ -1643,7 +1643,7 @@ impl App {
                         let rp_why = if elevated {
                             t("Create a Windows restore point before uninstalling, so you can roll the PC back if an uninstall causes problems. It holds system files and settings, not the programs themselves.")
                         } else {
-                            t("Unavailable: creating a restore point needs administrator rights. Run InstallScope as administrator to use this.")
+                            t("Unavailable: creating a restore point needs administrator rights. Run SetupSweep as administrator to use this.")
                         };
                         ui.add_enabled_ui(elevated, |ui| {
                             super::a11y::explain(
@@ -1653,13 +1653,13 @@ impl App {
                         });
                         small_muted(ui, t("A restore point lets Windows roll your PC back to how it is now, if an uninstall causes problems."));
                         if !elevated {
-                            small_muted(ui, t("Needs administrator rights, so no restore point will be created. Run InstallScope as administrator to turn this on."));
+                            small_muted(ui, t("Needs administrator rights, so no restore point will be created. Run SetupSweep as administrator to turn this on."));
                         }
                         ui.add_space(8.0);
                         let start_why = if w.force {
-                            t("Start the forced removal. InstallScope scans for everything these programs left behind, and you review the list before anything is removed.")
+                            t("Start the forced removal. SetupSweep scans for everything these programs left behind, and you review the list before anything is removed.")
                         } else {
-                            t("Start uninstalling. Each program's own uninstaller runs first — InstallScope cannot undo what that does — then you review the leftovers before they are removed.")
+                            t("Start uninstalling. Each program's own uninstaller runs first — SetupSweep cannot undo what that does — then you review the leftovers before they are removed.")
                         };
                         ui.horizontal(|ui| {
                             if super::a11y::explain(theme::primary_button(ui, t("Start")), &start_why)
@@ -1668,8 +1668,8 @@ impl App {
                                 if w.restore_point && elevated {
                                     w.stage = Stage::RestorePoint;
                                     w.rp_job = Some(Job::spawn(ui.ctx(), move |_| {
-                                        installscope_core::restore::create_restore_point(
-                                            "Before InstallScope uninstall",
+                                        setupsweep_core::restore::create_restore_point(
+                                            "Before SetupSweep uninstall",
                                         )
                                         .map(|_| ())
                                         .map_err(|error| error.to_string())
@@ -1732,9 +1732,9 @@ impl App {
                         small_muted(
                             ui,
                             if unattended_now {
-                                t("Running silently. You can leave this running; InstallScope continues by itself.")
+                                t("Running silently. You can leave this running; SetupSweep continues by itself.")
                             } else {
-                                t("Follow the program's own uninstaller. When it has finished, InstallScope continues automatically.")
+                                t("Follow the program's own uninstaller. When it has finished, SetupSweep continues automatically.")
                             },
                         );
                         ui.add_space(8.0);
@@ -1742,7 +1742,7 @@ impl App {
                             if !unattended_now
                                 && super::a11y::explain(
                                     ui.button(t("It's finished, continue")),
-                                    &t("Tell InstallScope this program's uninstaller has finished, so it moves on to scanning for leftovers."),
+                                    &t("Tell SetupSweep this program's uninstaller has finished, so it moves on to scanning for leftovers."),
                                 )
                                 .clicked()
                             {
@@ -1750,7 +1750,7 @@ impl App {
                             }
                             if super::a11y::explain(
                                 ui.button(t("Skip this program")),
-                                &t("Skip this program and leave it installed. InstallScope moves on to the next one."),
+                                &t("Skip this program and leave it installed. SetupSweep moves on to the next one."),
                             )
                             .clicked()
                             {

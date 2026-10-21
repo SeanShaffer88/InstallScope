@@ -3,7 +3,7 @@
 //! Launcher Generator and Installer.
 //!
 //! The capture can run inside Windows Sandbox (the host PC is never touched)
-//! or on this PC (the installation is recorded as an install log, so InstallScope
+//! or on this PC (the installation is recorded as an install log, so SetupSweep
 //! can remove it precisely afterwards). In both cases it:
 //!
 //! 1. takes a snapshot, waits, and takes another to learn background noise;
@@ -851,7 +851,7 @@ pub fn build_package(
         std::slice::from_ref(&program_dir),
     );
     let launcher = format!(
-        "; Made by InstallScope PortableApps Forge. Review the sections below before publishing.\r\n\r\n\
+        "; Made by SetupSweep PortableApps Forge. Review the sections below before publishing.\r\n\r\n\
          {java}[Launch]\r\nProgramExecutable={rel_exe}\r\nDirectoryMoveOK=yes\r\nSupportsUNC=yes\r\n\r\n{}{}{issues}",
         settings.sections.replace("\r\n", "\n").replace('\n', "\r\n"),
         settings.notes.replace("\r\n", "\n").replace('\n', "\r\n"),
@@ -871,7 +871,7 @@ pub fn build_package(
     std::fs::write(
         pkg.join("Other").join("Source").join("Readme.txt"),
         format!(
-            "{} was captured and packaged by InstallScope (https://github.com/SeanShaffer88/InstallScope).\r\n\r\n\
+            "{} was captured and packaged by SetupSweep (https://github.com/SeanShaffer88/SetupSweep).\r\n\r\n\
              The Launcher settings are in App\\AppInfo\\Launcher\\{id}.ini.\r\n\r\n\
              Portability check:\r\n{}",
             d.display_name(),
@@ -950,7 +950,7 @@ pub fn build_package(
 // ---- Capture --------------------------------------------------------------
 
 /// Everything a capture needs, saved as job.json (so the same run works
-/// inside Windows Sandbox, where it is started by Windows, not by InstallScope).
+/// inside Windows Sandbox, where it is started by Windows, not by SetupSweep).
 #[derive(Clone, Debug, Default)]
 pub struct Job {
     pub details: AppDetails,
@@ -1063,7 +1063,7 @@ pub fn capture(
     Ok((log, pkg))
 }
 
-/// `installscope pa-capture <job.json>`: the capture as run inside the sandbox
+/// `setupsweep pa-capture <job.json>`: the capture as run inside the sandbox
 /// (or on this PC from the command line). Writes status.json and
 /// install-log.json next to job.json.
 pub fn run_job_file(job_path: &Path) -> Result<()> {
@@ -1085,7 +1085,7 @@ pub fn run_job_file(job_path: &Path) -> Result<()> {
     };
     let ask = || {
         let msg = "When the installation has finished, start the program once, set it up the way you want it to start, and close it.\n\nThen click OK.";
-        platform::ask_ok("InstallScope PortableApps Forge", msg);
+        platform::ask_ok("SetupSweep PortableApps Forge", msg);
     };
     let reg = platform::system_registry();
     let progress = Progress::default();
@@ -1112,7 +1112,7 @@ pub fn run_job_file(job_path: &Path) -> Result<()> {
             });
             if job.sandbox {
                 platform::ask_ok(
-                    "InstallScope PortableApps Forge",
+                    "SetupSweep PortableApps Forge",
                     &format!("The capture failed: {e}"),
                 );
             }
@@ -1138,9 +1138,9 @@ pub fn sandbox_available() -> bool {
 }
 
 /// Where things appear inside the sandbox.
-pub const SANDBOX_INSTALLSCOPE: &str = "C:\\InstallScope";
+pub const SANDBOX_SETUPSWEEP: &str = "C:\\SetupSweep";
 pub const SANDBOX_INSTALLER: &str = "C:\\Installer";
-pub const SANDBOX_WORK: &str = "C:\\InstallScopeWork";
+pub const SANDBOX_WORK: &str = "C:\\SetupSweepWork";
 
 fn xml(s: &str) -> String {
     s.replace('&', "&amp;")
@@ -1149,7 +1149,7 @@ fn xml(s: &str) -> String {
 }
 
 pub fn wsb_config(
-    installscope_dir: &Path,
+    setupsweep_dir: &Path,
     installer_dir: &Path,
     work_dir: &Path,
     exe_name: &str,
@@ -1161,8 +1161,8 @@ pub fn wsb_config(
         )
     };
     format!(
-        "<Configuration>\n  <Networking>Default</Networking>\n  <ClipboardRedirection>Enable</ClipboardRedirection>\n  <MemoryInMB>4096</MemoryInMB>\n  <MappedFolders>\n{}{}{}  </MappedFolders>\n  <LogonCommand>\n    <Command>{SANDBOX_INSTALLSCOPE}\\{} pa-capture {SANDBOX_WORK}\\job.json</Command>\n  </LogonCommand>\n</Configuration>\n",
-        map(installscope_dir, SANDBOX_INSTALLSCOPE, true),
+        "<Configuration>\n  <Networking>Default</Networking>\n  <ClipboardRedirection>Enable</ClipboardRedirection>\n  <MemoryInMB>4096</MemoryInMB>\n  <MappedFolders>\n{}{}{}  </MappedFolders>\n  <LogonCommand>\n    <Command>{SANDBOX_SETUPSWEEP}\\{} pa-capture {SANDBOX_WORK}\\job.json</Command>\n  </LogonCommand>\n</Configuration>\n",
+        map(setupsweep_dir, SANDBOX_SETUPSWEEP, true),
         map(installer_dir, SANDBOX_INSTALLER, true),
         map(work_dir, SANDBOX_WORK, false),
         xml(exe_name),
@@ -1181,7 +1181,7 @@ pub fn start_sandbox(job: &Job, work_dir: &Path) -> Result<()> {
     let exe_name = exe
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
-        .unwrap_or_else(|| "InstallScope.exe".into());
+        .unwrap_or_else(|| "SetupSweep.exe".into());
     let installer = PathBuf::from(&job.installer);
     let installer_dir = installer
         .parent()
@@ -1193,8 +1193,8 @@ pub fn start_sandbox(job: &Job, work_dir: &Path) -> Result<()> {
     inside_job.installer = format!("{SANDBOX_INSTALLER}\\{}", installer_name.to_string_lossy());
     inside_job.out_dir = format!("{SANDBOX_WORK}\\out");
     inside_job.sandbox = true;
-    // Don't capture InstallScope's own folders inside the sandbox.
-    for d in [SANDBOX_INSTALLSCOPE, SANDBOX_INSTALLER, SANDBOX_WORK] {
+    // Don't capture SetupSweep's own folders inside the sandbox.
+    for d in [SANDBOX_SETUPSWEEP, SANDBOX_INSTALLER, SANDBOX_WORK] {
         inside_job.settings.file_exclusions.push(d.to_string());
     }
     std::fs::write(
@@ -1202,7 +1202,7 @@ pub fn start_sandbox(job: &Job, work_dir: &Path) -> Result<()> {
         crate::json::compat::to_vec_pretty(&inside_job)?,
     )?;
     let _ = std::fs::remove_file(work_dir.join("status.json"));
-    let wsb = work_dir.join("InstallScope.wsb");
+    let wsb = work_dir.join("SetupSweep.wsb");
     std::fs::write(
         &wsb,
         wsb_config(exe_dir, installer_dir, work_dir, &exe_name),
@@ -1329,7 +1329,7 @@ pub fn compile(
     let mut out = Compiled::default();
     let quote = |p: &Path| format!("\"{}\"", p.display());
     // The launcher: compiled from the official PortableApps.com Launcher
-    // source, which InstallScope carries (or fetches once) with its compiler.
+    // source, which SetupSweep carries (or fetches once) with its compiler.
     let toolchain = crate::patools::ensure(data_root, report);
     match (&toolchain, &tools.launcher_generator) {
         (Ok(tc), _) => {
@@ -1350,7 +1350,7 @@ pub fn compile(
     }
     // The installer: the official PortableApps.com Installer when it is
     // installed (needed only to publish on portableapps.com), otherwise
-    // InstallScope's own.
+    // SetupSweep's own.
     report("Making the installer");
     if let Some(i) = &tools.installer {
         let start = std::time::SystemTime::now() - std::time::Duration::from_secs(2);
@@ -1543,8 +1543,7 @@ mod tests {
 
     #[test]
     fn discovers_optional_app_compactor_in_portableapps_folder() {
-        let root =
-            std::env::temp_dir().join(format!("installscope-tools-{}", crate::util::new_id()));
+        let root = std::env::temp_dir().join(format!("setupsweep-tools-{}", crate::util::new_id()));
         let launcher = root
             .join("PortableApps.comLauncher")
             .join("PortableApps.comLauncherGenerator.exe");
@@ -1635,15 +1634,15 @@ mod tests {
     #[test]
     fn sandbox_config() {
         let c = wsb_config(
-            Path::new("D:\\Tools\\InstallScope"),
+            Path::new("D:\\Tools\\SetupSweep"),
             Path::new("D:\\Downloads"),
             Path::new("C:\\Work & Co"),
-            "InstallScope.exe",
+            "SetupSweep.exe",
         );
-        assert!(c.contains("<HostFolder>D:\\Tools\\InstallScope</HostFolder>\n      <SandboxFolder>C:\\InstallScope</SandboxFolder>\n      <ReadOnly>true</ReadOnly>"));
-        assert!(c.contains("<HostFolder>C:\\Work &amp; Co</HostFolder>\n      <SandboxFolder>C:\\InstallScopeWork</SandboxFolder>\n      <ReadOnly>false</ReadOnly>"));
+        assert!(c.contains("<HostFolder>D:\\Tools\\SetupSweep</HostFolder>\n      <SandboxFolder>C:\\SetupSweep</SandboxFolder>\n      <ReadOnly>true</ReadOnly>"));
+        assert!(c.contains("<HostFolder>C:\\Work &amp; Co</HostFolder>\n      <SandboxFolder>C:\\SetupSweepWork</SandboxFolder>\n      <ReadOnly>false</ReadOnly>"));
         assert!(c.contains(
-            "<Command>C:\\InstallScope\\InstallScope.exe pa-capture C:\\InstallScopeWork\\job.json</Command>"
+            "<Command>C:\\SetupSweep\\SetupSweep.exe pa-capture C:\\SetupSweepWork\\job.json</Command>"
         ));
     }
 

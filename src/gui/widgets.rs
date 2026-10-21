@@ -2,8 +2,8 @@
 
 use super::theme;
 use egui::RichText;
-use installscope_core::backup::ActionResult;
-use installscope_core::i18n::{t, tf};
+use setupsweep_core::backup::ActionResult;
+use setupsweep_core::i18n::{t, tf};
 use std::path::PathBuf;
 
 pub fn muted(ui: &mut egui::Ui, text: impl Into<String>) -> egui::Response {
@@ -43,9 +43,9 @@ pub fn pick_file(title: &str, filter_name: &str, exts: &[&str]) -> Option<PathBu
     }
     #[cfg(not(windows))]
     {
-        // Demo/testing builds: INSTALLSCOPE_DEMO_OPEN names the file to "pick".
+        // Demo/testing builds: SETUPSWEEP_DEMO_OPEN names the file to "pick".
         let _ = (title, filter_name, exts);
-        std::env::var_os("INSTALLSCOPE_DEMO_OPEN").map(PathBuf::from)
+        std::env::var_os("SETUPSWEEP_DEMO_OPEN").map(PathBuf::from)
     }
 }
 
@@ -57,7 +57,7 @@ pub fn pick_folder(title: &str) -> Option<PathBuf> {
     #[cfg(not(windows))]
     {
         let _ = title;
-        std::env::var_os("INSTALLSCOPE_DEMO").map(|_| std::env::temp_dir())
+        std::env::var_os("SETUPSWEEP_DEMO").map(|_| std::env::temp_dir())
     }
 }
 

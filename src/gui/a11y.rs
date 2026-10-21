@@ -11,7 +11,7 @@ use egui::{
 };
 
 fn mode_id() -> Id {
-    Id::new("installscope_keyboard_mode")
+    Id::new("setupsweep_keyboard_mode")
 }
 
 /// True while the user is navigating with the keyboard (the focus ring is
@@ -82,7 +82,7 @@ pub fn selectable(resp: &Response, label: &str, selected: bool) {
 }
 
 fn focus_explanation_id() -> Id {
-    Id::new("installscope_focus_explanation")
+    Id::new("setupsweep_focus_explanation")
 }
 
 /// An explanation recorded by [`explain`] for the control that holds

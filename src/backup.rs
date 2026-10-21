@@ -1,4 +1,4 @@
-//! Backups: everything InstallScope removes or changes is first copied here, so any
+//! Backups: everything SetupSweep removes or changes is first copied here, so any
 //! uninstall, cleanup or startup change can be rolled back.
 
 use crate::model::{KeyData, RegValue};
@@ -256,7 +256,7 @@ impl BackupWriter {
         self.backup.complete = true;
         self.save()?;
         // Also export the registry part as a standard .reg file, so it can be
-        // restored by double-clicking even without InstallScope.
+        // restored by double-clicking even without SetupSweep.
         let reg = backup_to_reg(&self.backup);
         if !reg.is_empty() {
             let mut bytes = vec![0xFF, 0xFE];
@@ -367,7 +367,7 @@ pub fn backup_to_reg(b: &Backup) -> String {
         return body;
     }
     format!(
-        "Windows Registry Editor Version 5.00\r\n\r\n; InstallScope backup {} — {}\r\n; Created {}. Double-click (as Administrator) to restore these registry entries.\r\n\r\n{body}",
+        "Windows Registry Editor Version 5.00\r\n\r\n; SetupSweep backup {} — {}\r\n; Created {}. Double-click (as Administrator) to restore these registry entries.\r\n\r\n{body}",
         b.id, b.title, b.created
     )
 }

@@ -29,7 +29,7 @@
 //! updated — in practice the file scope of that program's existing install
 //! log — and bind the resulting set to the new log's id when the session is
 //! saved as a log. Until that wiring lands, capture is explicit:
-//! `installscope rewind <log-id> --capture [--before]`.
+//! `setupsweep rewind <log-id> --capture [--before]`.
 
 use crate::backup::{ActionResult, BackupWriter};
 use crate::model::{fold, hexbytes, InstallLog};
@@ -717,7 +717,7 @@ fn lowercase_first(s: &str) -> String {
 pub struct RewindOutcome {
     pub results: Vec<ActionResult>,
     /// The backup that makes this rewind itself undoable
-    /// (`installscope restore <id>`), when anything was backed up.
+    /// (`setupsweep restore <id>`), when anything was backed up.
     pub backup_id: Option<String>,
     /// The pre-rewind state recorded just before running, so the moment
     /// before the rewind is itself a recorded state.
@@ -811,7 +811,7 @@ fn put_back(store: &ContentStore, r: &FileRestore) -> Result<String> {
                 .with_context(|| format!("create folder {}", parent.display()))?;
         }
     }
-    let tmp = p.with_extension("installscope-rewind-tmp");
+    let tmp = p.with_extension("setupsweep-rewind-tmp");
     std::fs::write(&tmp, &bytes).with_context(|| format!("write {}", r.path))?;
     if hexbytes::to_hex(&crate::util::sha256(&bytes)) != r.blob {
         let _ = std::fs::remove_file(&tmp);

@@ -6,10 +6,10 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use installscope_core::i18n::{t, tf};
-use installscope_core::model::{human_size, InstallLog};
-use installscope_core::pafbuild::{self, AppDetails, Compiled, InstallerKind, PaTools, Package};
-use installscope_core::platform;
+use setupsweep_core::i18n::{t, tf};
+use setupsweep_core::model::{human_size, InstallLog};
+use setupsweep_core::pafbuild::{self, AppDetails, Compiled, InstallerKind, PaTools, Package};
+use setupsweep_core::platform;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -85,7 +85,7 @@ impl App {
         self.builder.tools_job = Some(Job::spawn(ctx, move |_| {
             (
                 pafbuild::find_tools(&dir),
-                installscope_core::patools::find(&root).is_some(),
+                setupsweep_core::patools::find(&root).is_some(),
             )
         }));
     }
@@ -217,7 +217,7 @@ impl App {
                 .store
                 .root
                 .join("builder")
-                .join(installscope_core::util::new_id());
+                .join(setupsweep_core::util::new_id());
             *b.stage.lock().unwrap() = t("Starting Windows Sandbox");
             match pafbuild::start_sandbox(&job, &work) {
                 Ok(()) => {
@@ -493,8 +493,8 @@ impl App {
                 self.builder.use_sandbox = false;
             }
             super::a11y::explain(
-                ui.radio_value(&mut self.builder.use_sandbox, false, t("On this PC (InstallScope records the installation so you can remove it precisely afterwards)")),
-                &t("The installer runs on this PC while InstallScope records the installation, so the program can be removed precisely afterwards. Starting needs Administrator rights."),
+                ui.radio_value(&mut self.builder.use_sandbox, false, t("On this PC (SetupSweep records the installation so you can remove it precisely afterwards)")),
+                &t("The installer runs on this PC while SetupSweep records the installation, so the program can be removed precisely afterwards. Starting needs Administrator rights."),
             );
             ui.add_space(4.0);
             super::a11y::explain(
@@ -504,7 +504,7 @@ impl App {
                 ),
                 &t("Keeps the settings the program has after its first run in the capture as the settings the package starts with."),
             );
-            small_muted(ui, t("InstallScope first watches Windows for 30 seconds to learn what changes on its own, so it can leave that out."));
+            small_muted(ui, t("SetupSweep first watches Windows for 30 seconds to learn what changes on its own, so it can leave that out."));
         });
         ui.add_space(8.0);
         theme::card(ui, |ui| {
@@ -536,11 +536,11 @@ impl App {
         let start_why = if !ok {
             t("Unavailable: choose an installer file above, give the program a name, and choose where to save the package first.")
         } else if !self.builder.use_sandbox && !self.elevated {
-            t("Unavailable: installing on this PC needs Administrator rights. Run InstallScope as Administrator, or choose Windows Sandbox above.")
+            t("Unavailable: installing on this PC needs Administrator rights. Run SetupSweep as Administrator, or choose Windows Sandbox above.")
         } else if self.builder.use_sandbox {
-            t("Starts the capture: the installer runs in Windows Sandbox, InstallScope records what it installs, and the PortableApps.com package is built into the Save to folder.")
+            t("Starts the capture: the installer runs in Windows Sandbox, SetupSweep records what it installs, and the PortableApps.com package is built into the Save to folder.")
         } else {
-            t("Starts the capture: the installer runs on this PC while InstallScope records it, and the PortableApps.com package is built into the Save to folder.")
+            t("Starts the capture: the installer runs on this PC while SetupSweep records it, and the PortableApps.com package is built into the Save to folder.")
         };
         ui.add_enabled_ui(ok && (self.builder.use_sandbox || self.elevated), |ui| {
             if super::a11y::explain(
@@ -580,7 +580,7 @@ impl App {
                 }
                 None => {
                     ui.label(t("Installer: built in"));
-                    small_muted(ui, t("to publish on portableapps.com, install the official PortableApps.com Installer and InstallScope uses it instead"));
+                    small_muted(ui, t("to publish on portableapps.com, install the official PortableApps.com Installer and SetupSweep uses it instead"));
                 }
             }
         });
@@ -649,7 +649,7 @@ impl App {
                 ui.label(t("When the installation has finished, start the program once, set it up the way you want it to start, and close it."));
                 if super::a11y::explain(
                     theme::primary_button(ui, t("Done: take the second snapshot")),
-                    &t("Tells InstallScope the installation is finished and the program is set up the way you want, so it takes the second snapshot and builds the package."),
+                    &t("Tells SetupSweep the installation is finished and the program is set up the way you want, so it takes the second snapshot and builds the package."),
                 )
                 .clicked()
                 {
@@ -691,7 +691,7 @@ impl App {
             ui.add_space(6.0);
             ui.label(RichText::new(t("Portability check")).strong());
             for i in &pkg.portability.issues {
-                use installscope_core::portability::Severity;
+                use setupsweep_core::portability::Severity;
                 let (icon, color) = match i.severity {
                     Severity::Problem => ("✖", theme::BAD),
                     Severity::Warning => ("⚠", theme::WARN),

@@ -389,7 +389,7 @@ pub fn list_store_apps() -> Vec<InstalledProgram> {
     }
     #[cfg(not(windows))]
     {
-        if std::env::var_os("INSTALLSCOPE_DEMO").is_none() {
+        if std::env::var_os("SETUPSWEEP_DEMO").is_none() {
             return Vec::new();
         }
         let app = |name: &str, publisher: &str, version: &str| {
@@ -609,7 +609,7 @@ mod tests {
     #[test]
     fn manual_programs() {
         let root =
-            std::env::temp_dir().join(format!("installscope-manual-{}", crate::util::new_id()));
+            std::env::temp_dir().join(format!("setupsweep-manual-{}", crate::util::new_id()));
         let app = root.join("Tools").join("My App");
         std::fs::create_dir_all(&app).unwrap();
         std::fs::write(app.join("app.exe"), vec![0u8; 4096]).unwrap();

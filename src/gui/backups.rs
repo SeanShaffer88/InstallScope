@@ -1,12 +1,12 @@
-//! Backups page: everything InstallScope removed, ready to be put back.
+//! Backups page: everything SetupSweep removed, ready to be put back.
 
 use super::app::{App, Confirm};
 use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use installscope_core::backup::{self, ActionResult, Backup};
-use installscope_core::i18n::{t, tf};
+use setupsweep_core::backup::{self, ActionResult, Backup};
+use setupsweep_core::i18n::{t, tf};
 
 #[derive(Default)]
 pub struct BackupsState {
@@ -152,10 +152,10 @@ impl App {
             let total: u64 = self.backups.list.iter().map(|b| b.bytes()).sum();
             ui.horizontal(|ui| {
                 muted(ui, tf("{n} backups", &[("n", self.backups.list.len().to_string())]));
-                muted(ui, format!("· {}", installscope_core::model::human_size(total)));
+                muted(ui, format!("· {}", setupsweep_core::model::human_size(total)));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if super::a11y::explain(ui.button(t("Open backup folder")), &t("Open the folder that holds all of InstallScope's backups.")).clicked() {
-                        installscope_core::platform::shell_open(&self.store.backups_dir().to_string_lossy());
+                    if super::a11y::explain(ui.button(t("Open backup folder")), &t("Open the folder that holds all of SetupSweep's backups.")).clicked() {
+                        setupsweep_core::platform::shell_open(&self.store.backups_dir().to_string_lossy());
                     }
                 });
             });
@@ -166,7 +166,7 @@ impl App {
             }
             if self.backups.list.is_empty() {
                 theme::card(ui, |ui| {
-                    muted(ui, t("No backups yet. Every removal InstallScope makes is backed up here first, unless you have turned backups off in Settings."));
+                    muted(ui, t("No backups yet. Every removal SetupSweep makes is backed up here first, unless you have turned backups off in Settings."));
                 });
                 return;
             }
@@ -188,11 +188,11 @@ impl App {
                             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                 if super::a11y::explain(
                                     ui.button(t("Open folder")),
-                                    &t("Backed-up files, plus a .reg file you can double-click to restore registry entries without InstallScope."),
+                                    &t("Backed-up files, plus a .reg file you can double-click to restore registry entries without SetupSweep."),
                                 )
                                 .clicked()
                                 {
-                                    installscope_core::platform::shell_open(&backups_dir.join(&b.id).to_string_lossy());
+                                    setupsweep_core::platform::shell_open(&backups_dir.join(&b.id).to_string_lossy());
                                 }
                                 if super::a11y::explain(ui.button(t("Delete")), &t("Delete this backup permanently, after a confirmation. What it holds can then no longer be put back.")).clicked() {
                                     action = Some(Confirm::DeleteBackup(b.id.clone()));

@@ -1,4 +1,4 @@
-//! Background auto-monitoring: a lightweight `installscope watch` process,
+//! Background auto-monitoring: a lightweight `setupsweep watch` process,
 //! started at sign-in by Task Scheduler, keeps a baseline snapshot and checks
 //! every half minute whether a new program has registered itself. When one
 //! has (and the installation has settled), it takes a second snapshot and
@@ -9,7 +9,7 @@ use crate::platform::{run_hidden, Registry};
 use anyhow::{anyhow, Result};
 use std::collections::BTreeSet;
 
-pub const TASK: &str = "InstallScope\\Auto-monitoring";
+pub const TASK: &str = "SetupSweep\\Auto-monitoring";
 /// Tag given to logs recorded in the background.
 pub const TAG: &str = "auto";
 
@@ -26,7 +26,7 @@ pub fn added(before: &BTreeSet<String>, now: &BTreeSet<String>) -> Vec<String> {
     now.difference(before).cloned().collect()
 }
 
-/// The schtasks arguments that start `installscope watch` at sign-in.
+/// The schtasks arguments that start `setupsweep watch` at sign-in.
 pub fn create_args(exe: &str) -> Vec<String> {
     [
         "/Create",
@@ -92,10 +92,10 @@ mod tests {
         assert_eq!(added(&before, &now).len(), 1);
         assert!(added(&before, &now)[0].ends_with("\\b"));
         assert!(added(&now, &before).is_empty());
-        let a = create_args("C:\\InstallScope.exe");
+        let a = create_args("C:\\SetupSweep.exe");
         assert!(
             a.contains(&"ONLOGON".to_string())
-                && a.contains(&"\"C:\\InstallScope.exe\" watch".to_string())
+                && a.contains(&"\"C:\\SetupSweep.exe\" watch".to_string())
         );
     }
 }

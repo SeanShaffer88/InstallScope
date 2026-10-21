@@ -7,9 +7,9 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use installscope_core::backup::ActionResult;
-use installscope_core::debloat::{self, BloatItem, Class, DeprovisionReport};
-use installscope_core::i18n::{t, tf};
+use setupsweep_core::backup::ActionResult;
+use setupsweep_core::debloat::{self, BloatItem, Class, DeprovisionReport};
+use setupsweep_core::i18n::{t, tf};
 use std::collections::HashSet;
 
 #[derive(Default)]
@@ -33,12 +33,12 @@ impl App {
         self.debloat.job = Some(Job::spawn(ctx, move |pr| {
             pr.set_phase("Reading installed programs".to_string());
             let programs = if programs.is_empty() {
-                installscope_core::programs::list_programs(reg.as_ref(), hidden)
+                setupsweep_core::programs::list_programs(reg.as_ref(), hidden)
             } else {
                 programs
             };
             pr.set_phase("Reading Store apps".to_string());
-            let store = installscope_core::programs::list_store_apps();
+            let store = setupsweep_core::programs::list_store_apps();
             let provisioned = debloat::provisioned_packages();
             debloat::scan(&programs, &store, &provisioned)
         }));
@@ -60,7 +60,7 @@ impl App {
             let ok = rows.len() - failed;
             let report = DeprovisionReport {
                 version: 1,
-                ran_at: installscope_core::util::now_string(),
+                ran_at: setupsweep_core::util::now_string(),
                 rows,
             };
             if let Err(error) = self.store.save_deprovision_report(&report) {
@@ -107,12 +107,12 @@ impl App {
                 // always gets its own confirmation (see Confirm::DeprovisionBloat).
                 // The names ride with the wizard and are deprovisioned only
                 // after those programs were actually removed.
-                let programs: Vec<installscope_core::programs::InstalledProgram> =
+                let programs: Vec<setupsweep_core::programs::InstalledProgram> =
                     chosen.into_iter().map(|i| i.program).collect();
                 self.ask(
                     "Deprovision apps for new user accounts?",
                     tf(
-                        "For each removed app, InstallScope also removes the copy Windows keeps for new user accounts, so the apps don't come back. This affects the whole PC, and InstallScope cannot undo it. {n} of the selected apps have such a copy; it is deprovisioned only after the app itself was removed.",
+                        "For each removed app, SetupSweep also removes the copy Windows keeps for new user accounts, so the apps don't come back. This affects the whole PC, and SetupSweep cannot undo it. {n} of the selected apps have such a copy; it is deprovisioned only after the app itself was removed.",
                         &[("n", names.len().to_string())],
                     ),
                     "Deprovision and start removal",
@@ -203,7 +203,7 @@ impl App {
                     let kp_why = if self.elevated {
                         t("Also remove the copy Windows keeps for new user accounts, so the removed apps don't come back for new accounts. This affects the whole PC and cannot be undone; it happens only after the app itself was removed, and asks for its own confirmation first.")
                     } else {
-                        t("Unavailable: this needs administrator rights. Run InstallScope as administrator to use it.")
+                        t("Unavailable: this needs administrator rights. Run SetupSweep as administrator to use it.")
                     };
                     ui.add_enabled_ui(self.elevated, |ui| {
                         super::a11y::explain(
@@ -211,7 +211,7 @@ impl App {
                             &kp_why,
                         );
                     });
-                    small_muted(ui, t("Removes the copy Windows keeps for new user accounts, so the app doesn't come back. It affects the whole PC, and InstallScope cannot undo it."));
+                    small_muted(ui, t("Removes the copy Windows keeps for new user accounts, so the app doesn't come back. It affects the whole PC, and SetupSweep cannot undo it."));
                     if !self.elevated {
                         small_muted(ui, t("Needs administrator rights to change what new user accounts get."));
                     }
@@ -278,7 +278,7 @@ impl App {
                                     ui.vertical(|ui| {
                                         ui.horizontal_wrapped(|ui| {
                                             ui.label(RichText::new(i.title()).strong());
-                                            if i.program.source == installscope_core::programs::Source::Store {
+                                            if i.program.source == setupsweep_core::programs::Source::Store {
                                                 theme::badge(ui, t("Store app"), theme::MUTED);
                                             }
                                             if i.provisioned {

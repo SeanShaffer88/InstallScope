@@ -1,4 +1,4 @@
-//! InstallScope's look: the Command Deck theme — a dense operational status
+//! SetupSweep's look: the Command Deck theme — a dense operational status
 //! board on a pure black/red identity. Palette: window #000000, sidebar
 //! #050505, cards #101010, hairline rules #242424; primary red #6B0700 is
 //! reserved for the primary action, attention rules and the selected nav
@@ -234,7 +234,7 @@ pub fn page_title(ui: &mut egui::Ui, title: &str, subtitle: &str) {
 /// effects); animations are skipped when it is off.
 pub fn animations_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(installscope_core::platform::animations_enabled)
+    *ON.get_or_init(setupsweep_core::platform::animations_enabled)
 }
 
 pub fn nav_item_with_hint(

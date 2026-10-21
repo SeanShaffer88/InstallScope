@@ -443,7 +443,7 @@ mod tests {
 
     #[test]
     fn finds_complications() {
-        let dir = std::env::temp_dir().join(format!("installscope-port-{}", crate::util::new_id()));
+        let dir = std::env::temp_dir().join(format!("setupsweep-port-{}", crate::util::new_id()));
         std::fs::create_dir_all(dir.join("lib")).unwrap();
         std::fs::write(dir.join("app.exe"), pe(MACHINE_X64, true, true)).unwrap();
         std::fs::write(dir.join("lib").join("app.jar"), b"PK").unwrap();

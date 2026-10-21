@@ -1,8 +1,8 @@
-//! Where InstallScope keeps its data: install logs, backups, pending monitoring
+//! Where SetupSweep keeps its data: install logs, backups, pending monitoring
 //! sessions and settings.
 //!
-//! Installed mode: `%LOCALAPPDATA%\InstallScope`.
-//! Portable mode (a file named `portable` next to the exe): `InstallScopeData\`
+//! Installed mode: `%LOCALAPPDATA%\SetupSweep`.
+//! Portable mode (a file named `portable` next to the exe): `SetupSweepData\`
 //! next to the exe.
 
 use crate::model::InstallLog;
@@ -36,7 +36,7 @@ impl Store {
             .and_then(|p| p.parent().map(Path::to_path_buf));
         if let Some(dir) = &exe_dir {
             if dir.join("portable").exists() || dir.join("portable.txt").exists() {
-                let mut s = Store::at(&dir.join("InstallScopeData"))?;
+                let mut s = Store::at(&dir.join("SetupSweepData"))?;
                 s.portable = true;
                 return Ok(s);
             }
@@ -47,7 +47,7 @@ impl Store {
                 std::env::var("HOME").map(|h| PathBuf::from(h).join(".local").join("share"))
             })
             .unwrap_or_else(|_| PathBuf::from("."));
-        Store::at(&base.join("InstallScope"))
+        Store::at(&base.join("SetupSweep"))
     }
 
     pub fn at(root: &Path) -> Result<Store> {
@@ -196,7 +196,7 @@ impl Store {
     /// Import a log exported from another machine or an older install.
     pub fn import_log(&self, path: &Path) -> Result<InstallLog> {
         let mut log: InstallLog = crate::json::compat::from_str(&std::fs::read_to_string(path)?)
-            .context("not an InstallScope install log")?;
+            .context("not an SetupSweep install log")?;
         if log.id.is_empty() || self.log_path(&log.id).exists() {
             log.id = crate::util::new_id();
         }

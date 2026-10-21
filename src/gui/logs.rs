@@ -7,10 +7,10 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use installscope_core::i18n::{t, tf};
-use installscope_core::model::{human_size, ChangeSet, InstallLog};
-use installscope_core::report;
-use installscope_core::revert::build_plan;
+use setupsweep_core::i18n::{t, tf};
+use setupsweep_core::model::{human_size, ChangeSet, InstallLog};
+use setupsweep_core::report;
+use setupsweep_core::revert::build_plan;
 
 #[derive(Default)]
 pub struct LogsState {
@@ -24,7 +24,7 @@ pub struct LogsState {
     /// (query, logs fingerprint, [(log id, name, match count, first match)]).
     pub search_cache: Option<(String, usize, Vec<(String, String, usize, String)>)>,
     /// Change statistics per log id, computed once when logs load.
-    pub stats: std::collections::HashMap<String, installscope_core::model::ChangeStats>,
+    pub stats: std::collections::HashMap<String, setupsweep_core::model::ChangeStats>,
     /// Tags being edited, as typed.
     pub tags_text: String,
     /// Show only this group ("" = all).
@@ -289,7 +289,7 @@ impl App {
             &[("name", log.name.clone())],
         ));
         self.logs.package_job = Some(Job::spawn(&self.ctx, move |pr| {
-            let s = installscope_core::repackage::repackage(&log, reg.as_ref(), &dir, &|p| {
+            let s = setupsweep_core::repackage::repackage(&log, reg.as_ref(), &dir, &|p| {
                 pr.set_phase(p)
             })
             .map_err(|e| e.to_string())?;
@@ -302,9 +302,9 @@ impl App {
                     )),
                 ));
             }
-            let setup = installscope_core::patools::ensure(&root, &|p| pr.set_phase(p.to_string()))
+            let setup = setupsweep_core::patools::ensure(&root, &|p| pr.set_phase(p.to_string()))
                 .and_then(|tc| {
-                    installscope_core::patools::build_silent_setup(
+                    setupsweep_core::patools::build_silent_setup(
                         &tc,
                         &s.folder,
                         &log.name,
@@ -328,14 +328,14 @@ impl App {
                     "Setup package ready: {file}",
                     &[("file", setup.display().to_string())],
                 ));
-                installscope_core::platform::reveal(&setup.to_string_lossy());
+                setupsweep_core::platform::reveal(&setup.to_string_lossy());
             }
             Ok((folder, Err(e))) => {
                 self.set_status(tf(
                     "The deploy folder is ready, but Setup.exe could not be created: {error}",
                     &[("error", e)],
                 ));
-                installscope_core::platform::shell_open(&folder.to_string_lossy());
+                setupsweep_core::platform::shell_open(&folder.to_string_lossy());
             }
             Err(e) => self.set_status(e),
         }
@@ -343,11 +343,11 @@ impl App {
 
     fn print_log(&mut self, log: &InstallLog) {
         let path = std::env::temp_dir().join(format!(
-            "InstallScope-{}-print.html",
-            installscope_core::util::safe_file_name(&log.name)
+            "SetupSweep-{}-print.html",
+            setupsweep_core::util::safe_file_name(&log.name)
         ));
         match std::fs::write(&path, report::to_print_html(log)) {
-            Ok(()) => installscope_core::platform::shell_open(&path.to_string_lossy()),
+            Ok(()) => setupsweep_core::platform::shell_open(&path.to_string_lossy()),
             Err(e) => self.set_status(e.to_string()),
         }
     }
@@ -361,7 +361,7 @@ impl App {
         // The list holds summaries; merge the full logs from disk.
         let full = |l: &InstallLog| self.store.load_log(&l.id).unwrap_or_else(|_| l.clone());
         let (fa, fb) = (full(&la), full(&lb));
-        let merged = installscope_core::merge::merge_logs(&[&fa, &fb], "");
+        let merged = setupsweep_core::merge::merge_logs(&[&fa, &fb], "");
         match self.store.save_log(&merged) {
             Ok(()) => {
                 self.set_status(tf(
@@ -376,24 +376,24 @@ impl App {
     }
 
     fn export_log(&mut self, log: &InstallLog, ext: &str) {
-        let base = installscope_core::util::safe_file_name(&log.name);
+        let base = setupsweep_core::util::safe_file_name(&log.name);
         let (content, filter) = match ext {
             "html" => (report::to_html(log), "HTML"),
             "reg" => (report::to_reg_undo(log), "Registry script"),
             "ps1" => (report::to_ps1(log), "PowerShell"),
             "xml" => (report::to_xml(log), "XML"),
             "ini" => (
-                installscope_core::portable::launcher_ini(
+                setupsweep_core::portable::launcher_ini(
                     &log.changes,
                     &log.name,
-                    &installscope_core::portable::Folders::current(),
+                    &setupsweep_core::portable::Folders::current(),
                 )
                 .text,
                 "PortableApps.com Launcher settings",
             ),
             _ => (
-                installscope_core::json::compat::to_string_pretty(log).unwrap_or_default(),
-                "InstallScope log",
+                setupsweep_core::json::compat::to_string_pretty(log).unwrap_or_default(),
+                "SetupSweep log",
             ),
         };
         let default = format!("{base}.{ext}");
@@ -414,7 +414,7 @@ impl App {
             Ok(()) => {
                 self.set_status(tf("Saved {path}", &[("path", path.display().to_string())]));
                 if ext == "html" {
-                    installscope_core::platform::shell_open(&path.to_string_lossy());
+                    setupsweep_core::platform::shell_open(&path.to_string_lossy());
                 }
             }
             Err(e) => self.set_status(e.to_string()),
@@ -841,7 +841,7 @@ impl App {
                     }
                 });
                 if save {
-                    let tags = installscope_core::model::parse_tags(&self.logs.tags_text);
+                    let tags = setupsweep_core::model::parse_tags(&self.logs.tags_text);
                     let group = self.logs.logs[idx].group.trim().to_string();
                     self.logs.logs[idx].tags = tags;
                     self.logs.logs[idx].group = group;

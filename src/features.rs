@@ -94,7 +94,7 @@ pub fn parse_features(output: &str) -> Vec<Feature> {
 }
 
 pub fn list_features() -> anyhow::Result<Vec<Feature>> {
-    if !cfg!(windows) && std::env::var_os("INSTALLSCOPE_DEMO").is_some() {
+    if !cfg!(windows) && std::env::var_os("SETUPSWEEP_DEMO").is_some() {
         return Ok(parse_features(
             "---- | ----\nFeature Name | State\n---- | ----\n\
 Microsoft-Windows-Subsystem-Linux | Enabled\nVirtualMachinePlatform | Enabled\n\
