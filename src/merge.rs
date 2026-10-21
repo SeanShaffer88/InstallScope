@@ -173,8 +173,59 @@ pub fn merge_logs(logs: &[&InstallLog], name: &str) -> InstallLog {
         ),
         group: pick(|l| &l.group),
         tags,
+        monitoring: merge_monitoring(&sorted),
         changes: merge_changes(&sets),
     }
+}
+
+fn merge_monitoring(logs: &[&InstallLog]) -> crate::model::MonitoringCoverage {
+    use crate::model::MonitoringCoverage;
+    let mut merged = MonitoringCoverage::default();
+    let add_unique = |target: &mut Vec<String>, value: &str| {
+        if !target.iter().any(|v| v.eq_ignore_ascii_case(value)) {
+            target.push(value.to_string());
+        }
+    };
+    for log in logs {
+        let m = &log.monitoring;
+        if !m.tracking_started.is_empty()
+            && (merged.tracking_started.is_empty() || m.tracking_started < merged.tracking_started)
+        {
+            merged.tracking_started = m.tracking_started.clone();
+        }
+        if m.tracking_ended > merged.tracking_ended {
+            merged.tracking_ended = m.tracking_ended.clone();
+        }
+        for path in &m.file_roots {
+            add_unique(&mut merged.file_roots, path);
+        }
+        for path in &m.registry_roots {
+            add_unique(&mut merged.registry_roots, path);
+        }
+        for path in &m.active_file_roots {
+            add_unique(&mut merged.active_file_roots, path);
+        }
+        for path in &m.active_registry_roots {
+            add_unique(&mut merged.active_registry_roots, path);
+        }
+        for warning in &m.warnings {
+            add_unique(&mut merged.warnings, warning);
+        }
+        merged.file_buffer_overflows = merged
+            .file_buffer_overflows
+            .saturating_add(m.file_buffer_overflows);
+        merged.file_notifications = merged
+            .file_notifications
+            .saturating_add(m.file_notifications);
+        merged.registry_notifications = merged
+            .registry_notifications
+            .saturating_add(m.registry_notifications);
+        merged.added_paths = merged.added_paths.saturating_add(m.added_paths);
+        merged.changed_paths = merged.changed_paths.saturating_add(m.changed_paths);
+        merged.removed_paths = merged.removed_paths.saturating_add(m.removed_paths);
+        merged.registry_paths = merged.registry_paths.saturating_add(m.registry_paths);
+    }
+    merged
 }
 
 #[cfg(test)]
@@ -243,6 +294,15 @@ mod tests {
             version: "1.0".into(),
             created: "2026-01-01 10:00".into(),
             tags: vec!["x".into()],
+            monitoring: crate::model::MonitoringCoverage {
+                tracking_started: "2026-01-01 10:00".into(),
+                tracking_ended: "2026-01-01 10:01".into(),
+                file_roots: vec![r"C:\Apps".into()],
+                warnings: vec!["overflow".into()],
+                added_paths: 2,
+                file_notifications: 5,
+                ..Default::default()
+            },
             ..Default::default()
         };
         let b = InstallLog {
@@ -250,6 +310,15 @@ mod tests {
             version: "1.1".into(),
             created: "2026-02-01 10:00".into(),
             tags: vec!["X".into(), "y".into()],
+            monitoring: crate::model::MonitoringCoverage {
+                tracking_started: "2026-02-01 10:00".into(),
+                tracking_ended: "2026-02-01 10:01".into(),
+                file_roots: vec![r"c:\apps".into(), r"C:\Other".into()],
+                warnings: vec!["overflow".into(), "restart".into()],
+                added_paths: 1,
+                file_notifications: 4,
+                ..Default::default()
+            },
             ..Default::default()
         };
         let m = merge_logs(&[&b, &a], "");
@@ -257,5 +326,11 @@ mod tests {
         assert_eq!(m.version, "1.1");
         assert_eq!(m.tags, vec!["x", "y"]);
         assert!(m.notes.starts_with("Merged from: App (2026-01-01"));
+        assert_eq!(m.monitoring.file_roots.len(), 2);
+        assert_eq!(m.monitoring.warnings, vec!["overflow", "restart"]);
+        assert_eq!(m.monitoring.added_paths, 3);
+        assert_eq!(m.monitoring.file_notifications, 9);
+        assert_eq!(m.monitoring.tracking_started, "2026-01-01 10:00");
+        assert_eq!(m.monitoring.tracking_ended, "2026-02-01 10:01");
     }
 }

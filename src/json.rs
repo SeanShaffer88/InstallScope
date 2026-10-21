@@ -1035,7 +1035,8 @@ pub fn from_json_slice<T: FromJson>(b: &[u8]) -> Result<T, Error> {
 /// `write_only` implements only writing. `[default]` (absent: the type's
 /// default), `[or = path]` (absent: the
 /// function's result), `[skip_empty]` (not written when empty, absent:
-/// default) and `[hex]` (bytes as hex text). Unknown fields are ignored.
+/// default), `[skip_default]` (not written when equal to `Default::default()`,
+/// absent: default) and `[hex]` (bytes as hex text). Unknown fields are ignored.
 #[macro_export]
 macro_rules! json_struct {
     ($ty:ident, default, { $($f:ident $([$($m:tt)*])?),* $(,)? }) => {
@@ -1088,6 +1089,11 @@ macro_rules! json_struct {
             $crate::json_struct!(@put $o, $s, $f);
         }
     };
+    (@put $o:ident, $s:ident, $f:ident, skip_default) => {
+        if $s.$f != Default::default() {
+            $crate::json_struct!(@put $o, $s, $f);
+        }
+    };
     (@put $o:ident, $s:ident, $f:ident, hex) => {
         $o.push((stringify!($f).to_string(), $crate::json::hex_to_json(&$s.$f)));
     };
@@ -1108,6 +1114,9 @@ macro_rules! json_struct {
         }
     };
     (@get $obj:ident, $mode:tt, $f:ident, skip_empty) => {
+        $crate::json_struct!(@get $obj, $mode, $f, default)
+    };
+    (@get $obj:ident, $mode:tt, $f:ident, skip_default) => {
         $crate::json_struct!(@get $obj, $mode, $f, default)
     };
     (@get $obj:ident, $mode:tt, $f:ident, or = $d:path) => {

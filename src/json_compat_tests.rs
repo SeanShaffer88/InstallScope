@@ -129,6 +129,7 @@ fn sample_log() -> crate::model::InstallLog {
         notes: "line1\nline2\t\u{1}".into(),
         group: "Tools".into(),
         tags: vec!["auto".into()],
+        monitoring: Default::default(),
         changes: cs,
     }
 }

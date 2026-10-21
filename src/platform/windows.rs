@@ -1098,6 +1098,7 @@ fn wait_or_stop(event: HANDLE, stop: &super::StopSignal) -> bool {
 pub fn watch_registry(
     path: &str,
     stop: &super::StopSignal,
+    mut on_started: impl FnMut(),
     mut on_change: impl FnMut(),
 ) -> Result<()> {
     use windows_sys::Win32::System::Registry::{
@@ -1111,6 +1112,7 @@ pub fn watch_registry(
     else {
         return Err(anyhow!("could not create an event"));
     };
+    on_started();
     loop {
         let rc = unsafe {
             RegNotifyChangeKeyValue(
@@ -1149,6 +1151,8 @@ pub fn watch_folder(
     dir: &Path,
     recursive: bool,
     stop: &super::StopSignal,
+    on_started: &mut dyn FnMut(),
+    on_overflow: &mut dyn FnMut(),
     on_event: &mut dyn FnMut(FolderEvent, &str),
 ) -> Result<()> {
     use windows_sys::Win32::Storage::FileSystem::{
@@ -1182,6 +1186,7 @@ pub fn watch_folder(
     else {
         return Err(anyhow!("could not create an event"));
     };
+    on_started();
     // DWORD-aligned, as the API requires.
     let mut buf = vec![0u32; 16 * 1024];
     let mut path = String::with_capacity(512);
@@ -1226,8 +1231,11 @@ pub fn watch_folder(
                 std::io::Error::last_os_error()
             ));
         }
-        // n == 0: too many changes at once for the buffer; they're lost
-        // from the live view only (the final comparison has them all).
+        if n == 0 {
+            on_overflow();
+            continue;
+        }
+        // The notification buffer overflowed; expose the gap to the monitor.
         let bytes = unsafe { std::slice::from_raw_parts(buf.as_ptr() as *const u8, n as usize) };
         let mut at = 0usize;
         while at + 12 <= bytes.len() {

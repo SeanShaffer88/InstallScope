@@ -678,6 +678,33 @@ pub struct ChangeStats {
 }
 crate::json_struct!(ChangeStats, { keys_added, keys_removed, values_added, values_removed, values_modified, files_added, dirs_added, files_removed, files_modified, bytes_added });
 
+/// What the live watcher observed while an install was being monitored.
+/// This supplements the final snapshot diff; it is never a completeness claim.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct MonitoringCoverage {
+    pub tracking_started: String,
+    pub tracking_ended: String,
+    pub file_roots: Vec<String>,
+    pub registry_roots: Vec<String>,
+    pub active_file_roots: Vec<String>,
+    pub active_registry_roots: Vec<String>,
+    pub warnings: Vec<String>,
+    pub file_buffer_overflows: u64,
+    pub distinct_path_counts_limited: bool,
+    pub file_notifications: u64,
+    pub registry_notifications: u64,
+    pub added_paths: u64,
+    pub changed_paths: u64,
+    pub removed_paths: u64,
+    pub registry_paths: u64,
+}
+crate::json_struct!(MonitoringCoverage, default, {
+    tracking_started, tracking_ended, file_roots, registry_roots,
+    active_file_roots, active_registry_roots, warnings,
+    file_buffer_overflows, distinct_path_counts_limited, file_notifications, registry_notifications,
+    added_paths, changed_paths, removed_paths, registry_paths
+});
+
 /// A saved record of everything one installation changed: the heart of a
 /// monitored program. Reverting it is how InstallScope uninstalls precisely.
 #[derive(Clone, Debug, Default)]
@@ -694,9 +721,12 @@ pub struct InstallLog {
     pub notes: String,
     pub group: String,
     pub tags: Vec<String>,
+    /// Supplemental live-watcher coverage diagnostics. The final diff in
+    /// `changes` remains authoritative if live notifications were incomplete.
+    pub monitoring: MonitoringCoverage,
     pub changes: ChangeSet,
 }
-crate::json_struct!(InstallLog, { id, name, publisher [default], version [default], created, installer [default], uninstall_key [default], notes [default], group [default], tags [skip_empty], changes });
+crate::json_struct!(InstallLog, { id, name, publisher [default], version [default], created, installer [default], uninstall_key [default], notes [default], group [default], tags [skip_empty], monitoring [skip_default], changes });
 
 impl InstallLog {
     /// Whether the log matches a search: name, publisher, group or a tag.
@@ -761,6 +791,38 @@ mod tests {
     fn sizes() {
         assert_eq!(human_size(512), "512 B");
         assert_eq!(human_size(1536), "1.5 KB");
+    }
+
+    #[test]
+    fn install_log_coverage_roundtrips_and_older_logs_default_it() {
+        let log = InstallLog {
+            id: "coverage-test".into(),
+            name: "Example".into(),
+            monitoring: MonitoringCoverage {
+                file_roots: vec![r"C:\Apps".into()],
+                active_file_roots: vec![r"C:\Apps".into()],
+                file_buffer_overflows: 2,
+                added_paths: 3,
+                file_notifications: 8,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        use crate::json::ToJson;
+        let encoded = crate::json::to_json_string(&log);
+        let restored: InstallLog = crate::json::from_json_str(&encoded).unwrap();
+        assert_eq!(restored.monitoring.file_buffer_overflows, 2);
+        assert_eq!(restored.monitoring.added_paths, 3);
+        assert_eq!(restored.monitoring.file_notifications, 8);
+
+        let mut legacy_value = log.to_json();
+        if let crate::json::Value::Object(fields) = &mut legacy_value {
+            fields.retain(|(key, _)| key != "monitoring");
+        }
+        let legacy = crate::json::to_string(&legacy_value);
+        let restored: InstallLog = crate::json::from_json_str(&legacy).unwrap();
+        assert!(restored.monitoring.file_roots.is_empty());
+        assert_eq!(restored.monitoring.file_buffer_overflows, 0);
     }
 }
 

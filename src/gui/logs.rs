@@ -245,6 +245,7 @@ fn clone_meta(l: &InstallLog) -> InstallLog {
         notes: l.notes.clone(),
         group: l.group.clone(),
         tags: l.tags.clone(),
+        monitoring: l.monitoring.clone(),
         changes: ChangeSet::default(),
     }
 }
@@ -856,6 +857,40 @@ impl App {
                 }
             }
             ui.add_space(8.0);
+            if !log.monitoring.tracking_started.is_empty() {
+                let m = &log.monitoring;
+                egui::CollapsingHeader::new(t("Live monitoring coverage receipt"))
+                    .show(ui, |ui| {
+                        small_muted(ui, tf(
+                            "Active watchers: {active_files}/{files} folders · {active_registry}/{registry} registry areas.",
+                            &[
+                                ("active_files", m.active_file_roots.len().to_string()),
+                                ("files", m.file_roots.len().to_string()),
+                                ("active_registry", m.active_registry_roots.len().to_string()),
+                                ("registry", m.registry_roots.len().to_string()),
+                            ],
+                        ));
+                        small_muted(ui, tf(
+                            "Distinct paths: {added} added · {changed} changed · {removed} removed · {registry} registry areas. Notifications: {file_events} file · {registry_events} registry.",
+                            &[
+                                ("added", m.added_paths.to_string()),
+                                ("changed", m.changed_paths.to_string()),
+                                ("removed", m.removed_paths.to_string()),
+                                ("registry", m.registry_paths.to_string()),
+                                ("file_events", m.file_notifications.to_string()),
+                                ("registry_events", m.registry_notifications.to_string()),
+                            ],
+                        ));
+                        small_muted(ui, tf(
+                            "File-notification gaps: {count}.",
+                            &[("count", m.file_buffer_overflows.to_string())],
+                        ));
+                        for warning in &m.warnings {
+                            theme::warning_banner(ui, warning.clone());
+                        }
+                        small_muted(ui, t("Live events are supplemental. The saved before/after snapshot comparison remains authoritative; live tracking does not continue across a Windows restart."));
+                    });
+            }
             let LogsState { logs, tree, show_list, .. } = &mut self.logs;
             let cs = &mut logs[idx].changes;
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {

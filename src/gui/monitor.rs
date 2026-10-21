@@ -168,6 +168,11 @@ impl App {
         let settings = self.settings.clone();
         let root = self.store.root.clone();
         let (name, installer) = (self.monitor.name.clone(), self.monitor.installer.clone());
+        let monitoring = self
+            .live
+            .as_ref()
+            .map(installscope_core::live::LiveWatcher::coverage)
+            .unwrap_or_default();
         self.monitor.phase = Phase::After;
         self.monitor.child = None;
         self.monitor.after_job = Some(Job::spawn(ctx, move |pr| {
@@ -187,6 +192,7 @@ impl App {
                 name,
                 created: installscope_core::util::now_string(),
                 installer,
+                monitoring,
                 ..Default::default()
             };
             if let Some(d) = detect_program(&changes) {
@@ -410,11 +416,19 @@ impl App {
             .default_open(self.settings.advanced_mode)
             .show(ui, |ui| {
                 let (a, c, r, g) = live.counts();
+                let (file_notifications, registry_notifications) = live.notifications();
                 small_muted(ui, tf(
-                    "Files added: {a} · changed: {c} · removed: {r} · registry areas changed: {g}",
+                    "Distinct paths: {a} added · {c} changed · {r} removed · {g} registry areas",
                     &[("a", a.to_string()), ("c", c.to_string()), ("r", r.to_string()), ("g", g.to_string())],
                 ));
-                small_muted(ui, t("Changes appear here as they happen. The exact list, including registry values, is compared when you click Finish."));
+                small_muted(ui, tf(
+                    "Observed notifications: {files} file · {registry} registry. Repeated notifications may refer to the same path.",
+                    &[("files", file_notifications.to_string()), ("registry", registry_notifications.to_string())],
+                ));
+                small_muted(ui, t("Live tracking is supplemental and starts when this view opens. The final snapshot comparison is the saved record, including after a restart."));
+                for warning in &live.coverage().warnings {
+                    theme::warning_banner(ui, warning.clone());
+                }
                 egui::ScrollArea::vertical()
                     .max_height(260.0)
                     .stick_to_bottom(true)
@@ -525,6 +539,34 @@ impl App {
         ui.horizontal(|ui| {
             ui.heading(t("Review the installation"));
         });
+        egui::CollapsingHeader::new(t("Live monitoring coverage"))
+            .default_open(!log.monitoring.warnings.is_empty())
+            .show(ui, |ui| {
+                let m = &log.monitoring;
+                small_muted(ui, tf(
+                    "Requested roots: {files} folders · {registry} registry areas; active: {active_files} folders · {active_registry} registry areas.",
+                    &[
+                        ("files", m.file_roots.len().to_string()),
+                        ("registry", m.registry_roots.len().to_string()),
+                        ("active_files", m.active_file_roots.len().to_string()),
+                        ("active_registry", m.active_registry_roots.len().to_string()),
+                    ],
+                ));
+                small_muted(ui, tf(
+                    "Distinct paths: {added} added · {changed} changed · {removed} removed · {registry} registry areas; {overflows} file-notification gaps.",
+                    &[
+                        ("added", m.added_paths.to_string()),
+                        ("changed", m.changed_paths.to_string()),
+                        ("removed", m.removed_paths.to_string()),
+                        ("registry", m.registry_paths.to_string()),
+                        ("overflows", m.file_buffer_overflows.to_string()),
+                    ],
+                ));
+                for warning in &m.warnings {
+                    theme::warning_banner(ui, warning.clone());
+                }
+                small_muted(ui, t("Live events are supplemental. The saved before/after snapshot comparison is authoritative; live tracking does not continue across a Windows restart."));
+            });
         if trial {
             theme::warning_banner(
                 ui,
