@@ -2,7 +2,10 @@
 //! Exercises build, install, launch, relocation and Data-preserving upgrade.
 use anyhow::{anyhow, Context, Result};
 use installscope_core::{
-    pafbuild::{self, AppDetails, PaTools},
+    pafbuild::{self, PaTools},
+    pafbuildsession::Review,
+    pafproject::Project,
+    pafstage::{Prepared, StagePlan},
     util,
 };
 use portable_builder_kit::process::{run_tool, ToolRequest};
@@ -134,7 +137,9 @@ unsafe extern "system" fn fixture_dialog(
     1
 }
 
-fn compile(package: &Path, tools: &PaTools) -> Result<pafbuild::Compiled> {
+fn compile(prepared: &Prepared, project: &Project, _tools: &PaTools) -> Result<pafbuild::Compiled> {
+    #[cfg(windows)]
+    let tools = _tools;
     #[cfg(windows)]
     let dialogs = {
         let mut states = Vec::new();
@@ -154,12 +159,9 @@ fn compile(package: &Path, tools: &PaTools) -> Result<pafbuild::Compiled> {
         std::cell::RefCell::new(states)
     };
     let started = std::time::Instant::now();
-    pafbuild::compile_official_with_cancel(
-        package,
-        "ProbePortable",
-        tools,
+    let review = Review::create(prepared, project, &|| false)?;
+    let attempt = review.run(
         false,
-        &|s| println!("{s}"),
         &|| {
             #[cfg(windows)]
             for state in dialogs.borrow_mut().iter_mut() {
@@ -172,7 +174,24 @@ fn compile(package: &Path, tools: &PaTools) -> Result<pafbuild::Compiled> {
             }
             started.elapsed() > Duration::from_secs(120)
         },
-    )
+        &|s| println!("{s}"),
+    )?;
+    println!("Build journal: {}", attempt.journal.display());
+    for warning in &attempt.warnings {
+        println!("Build-log warning: {warning}");
+    }
+    let compiled = attempt.result.map_err(|e| anyhow!(e))?;
+    if attempt.logs.len() != 2
+        || attempt.validation_report.is_none()
+        || attempt.validation_errors != Some(0)
+    {
+        return Err(anyhow!(
+            "Expected two fresh compiler logs and a passing partial static report; inspect {}",
+            attempt.directory.display()
+        ));
+    }
+    println!("Retained two official compiler logs and partial validation report");
+    Ok(compiled)
 }
 
 fn main() -> Result<()> {
@@ -202,39 +221,30 @@ fn main() -> Result<()> {
         true,
     );
     std::fs::create_dir(&work.0)?;
-    let package = work.0.join("build/ProbePortable");
-    for dir in [
-        "App/Probe",
-        "App/AppInfo/Launcher",
-        "App/DefaultData",
-        "Data",
-        "Other/Source",
-    ] {
-        std::fs::create_dir_all(package.join(dir))?;
-    }
-    std::fs::copy(payload, package.join("App/Probe/probe.exe"))?;
-    let mut details = AppDetails {
-        name: "Probe".into(),
-        publisher: "SDK integration test".into(),
-        version: "1.0".into(),
-        open_source: true,
-        ..Default::default()
+    let source = work.0.join("source");
+    let workspace = work.0.join("workspace");
+    std::fs::create_dir(&source)?;
+    std::fs::create_dir(&workspace)?;
+    std::fs::copy(payload, source.join("probe.exe"))?;
+    let icon = work.0.join("icon.png");
+    std::fs::write(
+        &icon,
+        installscope_core::png::encode_rgba(256, 256, &vec![255; 256 * 256 * 4])
+            .context("encode fixture icon")?,
+    )?;
+    let mut project=Project {
+        source: source.to_string_lossy().into(), workspace: workspace.to_string_lossy().into(),
+        app_id:"ProbePortable".into(), name:"Probe Portable".into(),publisher:"InstallScope test fixture".into(),
+        homepage:"https://github.com/SeanShaffer88/InstallScope".into(),description:"Harmless packaging lifecycle fixture".into(),
+        category:"Utilities".into(),language:"English".into(),package_version:"1.0.0.0".into(),display_version:"1.0".into(),
+        program:"Probe/probe.exe".into(),arguments:r#"touch "%PAL:DataDir%\probe.txt""#.into(),directory_move:"yes".into(),
+        portability_notes:"Fixture writes only its explicitly supplied Data path. Verify folder relocation and Data-preserving upgrade below.".into(),
+        icon:icon.to_string_lossy().into(),generator:tools.launcher_generator.as_ref().context("Generator missing")?.to_string_lossy().into(),installer:tools.installer.as_ref().context("Installer missing")?.to_string_lossy().into(),
+        rights:Some(true),open_source:Some(true),freeware:Some(true),commercial_use:Some(true),shareable:Some(true),..Default::default()
     };
-    std::fs::write(
-        package.join("App/AppInfo/appinfo.ini"),
-        pafbuild::appinfo_ini(&details),
-    )?;
-    std::fs::write(
-        package.join("help.html"),
-        "<!doctype html><title>Build test</title>",
-    )?;
-    std::fs::write(package.join("App/AppInfo/Launcher/ProbePortable.ini"),"[Launch]\r\nProgramExecutable=Probe\\probe.exe\r\nCommandLineArguments=touch \"%PAL:DataDir%\\probe.txt\"\r\nDirectoryMoveOK=yes\r\nSupportsUNC=yes\r\n")?;
-    let png = installscope_core::png::encode_rgba(256, 256, &vec![255; 256 * 256 * 4])
-        .context("encode fixture icon")?;
-    for (name, bytes) in installscope_core::pafassets::from_png(&png, &|| false)?.files {
-        std::fs::write(package.join("App/AppInfo").join(name), bytes)?;
-    }
-    let compiled = compile(&package, &tools)?;
+    let prepared = StagePlan::create(&project, &|| false, &|s| println!("Prepare: {s}"))?
+        .prepare(&|| false, &|s| println!("Prepare: {s}"))?;
+    let compiled = compile(&prepared, &project, &tools)?;
     let installer = compiled.paf.context("installer missing")?;
     portable_builder_kit::validate_executable(&installer)?;
     let destination = work.0.join("installed");
@@ -286,16 +296,15 @@ fn main() -> Result<()> {
         installed.join("Other/Source/obsolete.txt"),
         b"old source file",
     )?;
+    project.package_version = "1.0.1.0".into();
+    project.display_version = "1.0.1".into();
+    let prepared = StagePlan::create(&project, &|| false, &|s| println!("Upgrade prepare: {s}"))?
+        .prepare(&|| false, &|s| println!("Upgrade prepare: {s}"))?;
     std::fs::write(
-        package.join("Other/Source/new-source.txt"),
+        prepared.package.join("Other/Source/new-source.txt"),
         b"new source file",
     )?;
-    details.version = "1.0.1".into();
-    std::fs::write(
-        package.join("App/AppInfo/appinfo.ini"),
-        pafbuild::appinfo_ini(&details),
-    )?;
-    let compiled = compile(&package, &tools)?;
+    let compiled = compile(&prepared, &project, &tools)?;
     run(
         &compiled.paf.context("upgrade installer missing")?,
         vec![
@@ -329,7 +338,7 @@ fn main() -> Result<()> {
     if !installed.join("Data/probe.txt").is_file() {
         return Err(anyhow!("upgraded launcher failed"));
     }
-    println!("Verified: real launcher compilation, installer build, silent install, portable launch, folder relocation and upgrade preserving Data (official frontends supplied by the test environment; not certification)");
+    println!("Verified: wizard project staging/reconnect/build review, official launcher/installer build, log/report retention, silent install, portable launch, folder relocation and upgrade preserving Data (official frontends supplied by the test environment; not certification)");
     work.1 = false;
     Ok(())
 }

@@ -50,6 +50,17 @@ calls can delay it. These operations require trusted, privately controlled sourc
 and workspace directories: path checks are not hostile-filesystem race containment.
 ACLs, timestamps and alternate data streams are not copied.
 
+### Folder relocation
+
+The launcher screen exposes the official `[Launch] DirectoryMoveOK` choices.
+An unanswered setting omits the key and retains the upstream `warn` default.
+Allowing moves emits `yes`; blocking them emits `no`. This changes Launcher
+behavior, not application path handling. Test settings after moving the package;
+allowing moves does not repair embedded absolute paths or prove portability.
+Source: Launcher 2.2.9 `Other/Source/Manual/ref/launcher.ini/launch.rst`,
+DirectoryMoveOK, and the linked official Launch-section documentation. This is
+**official tool behavior**, not a mandatory format field.
+
 ### App icons
 
 The independent Rust converter generates `appicon_16.png`, `_32.png`, `_75.png`,
@@ -215,3 +226,13 @@ canonicalization. The adapter now uses conventional Windows spellings for short,
 ordinary paths only when they resolve to the same canonical path; special/long
 paths retain their existing spelling. Official source/binaries are unchanged.
 The correction requires another real-tool run before enabling wizard execution.
+
+Build attempts also write `validation-report.json` with separate blocking errors,
+log-capture warnings and user-reported manual observations. It records the output
+path/SHA-256 when available and links the format reference. Its static preflight
+is deliberately partial; complete metadata/icon semantics and host-write behavior
+are not covered. `validation_complete`, `portability_verified` and
+`official_approval` remain false. A failed or cancelled report write is a visible
+warning and never overwrites an earlier attempt. Windows integration now exercises
+project staging/reconnect, build review, both official tools, log/report retention,
+install/launch, relocation and upgrade; passing evidence must still be collected.

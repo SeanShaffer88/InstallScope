@@ -28,6 +28,8 @@ pub struct Attempt {
     pub journal: PathBuf,
     pub result: Result<Compiled, String>,
     pub logs: Vec<PathBuf>,
+    pub validation_report: Option<PathBuf>,
+    pub validation_errors: Option<usize>,
     pub warnings: Vec<String>,
 }
 fn digest(path: &Path, cancel: &dyn Fn() -> bool) -> Result<[u8; 32]> {
@@ -176,6 +178,20 @@ impl Review {
                     )),
                 }
             }
+            let (validation_report, validation_errors) = match write_validation_report(
+                &directory,
+                &current.prepared.package,
+                &self.project,
+                &result,
+                &warnings,
+                cancel,
+            ) {
+                Ok((path, errors)) => (Some(path), Some(errors)),
+                Err(e) => {
+                    warnings.push(format!("Validation report could not be completed: {e:#}"));
+                    (None, None)
+                }
+            };
             let mut file = journal_file.into_inner().unwrap();
             if let Err(e) = writeln!(
                 file,
@@ -190,6 +206,8 @@ impl Review {
                 journal,
                 result,
                 logs,
+                validation_report,
+                validation_errors,
                 warnings,
             })
         };
@@ -200,6 +218,79 @@ impl Review {
             )
         })
     }
+}
+fn write_validation_report(
+    directory: &Path,
+    package: &Path,
+    project: &Project,
+    result: &Result<Compiled, String>,
+    warnings: &[String],
+    cancel: &dyn Fn() -> bool,
+) -> Result<(PathBuf, usize)> {
+    use crate::json::Value as V;
+    let string = |s: &str| V::String(s.into());
+    let mut errors: Vec<V> = portable_builder_kit::preflight(package, result.is_ok())
+        .into_iter()
+        .map(|f| {
+            V::Object(vec![
+                ("path".into(), string(&f.path.to_string_lossy())),
+                ("message".into(), string(&f.message)),
+                (
+                    "classification".into(),
+                    string("wizard static preflight; not complete format validation"),
+                ),
+            ])
+        })
+        .collect();
+    if let Err(error) = result {
+        errors.push(V::Object(vec![
+            ("path".into(), string(&package.to_string_lossy())),
+            ("message".into(), string(error)),
+            ("classification".into(), string("build attempt")),
+        ]));
+    }
+    let mut artifact = V::Null;
+    if let Ok(Compiled {
+        paf: Some(path), ..
+    }) = result
+    {
+        match pafbuild::build_hash(path, cancel) {
+            Ok(hash) => {
+                artifact = V::Object(vec![
+                    ("path".into(), string(&path.to_string_lossy())),
+                    (
+                        "sha256".into(),
+                        string(&hash.iter().map(|b| format!("{b:02x}")).collect::<String>()),
+                    ),
+                ])
+            }
+            Err(e) => errors.push(V::Object(vec![
+                ("path".into(), string(&path.to_string_lossy())),
+                ("message".into(), string(&e.to_string())),
+                ("classification".into(), string("artifact hash")),
+            ])),
+        }
+    }
+    let mut report_warnings: Vec<V> = warnings.iter().map(|s| string(s)).collect();
+    for warning in ["Static preflight is partial: complete metadata, icon content, configuration semantics and host-write behavior are not fully validated.","Redistribution and component permissions are user declarations requiring human review, not legal conclusions.","Manual test records are user observations; this wizard did not execute those tests."] {report_warnings.push(string(warning));}
+    let error_count = errors.len();
+    let value=V::Object(vec![
+        ("schema".into(),V::UInt(1)),("app_id".into(),string(&project.app_id)),
+        ("build_succeeded".into(),V::Bool(result.is_ok())),("automated_checks_passed".into(),V::Bool(errors.is_empty())),
+        ("validation_complete".into(),V::Bool(false)),("portability_verified".into(),V::Bool(false)),("official_approval".into(),V::Bool(false)),
+        ("format_reference".into(),string(crate::pafproject::FORMAT_SOURCE)),
+        ("artifact".into(),artifact),("blocking_errors".into(),V::Array(errors)),("warnings".into(),V::Array(report_warnings)),
+        ("manual_tests_reported_by_user".into(),V::Array(project.tests.iter().map(|s|string(s)).collect())),
+        ("project_snapshot_note".into(),string("Save a new project snapshot to retain edited answers, permission declarations and manual observations. Review private paths before sharing reports.")),
+    ]);
+    let path = directory.join("validation-report.json");
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)?;
+    file.write_all(crate::json::to_json_string_pretty(&value).as_bytes())?;
+    file.sync_all()?;
+    Ok((path, error_count))
 }
 fn log_stamp(path: &Path) -> Result<(std::time::SystemTime, [u8; 32])> {
     let m = fs::symlink_metadata(path)?;
@@ -252,6 +343,49 @@ fn capture_log(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn report_separates_failed_builds_and_manual_observations() {
+        let temp = crate::util::tempdir().unwrap();
+        let package = temp.path().join("missing package");
+        let project = Project {
+            app_id: "ExamplePortable".into(),
+            tests: vec!["Launch and change settings".into()],
+            ..Default::default()
+        };
+        let (path, errors) = write_validation_report(
+            temp.path(),
+            &package,
+            &project,
+            &Err("compiler failed".into()),
+            &[],
+            &|| false,
+        )
+        .unwrap();
+        assert!(errors > 1);
+        let value = crate::json::parse_bytes(&fs::read(path).unwrap()).unwrap();
+        assert_eq!(value["build_succeeded"].as_bool(), Some(false));
+        assert_eq!(value["automated_checks_passed"].as_bool(), Some(false));
+        assert_eq!(value["validation_complete"].as_bool(), Some(false));
+        assert_eq!(value["portability_verified"].as_bool(), Some(false));
+        assert_eq!(value["official_approval"].as_bool(), Some(false));
+        assert_eq!(
+            value["manual_tests_reported_by_user"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(value["blocking_errors"].as_array().unwrap().len() > 1);
+        assert!(write_validation_report(
+            temp.path(),
+            &package,
+            &project,
+            &Err("retry".into()),
+            &[],
+            &|| false
+        )
+        .is_err());
+    }
     #[test]
     fn retains_only_new_logs_without_overwriting_previous_results() {
         let temp = crate::util::tempdir().unwrap();

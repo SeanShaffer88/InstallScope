@@ -39,6 +39,7 @@ pub struct Project {
     pub display_version: String,
     pub program: String,
     pub arguments: String,
+    pub directory_move: String,
     pub portability_notes: String,
     pub icon: String,
     pub installer: String,
@@ -51,7 +52,7 @@ pub struct Project {
     pub components: Vec<Component>,
     pub tests: Vec<String>,
 }
-crate::json_struct!(Project, { schema, step, workspace, source, app_id, name, publisher, homepage, description, category, language, package_version, display_version, program, arguments, portability_notes, icon, installer, generator, rights, open_source, freeware, commercial_use, shareable, components, tests });
+crate::json_struct!(Project, { schema, step, workspace, source, app_id, name, publisher, homepage, description, category, language, package_version, display_version, program, arguments, directory_move, portability_notes, icon, installer, generator, rights, open_source, freeware, commercial_use, shareable, components, tests });
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Component {
@@ -80,6 +81,7 @@ impl Default for Project {
             display_version: String::new(),
             program: String::new(),
             arguments: String::new(),
+            directory_move: String::new(),
             portability_notes: String::new(),
             icon: String::new(),
             installer: String::new(),
@@ -289,6 +291,16 @@ impl Project {
                 LAUNCH_SOURCE,
             );
         }
+        if !["", "yes", "warn", "no"].contains(&self.directory_move.as_str()) {
+            add(
+                4,
+                true,
+                "Folder moves",
+                "Choose the documented default warning, allow, warn or block behavior.".into(),
+                RuleClass::Tool,
+                LAUNCH_SOURCE,
+            );
+        }
         if self.arguments.contains(['\r', '\n', '\0']) {
             add(
                 4,
@@ -390,6 +402,9 @@ impl Project {
             "[Launch]\r\nProgramExecutable={}\r\n",
             self.program.replace('/', "\\")
         );
+        if !self.directory_move.is_empty() {
+            launcher.push_str(&format!("DirectoryMoveOK={}\r\n", self.directory_move));
+        }
         if !self.arguments.is_empty() {
             launcher.push_str(&format!("CommandLineArguments={}\r\n", self.arguments));
         }
@@ -458,6 +473,19 @@ mod tests {
             p.app_id
         );
         std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn folder_move_policy_uses_only_documented_values_and_defaults() {
+        let mut p = ready_answers();
+        assert!(!p.drafts().unwrap()[1].1.contains("DirectoryMoveOK"));
+        for value in ["yes", "warn", "no"] {
+            p.directory_move = value.into();
+            assert!(p.drafts().unwrap()[1]
+                .1
+                .contains(&format!("DirectoryMoveOK={value}\r\n")));
+        }
+        p.directory_move = "yes\r\n[RegistryKeys]".into();
+        assert!(p.drafts().is_err());
     }
     #[test]
     fn drafts_reject_overflow_arguments_and_unresolved_components() {

@@ -259,11 +259,36 @@ impl Wizard {
                 4 => {
                     text(ui,"Program executable relative to App",&mut p.program,"For App\\Example\\example.exe, enter Example\\example.exe. Your source folder must contain example.exe. Nested paths within Example are preserved. An application subfolder is required for staging; absolute paths and parent traversal are rejected.");
                     text(ui,"Command-line arguments (optional)",&mut p.arguments,"Use only arguments supported by the application. Review quoting against PAL documentation. No arguments are executed in this preview.");
+                    let label = ui.label("Moving the package to a different folder");
+                    let selection = egui::ComboBox::from_id_salt("paf-directory-move")
+                        .selected_text(match p.directory_move.as_str() {
+                            "yes" => "Allow moves — application must support them",
+                            "no" => "Block directory moves",
+                            _ => "Warn before moving (official default)",
+                        })
+                        .show_ui(ui, |ui| {
+                            ui.selectable_value(
+                                &mut p.directory_move,
+                                String::new(),
+                                "Warn before moving (official default)",
+                            );
+                            ui.selectable_value(
+                                &mut p.directory_move,
+                                "yes".into(),
+                                "Allow moves — application must support them",
+                            );
+                            ui.selectable_value(
+                                &mut p.directory_move,
+                                "no".into(),
+                                "Block directory moves",
+                            );
+                        });
+                    a11y::explain(selection.response.labelled_by(label.id),"The official Launcher defaults to warning when a package folder has moved. Allow moves only when the application handles them or verified launcher rules compensate. This does not fix absolute paths or prove portability.");
                     ui.hyperlink_to(
                         "Official Launcher settings",
                         installscope_core::pafproject::LAUNCH_SOURCE,
                     );
-                    ui.label("The draft includes only the executable and optional arguments. File moves, registry handling and custom code require separate review; notes are never converted into cleanup commands automatically.");
+                    ui.label("The draft includes the executable, optional arguments and the folder-move policy you selected. File moves, registry handling and custom code require separate review; notes are never converted into cleanup commands automatically.");
                 }
                 5 => {
                     file(ui,"App icon PNG",&mut p.icon,&["png"],"Choose a square static PNG from 256 to 4096 pixels, no larger than 16 MiB, that you have rights to use. Original artwork is not changed.");
@@ -729,6 +754,17 @@ impl Wizard {
                 }
             }
             ui.label(format!("Invocation journal: {}", attempt.journal.display()));
+            if let Some(errors) = attempt.validation_errors {
+                if errors > 0 {
+                    theme::warning_banner(ui,format!("Partial static validation found {errors} blocking errors. Review the report before distribution."));
+                } else {
+                    ui.label("Partial static checks passed. Complete validation and manual portability tests remain required.");
+                }
+            }
+            if let Some(path) = &attempt.validation_report {
+                ui.label(format!("Partial validation report: {}", path.display()));
+                ui.label("Automated checks and user-reported manual tests are separate. Portability and official approval are unverified.");
+            }
             for log in &attempt.logs {
                 ui.label(format!("Captured compiler log: {}", log.display()));
             }
