@@ -206,6 +206,7 @@ Watches for programs that add themselves to Windows startup.
 - **A review queue:** a scan compares Run and RunOnce values and Startup-folder shortcuts with a saved baseline, and anything new or changed waits for you. **Keep** leaves it exactly as it is; **Remove** asks first, backs it up, and can be undone from the Backups page.
 - **Honest attribution:** each entry names the install log that explains it, with the evidence, or says the origin is unknown. The Installer Decrapifier's verdict and reasons are shown alongside.
 - **You choose when it looks:** scans run when you click *Scan now* (F5) or run `installscope gatekeeper scan`. Nothing runs in the background, and the navigation shows how many entries are waiting. Services and scheduled tasks stay on the Startup page.
+- **A calm weekly reminder:** when pending reviews exist, the Dashboard offers *Review startup changes* or *Remind me in 7 days*. It appears only while InstallScope is open, does not run a scan, and leaves the navigation badge visible when snoozed.
 - **Optional monitored-install scan:** in Settings (Advanced), enable *Scan after monitored installs*. InstallScope records a baseline before a Monitor-page installation, then checks the same startup locations after you save its log and reports any queued changes. This does not run for CLI installs or the separate automatic-monitor service.
 
 ### Storage overview

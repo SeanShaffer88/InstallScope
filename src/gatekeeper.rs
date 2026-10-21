@@ -153,8 +153,14 @@ pub struct Queue {
     pub version: u32,
     pub baseline: Vec<WatchedEntry>,
     pub items: Vec<QueueItem>,
+    /// Local date when the user last opened or snoozed the pending-review
+    /// digest (`YYYY-MM-DD`). Empty means it has never been shown.
+    pub digest_last_shown: String,
 }
-crate::json_struct!(Queue, default, { version, baseline, items });
+crate::json_struct!(Queue, default, { version, baseline, items, digest_last_shown });
+
+/// Minimum interval between non-modal dashboard reminders.
+pub const DIGEST_INTERVAL_DAYS: i64 = 7;
 
 impl Queue {
     pub fn empty() -> Queue {
@@ -162,6 +168,26 @@ impl Queue {
             version: QUEUE_VERSION,
             baseline: Vec::new(),
             items: Vec::new(),
+            digest_last_shown: String::new(),
+        }
+    }
+
+    /// Whether pending entries should be surfaced in the dashboard digest.
+    /// Invalid stored dates fail open and future dates are treated as due, so
+    /// a clock correction or damaged field cannot hide the reminder forever.
+    pub fn digest_due_on(&self, today: crate::time::Date) -> bool {
+        if self.pending().is_empty() {
+            return false;
+        }
+        if self.digest_last_shown.is_empty() {
+            return true;
+        }
+        match crate::time::Date::parse_ymd(&self.digest_last_shown) {
+            Some(last) => {
+                let days = today.days_since(last);
+                days < 0 || days >= DIGEST_INTERVAL_DAYS
+            }
+            None => true,
         }
     }
 
@@ -739,9 +765,38 @@ mod tests {
     }
 
     #[test]
+    fn digest_is_due_only_for_pending_items_and_handles_date_edges() {
+        let today = crate::time::Date::from_ymd(2026, 10, 21).unwrap();
+        let mut q = Queue::empty();
+        assert!(!q.digest_due_on(today));
+
+        q.items.push(QueueItem {
+            id: "pending".into(),
+            state: ItemState::Pending,
+            ..Default::default()
+        });
+        assert!(q.digest_due_on(today));
+        q.digest_last_shown = "2026-10-14".into();
+        assert!(q.digest_due_on(today));
+        q.digest_last_shown = "2026-10-15".into();
+        assert!(!q.digest_due_on(today));
+        q.digest_last_shown = "invalid".into();
+        assert!(q.digest_due_on(today));
+        q.digest_last_shown = "2026-10-22".into();
+        assert!(q.digest_due_on(today));
+
+        q.items[0].state = ItemState::Allowed;
+        assert!(!q.digest_due_on(today));
+    }
+
+    #[test]
     fn queue_round_trips_and_refuses_other_versions() {
         let tmp = crate::util::tempdir().unwrap();
         let st = Store::at(tmp.path()).unwrap();
+        let legacy: Queue =
+            crate::json::compat::from_str(r#"{"version":1,"baseline":[],"items":[]}"#).unwrap();
+        assert!(legacy.digest_last_shown.is_empty());
+
         let mut q = Queue::empty();
         run_scan(&mut q, &[run_entry("Tray", "C:\\T\\tray.exe")], &[]);
         q.save(&st).unwrap();
