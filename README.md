@@ -212,6 +212,7 @@ Free the space taken by temporary files and caches.
 - **Browser privacy cleaning** (each item off until you tick it): cookies, browsing history, website data, and saved sessions for Chrome, Edge, Brave, Vivaldi, Opera, Firefox, LibreWolf, Waterfox, and Floorp, in every profile. Bookmarks and passwords are never touched.
 - **Clean automatically** every day, week, or month through Windows Task Scheduler, even when InstallScope is closed.
 - **Deep cleanup** (Advanced mode): the previous Windows installation (Windows.old), superseded Windows components, files of turned-off features, and old restore points, using Windows' own tools. Each item is analyzed first and confirmed separately.
+- After a reviewed cleanup removes files, a read-only before/after check compares autostart entries, shell extensions, and file associations. It filters out targets that were already missing and says clearly that a new finding appeared during the interval, not that cleanup caused it. The check is shown with the latest cleanup result; it is not part of the saved cleanup receipt.
 
 ### System Restore
 
