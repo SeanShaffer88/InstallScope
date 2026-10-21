@@ -75,23 +75,27 @@ bounded, tested workflow rather than a broad rewrite.
 **Innovation track** — new capabilities vetted against the project's constraints
 (offline, local, least-privilege, no new product surfaces). Suggested build order:
 reference counting → Canary → Slowdown Detective → Autostart Gatekeeper →
-App Rewind.
-- **Shared-component reference counting** — build a cross-program reference map
-  from all install logs; label every removal review item from real data:
-  *Used only by this program* (safe), *Shared with N others — removing may
-  break them* (Careful), or *No install log mentions this* (unknown — today's
-  confidence rules). Shared and unknown items always default to keep; never
-  render "not in any log" as "unused". Invalidate the index on log
-  add/remove/merge, and state coverage honestly ("Reference data covers 23 of
-  your 41 programs").
-- **Canary — post-operation health verification** — after every uninstall,
-  removal, or cleaning, run a short read-only verification pass: default-app
-  associations still resolve, no autostart entry now points at a missing file,
-  registered shell extensions still have their files, protected locations
-  untouched. Green verdict or a specific finding with **Fix** or **Undo this
-  operation**. High precision only (a chatty canary is worse than none); never
-  load or execute removed programs' code; no network; scope is the
-  consequences of this operation, not a general health suite.
+App Rewind. The first four are now implemented at least in part; each bullet
+states what has shipped and what is still open.
+- **Shared-component reference counting** — shipped in the removal review
+  (and `installscope revert`): every item is cross-checked against all install
+  logs and labeled from real data — *Used only by this program* (safe),
+  *Shared with N others — removing may break them* (Careful), or *No install
+  log mentions this* (unknown; never rendered as "unused"). Shared and unknown
+  items always default to keep, including under *Select all*, and the review
+  states how many programs the reference data covers. The build keeps the
+  contract that the index is rebuilt from the logs on every review, so adding,
+  removing or merging a log can never leave a stale label behind.
+- **Canary — post-operation health verification** — shipped as a short,
+  read-only pass at the end of every removal plan, appending its verdict to the
+  same report the removal shows: a green all-clear line, or specific findings
+  (an autostart entry now pointing at a missing file, a shell extension whose
+  DLL is gone, an association that no longer resolves, a protected location the
+  operation touched). It stays high-precision, checks existence only, loads no
+  removed code and uses no network; the removal's backup remains the undo.
+  Still open: a **Fix** action on a finding, an "Undo this operation" shortcut
+  beside it, and running the same pass after cleaning operations (today it
+  runs on removal plans).
 - **Slowdown Detective** — answer "why is my PC slower than it was?": the user
   picks a baseline date; diff installs, updates, autostarts, scheduled tasks,
   and services since then; rank contributors by measured data (boot
