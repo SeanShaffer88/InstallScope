@@ -27,6 +27,11 @@ the remaining product goals and a staged UI transition; each should ship as a
 bounded, tested workflow rather than a broad rewrite.
 
 **Core product**
+- **Storage overview** — the regular interface now has an initial read-only,
+  cancellable logical-size survey with bounded top rows and visible partial
+  results. Windows client verification remains pending. Later: allocated and
+  hard-link-aware accounting, accessible treemap alternatives, drill-down and
+  saved growth comparisons. Do not treat logical size as recoverable space.
 - **Native Win32 interface** — replace `egui`/`eframe`/`wgpu` in phases while
   preserving the established dark, black, and red design. Migrate and verify
   complete workflows one at a time; keep the existing working UI until each

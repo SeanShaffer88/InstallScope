@@ -28,6 +28,7 @@ pub enum Tab {
     /// Opt-in review queue for programs that start with Windows.
     Gatekeeper,
     Slowdown,
+    Storage,
     Settings,
 }
 
@@ -151,6 +152,7 @@ pub struct App {
     /// Autostart Gatekeeper review queue (opt-in).
     pub gatekeeper: super::gatekeeper_ui::GatekeeperState,
     pub slowdown: super::slowdown_ui::SlowdownState,
+    pub storage: super::storage_ui::StorageState,
     pub alt: super::alt_ui::AltState,
     /// "Ask InstallScope" plain-language search (Ctrl+K).
     pub ask_ui: super::ask::AskState,
@@ -238,6 +240,7 @@ impl App {
             extinv: Default::default(),
             gatekeeper: Default::default(),
             slowdown: Default::default(),
+            storage: Default::default(),
             shown_tab: None,
             tab_since: 0.0,
             alt: Default::default(),
@@ -783,6 +786,12 @@ impl App {
                             self.tab = Tab::ExtInv;
                         }
                         if a11y::explain(theme::nav_item_with_hint(
+                            ui, "▤", &t("Storage overview"), self.tab == Tab::Storage, None,
+                            Some(&t("Read-only folder sizes with visible partial results")),
+                        ), &t("Choose a folder to inspect logical sizes; this page never deletes files.")).clicked() {
+                            self.tab = Tab::Storage;
+                        }
+                        if a11y::explain(theme::nav_item_with_hint(
                             ui, "◷", &t("Slowdown Detective"),
                             self.tab == Tab::Slowdown, None,
                             Some(&t("Review recorded changes and measured startup impact; timing alone does not prove a cause")),
@@ -901,6 +910,10 @@ impl App {
             Tab::Gatekeeper => (
                 "Autostart Gatekeeper",
                 "Review the programs that start with Windows and decide whether they stay",
+            ),
+            Tab::Storage => (
+                "Storage overview",
+                "See where space goes before deciding what to remove",
             ),
             Tab::Slowdown => (
                 "Slowdown Detective",
@@ -1287,6 +1300,11 @@ fn page_help(tab: Tab) -> &'static [&'static str] {
             "Disable moves an extension's files into InstallScope's own data folder: nothing is deleted, and the rest of the profile (bookmarks, history, settings) is never touched. Restore puts the files back exactly where they were.",
             "Close the browser before disabling or restoring, and restart it afterwards for the change to take effect.",
         ],
+        Tab::Storage => &[
+            "Choose a folder or drive and scan it to rank the largest 200 immediate entries by logical file size, including descendants of each folder. Nothing is scanned automatically or deleted.",
+            "Logical sizes can double-count hard links and differ from allocated or recoverable space. Observed links and reparse entries are skipped. Errors, cancellation and a directory-depth limit produce partial results; read the details before drawing conclusions.",
+            "Scans run in the background and can be cancelled at filesystem checkpoints. Network or device calls can take time to return. Full paths are selectable; no file contents are read or uploaded.",
+        ],
         Tab::Slowdown => &[
             "Choose an inclusive date range and click Refresh to read locally recorded installs, updates, removals and autostart changes.",
             "Startup figures are current Windows measurements, not before-and-after comparisons. A nearby change is a clue, not proof of what caused a slowdown. Unmeasured changes are never treated as zero impact.",
@@ -1563,6 +1581,7 @@ impl App {
                 order.insert(11, Tab::Shell);
                 order.insert(12, Tab::Gatekeeper);
                 order.insert(13, Tab::Slowdown);
+                order.insert(14, Tab::Storage);
                 let pos = order.iter().position(|t| *t == self.tab).unwrap_or(0);
                 let n = order.len();
                 let next = if back {
@@ -1598,6 +1617,7 @@ impl App {
                 // is what someone pressing F5 here is asking for.
                 Tab::Gatekeeper => self.scan_gatekeeper(),
                 Tab::Slowdown => self.refresh_slowdown(ctx),
+                Tab::Storage => self.start_storage_scan(ctx),
                 Tab::Logs => self.reload_logs(),
                 Tab::Backups => self.reload_backups(),
                 _ => {}
@@ -1697,6 +1717,7 @@ impl eframe::App for App {
             Tab::ExtInv => self.ui_extinv(ctx),
             Tab::Gatekeeper => self.ui_gatekeeper(ctx),
             Tab::Slowdown => self.ui_slowdown(ctx),
+            Tab::Storage => self.ui_storage(ctx),
             Tab::Settings => self.ui_settings(ctx),
         }
         self.page_transition(ctx);

@@ -130,3 +130,30 @@ checks against the preserved source baseline. New report controls use translatio
 keys with English fallback; translated strings and actual Windows UI behavior
 still require review. The source baseline was compared by Git blob hash against
 the remote PR tree before publication; no unrelated remote file was replaced.
+
+## Read-only storage overview
+
+Added storage.rs and the regular-interface Storage overview page. Scans are
+explicit, backgrounded and cancellable at filesystem checkpoints. Retains the
+largest 200 immediate entries and first 100 error details, while totals/counts
+include measured entries beyond those lists. The iterative subtree traversal
+bounds open directory frames at 256 levels; observed links and Windows reparse
+entries are skipped. Errors, skips, depth limits and cancellation are visible
+partial-result states. Existing results remain during a replacement scan. Paths
+are selectable; controls use existing tooltip/focus/assistive-text helpers.
+
+This first slice measures logical file lengths only: no allocated-space or
+reclaim guarantee, hard-link deduplication, treemap, deletion, automatic scan,
+saved history, or content hashing. It is not a filesystem snapshot/security
+boundary. Ancestor links may resolve the selected root, and concurrent changes
+can race metadata checks. Blocked filesystem calls cannot be interrupted by the
+cancel flag. Progress counts entries rather than claiming a known percentage.
+
+Validation: 286 library and 30 application tests passed locally (three suite
+checks ignored); formatting and all-target Clippy passed with existing warnings.
+Five new scanner tests cover nested sizes/ranking and unchanged file contents,
+invalid roots/cancellation, bounded rows with full totals, Unix link skipping,
+and Unix depth-limit partial results. Windows reparse/ACL/long-path, actual
+screen-reader/DPI and UI interactions remain pending. New strings use English
+fallback pending translation review. Release progress/ETA cannot yet be reliably
+estimated across all remaining tools.

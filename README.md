@@ -206,6 +206,28 @@ Watches for programs that add themselves to Windows startup.
 - **Honest attribution:** each entry names the install log that explains it, with the evidence, or says the origin is unknown. The Installer Decrapifier's verdict and reasons are shown alongside.
 - **You choose when it looks:** scans run when you click *Scan now* (F5) or run `installscope gatekeeper scan`. Nothing runs in the background, and the navigation shows how many entries are waiting. Services and scheduled tasks stay on the Startup page.
 
+### Storage overview
+
+Inspect a folder or drive without deleting anything. Choose a folder (or type a
+path), then **Scan storage**. The regular interface ranks the largest 200 immediate
+files and subfolders by logical file size, including scanned descendants of each
+folder. Full paths are selectable. **Cancel scan** requests cancellation at the
+next filesystem checkpoint and keeps explicitly labeled partial results; blocked
+network/device calls may take time to return. F5 repeats a scan for the entered path.
+
+Summary totals include all measured entries, even when only 200 rows are shown.
+Skipped links/reparse points, access failures, and the 256-level subtree depth
+limit produce partial results; the first 100 error details remain visible.
+Observed links and Windows reparse entries are skipped, but concurrent filesystem
+changes can race checks. The selected path may resolve through an ancestor link.
+The scan is not a filesystem snapshot or a security boundary.
+
+Sizes are logical file lengths, not allocated space or a promise of reclaimable
+bytes. Hard-linked files can be counted more than once. There is no treemap,
+file deletion, automatic scan, saved scan history, or file-content hashing in
+this first view. Windows interaction, reparse handling and accessibility still
+require client verification.
+
 ### Cleaner (junk cleaner)
 
 After a reviewed cleanup, **Cleanup details** lists removed files, files already

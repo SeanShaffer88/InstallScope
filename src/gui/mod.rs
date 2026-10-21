@@ -27,6 +27,7 @@ mod settings_tab;
 mod shell_ui;
 mod slowdown_ui;
 mod startup_tab;
+mod storage_ui;
 mod theme;
 mod transfer_ui;
 mod widgets;
