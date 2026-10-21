@@ -4,6 +4,22 @@ Planned for future releases, roughly in priority order. Vote or comment on the
 matching GitHub issue to move something up. Features that already exist are
 listed in the [README](README.md#features).
 
+## Product direction
+
+InstallScope is a cohesive local Windows toolkit for reclaiming disk space,
+reviewing bloat and telemetry, thorough program removal, install monitoring,
+program migration, developer containment, temporary scratch storage, conservative
+registry repair, and read-only VSS browsing. Existing tools and planned tools must
+remain clearly distinguished.
+
+Prioritize shared review, recovery, actionable diagnostics, and accessible guidance
+before adding more surfaces. New and experienced users should follow the same
+predictable sequence: scan, explain, review, back up where supported, apply,
+verify, and undo where feasible. Irreversible cleanup must say plainly that no
+backup or undo is available. Never promise completely safe registry cleanup:
+restrict repair to evidence-backed findings, keep uncertain entries by default,
+and back up mutations. Avoid implying registry entry counts measure performance.
+
 ## Next
 
 The core 1.0 feature set is substantially implemented. The next priorities are
@@ -11,6 +27,11 @@ the remaining product goals and a staged UI transition; each should ship as a
 bounded, tested workflow rather than a broad rewrite.
 
 **Core product**
+- **Storage overview** — the regular interface now has an initial read-only,
+  cancellable logical-size survey with bounded top rows and visible partial
+  results. Windows client verification remains pending. Later: allocated and
+  hard-link-aware accounting, accessible treemap alternatives, drill-down and
+  saved growth comparisons. Do not treat logical size as recoverable space.
 - **Native Win32 interface** — replace `egui`/`eframe`/`wgpu` in phases while
   preserving the established dark, black, and red design. Migrate and verify
   complete workflows one at a time; keep the existing working UI until each
@@ -96,13 +117,12 @@ states what has shipped and what is still open.
   Still open: a **Fix** action on a finding, an "Undo this operation" shortcut
   beside it, and running the same pass after cleaning operations (today it
   runs on removal plans).
-- **Slowdown Detective** — answer "why is my PC slower than it was?": the user
-  picks a baseline date; diff installs, updates, autostarts, scheduled tasks,
-  and services since then; rank contributors by measured data (boot
-  diagnostics, usage-tracker's startup/CPU cost); offer one-click **Delay
-  start**, **Disable**, **Uninstall…**, or **Keep**. History accumulates locally
-  over time — ship the capture early, and show honest empty states on fresh
-  installs.
+- **Slowdown Detective** — history capture, CLI reports and a read-only GUI now
+  cover recorded installs, updates, removals and autostart changes, with inclusive
+  date filters and current startup measurements where available. Remaining:
+  services/scheduled-task history, before/after measurements, and contextual
+  Delay/Disable/Uninstall actions through reviewed safety workflows. Timing alone
+  must never be presented as proof of causation.
 - **Autostart Gatekeeper** — opt-in (Advanced) review of the programs that
   start with Windows. Detection, attribution and the Decrapifier verdicts are
   wired to both the command line (`installscope gatekeeper`) and an

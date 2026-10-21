@@ -106,6 +106,11 @@ pub struct ZipArchive<R: Read + Seek> {
 impl<R: Read + Seek> ZipArchive<R> {
     pub fn new(mut src: R) -> io::Result<Self> {
         let len = src.seek(SeekFrom::End(0))?;
+        // No end record can fit in a shorter input. Guard before scanning:
+        // saturating_sub alone would still inspect offset zero in an empty slice.
+        if len < 22 {
+            return Err(bad("not a ZIP file: end record is missing"));
+        }
         // The end record is 22 bytes plus a comment of up to 64 KB.
         let tail_len = len.min(22 + 65_535) as usize;
         let mut tail = vec![0u8; tail_len];
@@ -534,6 +539,40 @@ mod tests {
             z.write_all(data).unwrap();
         }
         z.finish().unwrap().into_inner()
+    }
+
+    #[test]
+    fn rejects_short_inputs_without_panicking() {
+        for len in 0..22 {
+            for byte in [0, b'P', 0xff] {
+                assert!(ZipArchive::new(Cursor::new(vec![byte; len])).is_err());
+            }
+        }
+    }
+
+    #[test]
+    fn rejects_every_truncated_prefix() {
+        let zip = build(&[("example.txt", b"payload")]);
+        for end in 0..zip.len() {
+            assert!(
+                ZipArchive::new(Cursor::new(&zip[..end])).is_err(),
+                "prefix {end}"
+            );
+        }
+        assert!(ZipArchive::new(Cursor::new(zip)).is_ok());
+    }
+
+    #[test]
+    fn empty_archive_and_comment_signatures() {
+        let empty = build(&[]);
+        assert!(ZipArchive::new(Cursor::new(empty.clone()))
+            .unwrap()
+            .is_empty());
+        // An end-record signature in the comment must not hide the real record.
+        let mut commented = empty;
+        commented[20..22].copy_from_slice(&4u16.to_le_bytes());
+        commented.extend_from_slice(&EOCD.to_le_bytes());
+        assert!(ZipArchive::new(Cursor::new(commented)).unwrap().is_empty());
     }
 
     #[test]
