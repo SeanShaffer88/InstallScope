@@ -1,12 +1,13 @@
 # Portable Builder Kit — Rust core
 
 Embed reliable PortableApps.com package checks and build-result handling in Rust
-software without a Python runtime. MIT, no runtime dependencies, Rust 1.85+.
+software without a Python runtime. MIT, Rust 1.85+. The Windows supervisor uses
+`windows-sys` bindings to built-in OS facilities; no additional runtime is installed.
 This is an independent project; no PortableApps.com endorsement is implied.
 
 This native core succeeds the initial Python reference implementation for
 InstallScope integration. It deliberately reuses the host's cryptography,
-compiler provisioning and process runner. It does not duplicate the existing
+compiler provisioning, with an optional reusable process supervisor. It does not duplicate the existing
 capture engine or claim to turn every installed application into a portable app.
 
 ## Integrate
@@ -64,6 +65,59 @@ tool-distribution verification, licensing, signing and source provenance remain
 host responsibilities. Never hash a freshly downloaded untrusted EXE and call
 that independent verification.
 
+## Compiler supervision and cancellation
+
+```rust,no_run
+use portable_builder_kit::process::{run_tool, ToolRequest};
+use std::{path::PathBuf, time::Duration};
+let request = ToolRequest {
+    executable: PathBuf::from(r"C:\Tools\PortableApps.comInstaller.exe"),
+    arguments: vec![r"C:\Build\ExamplePortable".into()],
+    working_directory: None,
+    timeout: Duration::from_secs(600),
+};
+// Supply your worker's cancellation flag here. No shell or automatic elevation.
+let result = run_tool(&request, &|| false);
+```
+
+On Windows the child starts suspended, is assigned to a kill-on-close Job Object,
+and is resumed only after assignment succeeds. The runner waits for descendants
+as well as the main tool. Cancellation, timeout, nonzero exits and polling errors
+stop the job. Cleanup failures are explicit errors; never assume an error means
+no output was written. A five-second cleanup allowance follows the tool timeout.
+Between OS calls cancellation is polled at most every 50 ms; slow filesystem/OS
+calls can delay it. Standard input is noninteractive. No output is accumulated in
+memory; use the tool's own logging facility when available.
+
+The Unix development adapter stops and reaps the direct child only. It does not
+claim Windows-style process-tree ownership. This runner is for trusted developer
+tools, not containment of hostile software or a security sandbox. Tool handles
+are not inherited by children; no UAC escalation or breakaway permission is added.
+
+InstallScope's packaging UI exposes **Cancel build** with keyboard/screen-reader
+explanations. It retains captured files; incomplete compiler output may remain
+and must be rebuilt. Compilers time out after ten minutes, downloads after three
+minutes. File preparation/unpacking checks cancellation between phases; they are
+not interrupted mid-write. The compiler's last 64 KiB of diagnostics are read for
+error reporting. Failed NSIS builds retain the complete temporary log and report
+its path; successful builds remove the log. No telemetry or automatic retries of
+failed compilation are added.
+
+For process-lifecycle tests, enable the developer-only `test-fixture` feature:
+
+```sh
+cargo test --manifest-path crates/portable-builder-kit/Cargo.toml --all-targets --features test-fixture --locked
+```
+
+The fixture binary is excluded from normal builds. Tests execute real processes
+for exit codes, timeout, cancellation and Unicode/quoted arguments; Windows also
+tests descendant cleanup and a parent that exits before its child. CI additionally
+compiles an official-source Launcher and an InstallScope installer, silently
+installs the package, runs its test payload, relocates it and verifies an upgrade
+preserves `Data`. That is not a test of the official Installer frontend, nor a
+complete clean-environment or cross-drive portability test. CI configuration by
+itself is not a passing result.
+
 ## Native developer utility
 
 ```sh
@@ -92,8 +146,7 @@ schema validator. Image presence checks do not validate ICO/PNG dimensions or
 contents. PE checks validate DOS and PE signature bounds, not a complete loader
 or Authenticode signature. Ancestor junctions, concurrent file replacement and
 hostile races require OS isolation; this SDK is not a sandbox. Inspect only
-trusted build directories. The current InstallScope adapter still inherits its
-existing process runner's cancellation/timeout limitations.
+trusted build directories. Process supervision is described below.
 
 Actual official installer compilation, clean Windows launches, relocation,
 upgrades preserving Data and crash recovery remain release gates. Do not label

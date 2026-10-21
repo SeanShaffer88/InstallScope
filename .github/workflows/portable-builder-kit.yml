@@ -1,9 +1,9 @@
 name: Portable Builder Kit
 on:
   push:
-    paths: ['crates/portable-builder-kit/**', 'src/pafbuild.rs', 'src/patools.rs', 'src/util.rs', '.github/workflows/portable-builder-kit.yml']
+    paths: ['crates/portable-builder-kit/**', 'src/pafbuild.rs', 'src/patools.rs', 'src/util.rs', 'src/gui/builder.rs', 'examples/pafkit_smoke.rs', '.github/workflows/portable-builder-kit.yml']
   pull_request:
-    paths: ['crates/portable-builder-kit/**', 'src/pafbuild.rs', 'src/patools.rs', 'src/util.rs', '.github/workflows/portable-builder-kit.yml']
+    paths: ['crates/portable-builder-kit/**', 'src/pafbuild.rs', 'src/patools.rs', 'src/util.rs', 'src/gui/builder.rs', 'examples/pafkit_smoke.rs', '.github/workflows/portable-builder-kit.yml']
   workflow_dispatch:
 permissions:
   contents: read
@@ -26,6 +26,19 @@ jobs:
       - name: Format
         run: cargo fmt --manifest-path crates/portable-builder-kit/Cargo.toml -- --check
       - name: Contracts and examples
-        run: cargo test --manifest-path crates/portable-builder-kit/Cargo.toml --all-targets --locked
+        run: cargo test --manifest-path crates/portable-builder-kit/Cargo.toml --all-targets --features test-fixture --locked
       - name: Lint
-        run: cargo clippy --manifest-path crates/portable-builder-kit/Cargo.toml --all-targets --locked -- -D warnings
+        run: cargo clippy --manifest-path crates/portable-builder-kit/Cargo.toml --all-targets --features test-fixture --locked -- -D warnings
+
+  package-smoke:
+    name: Real launcher and package lifecycle (Windows)
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the harmless test payload
+        run: cargo build --manifest-path crates/portable-builder-kit/Cargo.toml --features test-fixture --bin pafkit-test-tool --locked
+      - name: Compile, install, launch, relocate and upgrade
+        run: cargo run --example pafkit_smoke --locked -- crates/portable-builder-kit/target/debug/pafkit-test-tool.exe

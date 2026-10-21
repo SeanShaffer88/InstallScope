@@ -184,6 +184,18 @@ pub fn patch_source(root: &Path) -> Result<()> {
 /// Download the pinned Launcher source from GitHub into the data folder.
 /// Uses curl.exe, which is part of Windows 11.
 pub fn download(data_root: &Path, report: &dyn Fn(&str)) -> Result<Toolchain> {
+    download_with_cancel(data_root, report, &|| false)
+}
+
+fn download_with_cancel(
+    data_root: &Path,
+    report: &dyn Fn(&str),
+    cancel: &dyn Fn() -> bool,
+) -> Result<Toolchain> {
+    if cancel() {
+        return Err(anyhow!("Build cancelled"));
+    }
+
     let dest = candidates(data_root)
         .pop()
         .ok_or_else(|| anyhow!("no data folder"))?;
@@ -191,26 +203,44 @@ pub fn download(data_root: &Path, report: &dyn Fn(&str)) -> Result<Toolchain> {
     std::fs::create_dir_all(&tmp_dir)?;
     let zip = tmp_dir.join("launcher-download.zip");
     report("Downloading the PortableApps.com Launcher (about 6 MB, from GitHub)");
-    let (code, out) = crate::platform::run_hidden(
-        "curl.exe",
-        &[
+    #[cfg(windows)]
+    let curl = std::env::var_os("SystemRoot")
+        .map(PathBuf::from)
+        .ok_or_else(|| anyhow!("Windows system folder is unavailable"))?
+        .join("System32/curl.exe");
+    #[cfg(not(windows))]
+    let curl = PathBuf::from("/usr/bin/curl");
+    let request = portable_builder_kit::process::ToolRequest {
+        executable: curl,
+        arguments: [
             "-L",
             "--fail",
             "--silent",
             "--show-error",
+            "--connect-timeout",
+            "15",
+            "--max-time",
+            "120",
             "--retry",
             "2",
             "-o",
-            &zip.to_string_lossy(),
-            &download_url(),
-        ],
-    )?;
-    if code != 0 {
+        ]
+        .into_iter()
+        .map(std::ffi::OsString::from)
+        .chain([zip.clone().into_os_string(), download_url().into()])
+        .collect(),
+        working_directory: None,
+        timeout: std::time::Duration::from_secs(180),
+    };
+    if let Err(error) = portable_builder_kit::process::run_tool(&request, cancel) {
         let _ = std::fs::remove_file(&zip);
         return Err(anyhow!(
-            "couldn't download the PortableApps.com Launcher: {}",
-            out.trim()
+            "couldn't download the PortableApps.com Launcher: {error}"
         ));
+    }
+    if cancel() {
+        let _ = std::fs::remove_file(&zip);
+        return Err(anyhow!("Build cancelled"));
     }
     report("Unpacking the PortableApps.com Launcher");
     let staging = tmp_dir.join("launcher-staging");
@@ -233,33 +263,84 @@ pub fn download(data_root: &Path, report: &dyn Fn(&str)) -> Result<Toolchain> {
 
 /// Find the toolchain, downloading it when needed.
 pub fn ensure(data_root: &Path, report: &dyn Fn(&str)) -> Result<Toolchain> {
+    ensure_with_cancel(data_root, report, &|| false)
+}
+
+pub fn ensure_with_cancel(
+    data_root: &Path,
+    report: &dyn Fn(&str),
+    cancel: &dyn Fn() -> bool,
+) -> Result<Toolchain> {
+    if cancel() {
+        return Err(anyhow!("Build cancelled"));
+    }
     match find(data_root) {
         Some(t) => Ok(t),
-        None => download(data_root, report),
+        None => download_with_cancel(data_root, report, cancel),
     }
 }
 
-fn run_makensis(tc: &Toolchain, args: &[String]) -> Result<String> {
-    let refs: Vec<&str> = args.iter().map(String::as_str).collect();
-    let (code, out) = crate::platform::run_hidden(&tc.makensis().to_string_lossy(), &refs)?;
-    if code != 0 {
-        let tail: Vec<&str> = out
+fn run_makensis(tc: &Toolchain, args: &[String], cancel: &dyn Fn() -> bool) -> Result<String> {
+    use std::io::{Read, Seek};
+    let log = std::env::temp_dir().join(format!("installscope-nsis-{}.log", crate::util::new_id()));
+    // Reserve our own diagnostic path before handing it to the trusted compiler.
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&log)?;
+    let mut arguments: Vec<std::ffi::OsString> = vec![
+        format!("/O{}", log.display()).into(),
+        "/OUTPUTCHARSET=UTF8".into(),
+    ];
+    arguments.extend(args.iter().map(std::ffi::OsString::from));
+    let request = portable_builder_kit::process::ToolRequest {
+        executable: tc.makensis(),
+        arguments,
+        working_directory: None,
+        timeout: std::time::Duration::from_secs(600),
+    };
+    let result = portable_builder_kit::process::run_tool(&request, cancel);
+    let diagnostics = (|| -> std::io::Result<String> {
+        let mut file = std::fs::File::open(&log)?;
+        let size = file.metadata()?.len();
+        file.seek(std::io::SeekFrom::Start(size.saturating_sub(65536)))?;
+        let mut bytes = Vec::new();
+        file.take(65536).read_to_end(&mut bytes)?;
+        Ok(String::from_utf8_lossy(&bytes).into_owned())
+    })()
+    .unwrap_or_else(|error| format!("Could not read compiler diagnostics: {error}"));
+    if let Err(error) = result {
+        let tail: Vec<_> = diagnostics
             .lines()
             .rev()
             .filter(|l| !l.trim().is_empty())
             .take(6)
             .collect();
         return Err(anyhow!(
-            "NSIS stopped with code {code}: {}",
-            tail.into_iter().rev().collect::<Vec<_>>().join(" / ")
+            "NSIS: {error}: {} (full log: {})",
+            tail.into_iter().rev().collect::<Vec<_>>().join(" / "),
+            log.display()
         ));
     }
-    Ok(out)
+    let _ = std::fs::remove_file(log);
+    Ok(diagnostics)
 }
 
 /// Compile `<package>\<AppID>.exe` from the official Launcher source, the
 /// way the PortableApps.com Launcher Generator does.
 pub fn build_launcher(tc: &Toolchain, pkg: &Path) -> Result<PathBuf> {
+    build_launcher_with_cancel(tc, pkg, &|| false)
+}
+
+pub fn build_launcher_with_cancel(
+    tc: &Toolchain,
+    pkg: &Path,
+    cancel: &dyn Fn() -> bool,
+) -> Result<PathBuf> {
+    if cancel() {
+        return Err(anyhow!("Build cancelled"));
+    }
+
     let info = pkg.join("App").join("AppInfo").join("appinfo.ini");
     let name =
         ini_value(&info, "Details", "Name").ok_or_else(|| anyhow!("appinfo.ini has no Name"))?;
@@ -299,7 +380,7 @@ pub fn build_launcher(tc: &Toolchain, pkg: &Path) -> Result<PathBuf> {
         args.push("/DRUNASADMIN_COMPILEFORCE".into());
     }
     args.push(tc.launcher_nsi().to_string_lossy().to_string());
-    run_makensis(tc, &args)?;
+    run_makensis(tc, &args, cancel)?;
     if !out.is_file() {
         return Err(anyhow!("the launcher wasn't created"));
     }
@@ -314,6 +395,19 @@ pub const INSTALLER_NSI: &str = include_str!("paf_installer.nsi");
 
 /// Build `<AppID>_<version>.paf.exe` next to the package folder.
 pub fn build_installer(tc: &Toolchain, pkg: &Path, work: &Path) -> Result<PathBuf> {
+    build_installer_with_cancel(tc, pkg, work, &|| false)
+}
+
+pub fn build_installer_with_cancel(
+    tc: &Toolchain,
+    pkg: &Path,
+    work: &Path,
+    cancel: &dyn Fn() -> bool,
+) -> Result<PathBuf> {
+    if cancel() {
+        return Err(anyhow!("Build cancelled"));
+    }
+
     let info = pkg.join("App").join("AppInfo").join("appinfo.ini");
     let name =
         ini_value(&info, "Details", "Name").ok_or_else(|| anyhow!("appinfo.ini has no Name"))?;
@@ -352,7 +446,7 @@ pub fn build_installer(tc: &Toolchain, pkg: &Path, work: &Path) -> Result<PathBu
         format!("/DOUTFILE={}", out.display()),
         script.to_string_lossy().to_string(),
     ];
-    run_makensis(tc, &args)?;
+    run_makensis(tc, &args, cancel)?;
     if !out.is_file() {
         return Err(anyhow!("the installer wasn't created"));
     }
@@ -399,7 +493,7 @@ pub fn build_silent_setup(
         format!("/DOUTFILE={}", out.display()),
         script.to_string_lossy().to_string(),
     ];
-    run_makensis(tc, &args)?;
+    run_makensis(tc, &args, &|| false)?;
     if !out.is_file() {
         return Err(anyhow!("the setup file wasn't created"));
     }

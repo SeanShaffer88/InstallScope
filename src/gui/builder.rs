@@ -163,6 +163,7 @@ impl App {
                 }
                 Err(e) => self.builder.error = Some(e),
             }
+            self.refresh_tools(ctx);
         }
     }
 
@@ -180,14 +181,18 @@ impl App {
         self.builder.compiled = None;
         let stage = self.builder.stage.clone();
         let root = self.store.root.clone();
-        self.builder.compile_job = Some(Job::spawn(ctx, move |_| {
-            let r = pafbuild::compile(&dir, &pkg.app_id, &tools, &root, &|p| {
-                *stage.lock().unwrap() = p.to_string()
-            })
+        self.builder.compile_job = Some(Job::spawn(ctx, move |progress| {
+            let r = pafbuild::compile_with_cancel(
+                &dir,
+                &pkg.app_id,
+                &tools,
+                &root,
+                &|p| *stage.lock().unwrap() = p.to_string(),
+                &|| progress.cancelled(),
+            )
             .map_err(|e| e.to_string());
             r
         }));
-        self.builder.toolchain_ready = true;
     }
 
     fn start_capture(&mut self, ctx: &egui::Context) {
@@ -623,6 +628,14 @@ impl App {
                 spinner(ui);
                 ui.label(RichText::new(t(&stage)).strong());
             });
+            if let Some(job) = &self.builder.compile_job {
+                let stopping = job.progress.cancelled();
+                small_muted(ui, t("Stopping a build keeps the captured package files. An incomplete executable may remain; rebuild before using it."));
+                if super::a11y::explain(
+                    ui.add_enabled(!stopping, egui::Button::new(if stopping { t("Stopping build…") } else { t("Cancel build") })),
+                    &t("Stops the compiler and its child processes on Windows. Captured application files are kept. File preparation may take a moment to stop; rebuild before using any output."),
+                ).clicked() { job.cancel(); }
+            }
             if let Some(j) = &self.builder.capture_job {
                 let p = j.progress.phase();
                 if !p.is_empty() && p != "Done" {

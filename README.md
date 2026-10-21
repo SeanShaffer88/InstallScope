@@ -449,7 +449,8 @@ Developers embedding package creation can use the native Rust
 [Portable Builder Kit](crates/portable-builder-kit/README.md). It provides static
 preflight and verified build-artifact selection without adding a Python runtime.
 InstallScope uses it to reject failed external tools and stale or ambiguous
-installer output. These checks do not certify full format compliance or runtime
+installer output. Package compilation supports cancellation and bounded compiler
+execution, with compiler-tree cleanup on Windows. These checks do not certify full format compliance or runtime
 portability; the SDK README records verification boundaries and release gates.
 
 ## Contributing

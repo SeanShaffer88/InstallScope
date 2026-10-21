@@ -1,8 +1,10 @@
-//! Independent PortableApps.com build integration primitives. No runtime dependencies.
+//! Independent PortableApps.com build integration primitives; no additional runtime installation.
 //!
-//! The host supplies SHA-256 and process supervision. Keeping those policies in
-//! the host avoids duplicating crypto, UI threading, cancellation and elevation.
+//! The host supplies SHA-256 and UI policy; the optional process module supplies
+//! bounded compiler execution without adding a shell or automatic elevation.
 //! Static validation is preflight, not certification or a runtime portability test.
+pub mod process;
+
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs::{self, File, Metadata};
 use std::io::{self, Read, Seek, SeekFrom};

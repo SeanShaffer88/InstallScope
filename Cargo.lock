@@ -2284,6 +2284,9 @@ dependencies = [
 [[package]]
 name = "portable-builder-kit"
 version = "0.2.0"
+dependencies = [
+ "windows-sys 0.59.0",
+]
 
 [[package]]
 name = "potential_utf"

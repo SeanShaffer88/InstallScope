@@ -1310,6 +1310,21 @@ pub fn compile(
     data_root: &Path,
     report: &dyn Fn(&str),
 ) -> Result<Compiled> {
+    compile_with_cancel(pkg_dir, app_id, tools, data_root, report, &|| false)
+}
+
+/// Compile with cooperative cancellation, including the running compiler tree on Windows.
+pub fn compile_with_cancel(
+    pkg_dir: &Path,
+    app_id: &str,
+    tools: &PaTools,
+    data_root: &Path,
+    report: &dyn Fn(&str),
+    cancel: &dyn Fn() -> bool,
+) -> Result<Compiled> {
+    if cancel() {
+        return Err(anyhow!("Build cancelled"));
+    }
     portable_builder_kit::validate_app_id(app_id)?;
     let metadata_id = portable_builder_kit::package_app_id(pkg_dir)?;
     if metadata_id != app_id {
@@ -1318,14 +1333,18 @@ pub fn compile(
         ));
     }
     let mut out = Compiled::default();
-    let quote = |p: &Path| format!("\"{}\"", p.display());
     // The launcher: compiled from the official PortableApps.com Launcher
     // source, which InstallScope carries (or fetches once) with its compiler.
-    let toolchain = crate::patools::ensure(data_root, report);
+    let toolchain = crate::patools::ensure_with_cancel(data_root, report, cancel);
+    if cancel() {
+        return Err(anyhow!("Build cancelled"));
+    }
     match (&toolchain, &tools.launcher_generator) {
         (Ok(tc), _) => {
             report("Making the launcher");
-            out.launcher = Some(crate::patools::build_launcher(tc, pkg_dir)?);
+            out.launcher = Some(crate::patools::build_launcher_with_cancel(
+                tc, pkg_dir, cancel,
+            )?);
         }
         (Err(_), Some(g)) => {
             report("Making the launcher");
@@ -1333,9 +1352,7 @@ pub fn compile(
             if exe.try_exists()? {
                 std::fs::remove_file(&exe).context("close the old launcher and try again")?;
             }
-            let code =
-                platform::spawn_command_line(&format!("{} {}", quote(g), quote(pkg_dir)))?.wait();
-            portable_builder_kit::require_success("PortableApps.com Launcher Generator", code)?;
+            run_package_tool(g, pkg_dir, cancel)?;
             let exe = pkg_dir.join(format!("{app_id}.exe"));
             if !exe.is_file() {
                 return Err(anyhow!("the Launcher Generator didn't make {app_id}.exe"));
@@ -1359,20 +1376,53 @@ pub fn compile(
             app_id,
             &hash,
         )?;
-        let code =
-            platform::spawn_command_line(&format!("{} {}", quote(i), quote(pkg_dir)))?.wait();
-        out.paf = Some(watch.finish(code, &hash)?.path);
+        let outcome = run_package_tool(i, pkg_dir, cancel)?;
+        out.paf = Some(watch.finish(outcome.exit_code, &hash)?.path);
     } else {
         let tc = toolchain.map_err(|e| anyhow!("{e}"))?;
         let work = data_root.join("tools").join("work");
-        out.paf = Some(crate::patools::build_installer(&tc, pkg_dir, &work)?);
+        out.paf = Some(crate::patools::build_installer_with_cancel(
+            &tc, pkg_dir, &work, cancel,
+        )?);
     }
     Ok(out)
+}
+
+fn run_package_tool(
+    tool: &Path,
+    package: &Path,
+    cancel: &dyn Fn() -> bool,
+) -> Result<portable_builder_kit::process::ToolOutcome> {
+    let tool = std::fs::canonicalize(tool)?;
+    let request = portable_builder_kit::process::ToolRequest {
+        arguments: vec![std::fs::canonicalize(package)?.into_os_string()],
+        working_directory: tool.parent().map(Path::to_path_buf),
+        executable: tool,
+        timeout: std::time::Duration::from_secs(600),
+    };
+    Ok(portable_builder_kit::process::run_tool(&request, cancel)?)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn cancellation_prevents_preparation_or_tool_acquisition() {
+        let temp = crate::util::tempdir().unwrap();
+        let missing = temp.path().join("must-not-be-created");
+        let error = compile_with_cancel(
+            &missing,
+            "DemoPortable",
+            &PaTools::default(),
+            &missing,
+            &|_| panic!("must not start work"),
+            &|| true,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("cancelled"));
+        assert!(!missing.exists());
+    }
 
     #[test]
     fn compilation_rejects_mismatched_metadata_before_tool_acquisition() {

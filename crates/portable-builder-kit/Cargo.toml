@@ -10,3 +10,14 @@ repository = "https://github.com/SeanShaffer88/InstallScope"
 readme = "README.md"
 
 [dependencies]
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Threading", "Win32_System_JobObjects"] }
+
+[features]
+test-fixture = []
+
+[[bin]]
+name = "pafkit-test-tool"
+path = "tests/support/tool_fixture.rs"
+required-features = ["test-fixture"]
