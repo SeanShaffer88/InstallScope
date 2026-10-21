@@ -131,10 +131,13 @@ impl App {
             .show(ctx, |ui| {
                 small_muted(ui, t("Ask in your own words. InstallScope works it out on this PC; nothing is sent anywhere."));
                 ui.add_space(4.0);
-                let r = ui.add(
-                    egui::TextEdit::singleline(&mut self.ask_ui.text)
-                        .hint_text(t("e.g. remove the video converter I downloaded last week"))
-                        .desired_width(f32::INFINITY),
+                let r = super::a11y::explain(
+                    ui.add(
+                        egui::TextEdit::singleline(&mut self.ask_ui.text)
+                            .hint_text(t("e.g. remove the video converter I downloaded last week"))
+                            .desired_width(f32::INFINITY),
+                    ),
+                    &t("Ask in your own words. InstallScope works out what you mean on this PC and searches your programs and install logs; nothing is sent anywhere."),
                 );
                 if self.ask_ui.focus {
                     r.request_focus();
@@ -155,7 +158,9 @@ impl App {
                     ui.add_space(6.0);
                     small_muted(ui, t("Try:"));
                     for ex in EXAMPLES {
-                        if ui.link(t(ex)).clicked() {
+                        if super::a11y::explain(ui.link(t(ex)), &t("Use this example question."))
+                            .clicked()
+                        {
                             self.ask_ui.text = t(ex);
                             run = true;
                         }
@@ -179,7 +184,19 @@ impl App {
                         ui.horizontal(|ui| {
                             if q.action == Action::Remove {
                                 let mut on = self.ask_ui.checked.contains(&p.key);
-                                if ui.checkbox(&mut on, "").changed() {
+                                let resp = super::a11y::explain(
+                                    ui.checkbox(&mut on, ""),
+                                    &t("Tick to include this program in the removal review below."),
+                                );
+                                resp.widget_info(|| {
+                                    egui::WidgetInfo::selected(
+                                        egui::WidgetType::Checkbox,
+                                        true,
+                                        on,
+                                        &p.name,
+                                    )
+                                });
+                                if resp.changed() {
                                     if on {
                                         self.ask_ui.checked.insert(p.key.clone());
                                     } else {
@@ -187,7 +204,12 @@ impl App {
                                     }
                                 }
                             }
-                            if ui.link(RichText::new(&p.name).strong()).clicked() {
+                            if super::a11y::explain(
+                                ui.link(RichText::new(&p.name).strong()),
+                                &t("Opens this program on the Programs page."),
+                            )
+                            .clicked()
+                            {
                                 goto_program = Some(p.key.clone());
                             }
                             small_muted(ui, format!("{}  {}  {}", p.publisher, p.install_date, if *size > 0 { human_size(*size) } else { String::new() }));
@@ -198,7 +220,12 @@ impl App {
                         small_muted(ui, t("Install logs"));
                         for (id, name, created) in &self.ask_ui.logs {
                             ui.horizontal(|ui| {
-                                if ui.link(name).clicked() {
+                                if super::a11y::explain(
+                                    ui.link(name),
+                                    &t("Opens this install log on the Logs page."),
+                                )
+                                .clicked()
+                                {
                                     goto_log = Some(id.clone());
                                 }
                                 small_muted(ui, created);
@@ -209,10 +236,17 @@ impl App {
                 if q.action == Action::Remove && !self.ask_ui.programs.is_empty() {
                     ui.separator();
                     let n = self.ask_ui.checked.len();
+                    let review_why = if n == 0 {
+                        t("Unavailable: tick at least one program above first.")
+                    } else {
+                        t("Opens the removal review for the ticked programs. Nothing is removed until you go through that review and confirm.")
+                    };
                     ui.horizontal(|ui| {
-                        if ui
-                            .add_enabled(n > 0, egui::Button::new(RichText::new(tf("Review removal of {n} programs…", &[("n", n.to_string())])).color(egui::Color32::WHITE)).fill(theme::ACCENT))
-                            .clicked()
+                        if super::a11y::explain(
+                            ui.add_enabled(n > 0, egui::Button::new(RichText::new(tf("Review removal of {n} programs…", &[("n", n.to_string())])).color(egui::Color32::WHITE)).fill(theme::ACCENT)),
+                            &review_why,
+                        )
+                        .clicked()
                         {
                             uninstall = Some(
                                 self.ask_ui
