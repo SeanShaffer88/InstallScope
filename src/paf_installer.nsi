@@ -1,4 +1,4 @@
-; InstallScope PortableApps.com Format installer
+; SetupSweep PortableApps.com Format installer
 ; Copyright (C) 2026 Sean Shaffer. MIT License: free software, no warranty.
 ;
 ; Installs a PortableApps.com Format package the way PortableApps.com
@@ -6,7 +6,7 @@
 ; replacing App and Other. Understands the PortableApps.com Platform's
 ; /DESTINATION= and /AUTOCLOSE= options and NSIS's /S (silent).
 ;
-; Defines passed by InstallScope: PACKAGE, APPID, NAME, PACKAGEVERSION,
+; Defines passed by SetupSweep: PACKAGE, APPID, NAME, PACKAGEVERSION,
 ; DISPLAYVERSION, OUTFILE.
 
 Unicode true
@@ -48,7 +48,7 @@ VIAddVersionKey /LANG=${LANG_ENGLISH} "FileVersion" "${PACKAGEVERSION}"
 VIAddVersionKey /LANG=${LANG_ENGLISH} "ProductVersion" "${DISPLAYVERSION}"
 VIAddVersionKey /LANG=${LANG_ENGLISH} "LegalCopyright" "See App\AppInfo\appinfo.ini"
 VIAddVersionKey /LANG=${LANG_ENGLISH} "PortableApps.comAppID" "${APPID}"
-VIAddVersionKey /LANG=${LANG_ENGLISH} "PortableApps.comInstallerVersion" "InstallScope"
+VIAddVersionKey /LANG=${LANG_ENGLISH} "PortableApps.comInstallerVersion" "SetupSweep"
 
 Function .onInit
 	${GetParameters} $R0

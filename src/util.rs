@@ -1,5 +1,5 @@
 //! Small helpers: command-line splitting, glob matching, IDs, and the safety
-//! rails that stop InstallScope from ever touching critical system locations.
+//! rails that stop SetupSweep from ever touching critical system locations.
 
 use crate::model::fold;
 use crate::platform::{expand_env, normalize_reg_path};
@@ -265,7 +265,7 @@ fn norm_file(p: &str) -> String {
     lexical_path(p)
 }
 
-/// Folders InstallScope must never delete as a whole, whatever a log or heuristic
+/// Folders SetupSweep must never delete as a whole, whatever a log or heuristic
 /// says. Files *inside* them may still be removed individually. An entry
 /// ending in `\*` also protects every folder directly inside it.
 pub fn protected_dirs() -> Vec<String> {
@@ -816,7 +816,7 @@ mod tests {
 
     #[test]
     fn links_are_removed_without_touching_their_target() {
-        let base = std::env::temp_dir().join(format!("installscope-link-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("setupsweep-link-{}", std::process::id()));
         let target = base.join("target");
         std::fs::create_dir_all(&target).unwrap();
         std::fs::write(target.join("keep.txt"), "keep").unwrap();
@@ -995,7 +995,7 @@ pub fn tempdir() -> std::io::Result<TestDir> {
     let base = std::env::temp_dir();
     loop {
         let p = base.join(format!(
-            "installscope-test-{}-{}-{}",
+            "setupsweep-test-{}-{}-{}",
             std::process::id(),
             N.fetch_add(1, Ordering::Relaxed),
             crate::time::unix_now()

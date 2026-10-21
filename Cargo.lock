@@ -1486,20 +1486,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "installscope"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "eframe",
- "egui",
- "egui_extras",
- "portable-builder-kit",
- "wgpu",
- "windows-sys 0.59.0",
- "winresource",
-]
-
-[[package]]
 name = "jni"
 version = "0.22.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2542,6 +2528,20 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4e7523beb55eece201a2356bee0bbca0d1ab466c14c07703b2e0ee6d42cb0c2c"
 dependencies = [
  "serde_core",
+]
+
+[[package]]
+name = "setupsweep"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "eframe",
+ "egui",
+ "egui_extras",
+ "portable-builder-kit",
+ "wgpu",
+ "windows-sys 0.59.0",
+ "winresource",
 ]
 
 [[package]]

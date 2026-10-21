@@ -11,6 +11,6 @@
     <circle cx="326" cy="329" r="38" fill="#6b0700" stroke="#141113" stroke-width="8"/>
     <path d="m309 329 12 12 23-26" fill="none" stroke="#ece6e9" stroke-width="11" stroke-linecap="round" stroke-linejoin="round"/>
   </g>
-  <text x="250" y="124" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="76" font-weight="700" fill="#ece6e9">InstallScope</text>
-  <text x="254" y="166" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="20" fill="#e05a45">Windows Install, Uninstall &amp; Developer Tools</text>
+  <text x="250" y="124" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="76" font-weight="700" fill="#ece6e9">SetupSweep</text>
+  <text x="254" y="166" font-family="Segoe UI, Inter, Arial, sans-serif" font-size="20" fill="#e05a45">Windows Install, Cleanup &amp; Recovery</text>
 </svg>

@@ -1,4 +1,4 @@
-# Environment for cross-compiling InstallScope to Windows from Linux without
+# Environment for cross-compiling SetupSweep to Windows from Linux without
 # Visual Studio (MinGW-w64 linker, std built from source).
 # Usage: source scripts/cross-env.sh && cargo xbuild-win
 export PATH=/usr/lib/rust-1.91/bin:$PATH

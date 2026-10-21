@@ -149,7 +149,7 @@ pub fn list() -> Result<Vec<RestorePoint>> {
 const SR_KEY: &str = "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\SystemRestore";
 
 /// Create a restore point now. Windows normally allows only one every 24
-/// hours; InstallScope lifts that limit for its own request and puts it back.
+/// hours; SetupSweep lifts that limit for its own request and puts it back.
 pub fn create_restore_point(description: &str) -> Result<()> {
     let safe: String = description
         .chars()
@@ -305,7 +305,7 @@ mod tests {
 
     #[test]
     fn parses_restore_points() {
-        let one = r#"{"SequenceNumber":7,"Description":"Before InstallScope uninstall","CreationTime":"20261015083012.000000-000","RestorePointType":12}"#;
+        let one = r#"{"SequenceNumber":7,"Description":"Before SetupSweep uninstall","CreationTime":"20261015083012.000000-000","RestorePointType":12}"#;
         let p = parse_points(one);
         assert_eq!(p.len(), 1);
         assert_eq!(p[0].created, "2026-10-15 08:30");

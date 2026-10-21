@@ -7,9 +7,9 @@ use super::widgets::*;
 use super::Job;
 use egui::RichText;
 use egui_extras::{Column, TableBuilder};
-use installscope_core::backup::BackupWriter;
-use installscope_core::i18n::{t, tf};
-use installscope_core::startup::{self, ServiceEntry, StartupEntry, TaskEntry};
+use setupsweep_core::backup::BackupWriter;
+use setupsweep_core::i18n::{t, tf};
+use setupsweep_core::startup::{self, ServiceEntry, StartupEntry, TaskEntry};
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum Sub {
@@ -35,14 +35,14 @@ pub struct StartupState {
     pub show_microsoft_tasks: bool,
     pub filter: String,
     /// Other autostart locations, with "target file is missing" flags.
-    pub other: Option<Vec<(installscope_core::autoruns::AutoEntry, bool)>>,
-    pub other_job: Option<Job<Vec<(installscope_core::autoruns::AutoEntry, bool)>>>,
+    pub other: Option<Vec<(setupsweep_core::autoruns::AutoEntry, bool)>>,
+    pub other_job: Option<Job<Vec<(setupsweep_core::autoruns::AutoEntry, bool)>>>,
     pub other_checked: std::collections::BTreeSet<usize>,
     pub show_windows_other: bool,
     /// Boot diagnostics (None inside = not readable) and delayed programs.
-    pub boot: Option<Option<installscope_core::boot::BootInfo>>,
+    pub boot: Option<Option<setupsweep_core::boot::BootInfo>>,
     pub delayed: Vec<String>,
-    pub boot_job: Option<Job<(Option<installscope_core::boot::BootInfo>, Vec<String>)>>,
+    pub boot_job: Option<Job<(Option<setupsweep_core::boot::BootInfo>, Vec<String>)>>,
 }
 
 impl App {
@@ -58,8 +58,8 @@ impl App {
         }));
         self.startup.boot_job = Some(Job::spawn(ctx, |_| {
             (
-                installscope_core::boot::read(),
-                installscope_core::boot::delayed(),
+                setupsweep_core::boot::read(),
+                setupsweep_core::boot::delayed(),
             )
         }));
     }
@@ -83,7 +83,7 @@ impl App {
         &mut self,
         title: &str,
         f: impl FnOnce(
-            &dyn installscope_core::platform::Registry,
+            &dyn setupsweep_core::platform::Registry,
             Option<&mut BackupWriter>,
         ) -> anyhow::Result<()>,
     ) {
@@ -226,12 +226,12 @@ impl App {
         if self.startup.other.is_none() && self.startup.other_job.is_none() {
             let reg = self.reg.clone();
             self.startup.other_job = Some(Job::spawn(ui.ctx(), move |_| {
-                let ix = installscope_core::leftovers::DeepIndex::build(reg.as_ref(), None);
-                let mut list = installscope_core::autoruns::scan(reg.as_ref(), &ix);
-                list.extend(installscope_core::autoruns::wmi_consumers());
+                let ix = setupsweep_core::leftovers::DeepIndex::build(reg.as_ref(), None);
+                let mut list = setupsweep_core::autoruns::scan(reg.as_ref(), &ix);
+                list.extend(setupsweep_core::autoruns::wmi_consumers());
                 list.into_iter()
                     .map(|e| {
-                        let missing = installscope_core::orphans::target_path(&e.target)
+                        let missing = setupsweep_core::orphans::target_path(&e.target)
                             .is_some_and(|p| !std::path::Path::new(&p).exists());
                         (e, missing)
                     })
@@ -259,20 +259,20 @@ impl App {
                     )
                     .clicked()
                 {
-                    let items: Vec<installscope_core::revert::PlanItem> = self
+                    let items: Vec<setupsweep_core::revert::PlanItem> = self
                         .startup
                         .other_checked
                         .iter()
                         .filter_map(|&i| list.get(i))
                         .filter_map(|(e, _)| e.removal.clone().map(|a| (a, e.kind)))
-                        .map(|(action, kind)| installscope_core::revert::PlanItem {
+                        .map(|(action, kind)| setupsweep_core::revert::PlanItem {
                             action,
                             selected: true,
                             exists: true,
                             note: kind.into(),
                         })
                         .collect();
-                    let plan = installscope_core::revert::Plan {
+                    let plan = setupsweep_core::revert::Plan {
                         items,
                         ..Default::default()
                     };
@@ -503,9 +503,9 @@ impl App {
                     row.col(|ui| match boot.as_ref().and_then(|b| b.impact_of(&e.command)) {
                         Some(imp) => {
                             let color = match imp.level() {
-                                installscope_core::boot::Level::High => theme::BAD,
-                                installscope_core::boot::Level::Medium => theme::WARN,
-                                installscope_core::boot::Level::Low => theme::MUTED,
+                                setupsweep_core::boot::Level::High => theme::BAD,
+                                setupsweep_core::boot::Level::Medium => theme::WARN,
+                                setupsweep_core::boot::Level::Low => theme::MUTED,
                             };
                             a11y::explain(
                                 ui.label(RichText::new(t(imp.level().label())).color(color)),
@@ -576,11 +576,11 @@ impl App {
             if on {
                 let title = tf("Delay {name}", &[("name", e.name.clone())]);
                 self.with_backup(&title, |reg, b| {
-                    installscope_core::boot::delay(reg, &e, 120, b)
+                    setupsweep_core::boot::delay(reg, &e, 120, b)
                 });
             } else {
                 let title = tf("Start {name} normally", &[("name", e.name.clone())]);
-                self.with_backup(&title, |reg, _| installscope_core::boot::undelay(reg, &e));
+                self.with_backup(&title, |reg, _| setupsweep_core::boot::undelay(reg, &e));
             }
         }
         if let Some(i) = delete {
@@ -727,7 +727,7 @@ impl App {
         if rows.is_empty() && !self.elevated {
             theme::warning_banner(
                 ui,
-                t("Scheduled tasks can only be read when InstallScope runs as Administrator."),
+                t("Scheduled tasks can only be read when SetupSweep runs as Administrator."),
             );
         }
         let mut toggle: Option<(usize, bool)> = None;

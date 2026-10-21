@@ -398,7 +398,7 @@ mod tests {
 
     #[test]
     fn our_files_open_elsewhere() {
-        let Some(dir) = std::env::var_os("INSTALLSCOPE_PNG_DUMP") else {
+        let Some(dir) = std::env::var_os("SETUPSWEEP_PNG_DUMP") else {
             return;
         };
         let d = std::path::Path::new(&dir);

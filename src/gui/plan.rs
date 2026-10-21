@@ -6,10 +6,10 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use installscope_core::backup::{ActionResult, BackupWriter};
-use installscope_core::i18n::{t, tf};
-use installscope_core::refcount::{annotate_plan, RefLabel, ReferenceIndex};
-use installscope_core::revert::{execute_plan, ExecOptions, Plan, Risk};
+use setupsweep_core::backup::{ActionResult, BackupWriter};
+use setupsweep_core::i18n::{t, tf};
+use setupsweep_core::refcount::{annotate_plan, RefLabel, ReferenceIndex};
+use setupsweep_core::revert::{execute_plan, ExecOptions, Plan, Risk};
 use std::collections::BTreeSet;
 
 pub struct RemovalFlow {
@@ -43,7 +43,7 @@ pub struct RemovalFlow {
     pub results: Option<(Vec<ActionResult>, BackupOutcome)>,
     pub open: bool,
     /// Confidence per plan item, computed once.
-    pub scores: Vec<installscope_core::revert::Confidence>,
+    pub scores: Vec<setupsweep_core::revert::Confidence>,
     /// Reference-count label per plan item, computed once (parallel to
     /// `plan.items`, like `scores`).
     pub ref_labels: Vec<RefLabel>,
@@ -171,7 +171,7 @@ pub fn plan_ui(ui: &mut egui::Ui, flow: &mut RemovalFlow) {
             .plan
             .items
             .iter()
-            .map(installscope_core::revert::confidence)
+            .map(setupsweep_core::revert::confidence)
             .collect();
     }
     // Recompute reference labels the same way (e.g. after Simple mode
@@ -207,7 +207,7 @@ pub fn plan_ui(ui: &mut egui::Ui, flow: &mut RemovalFlow) {
         theme::badge(ui, tf("{n} careful", &[("n", red.to_string())]), theme::BAD);
         if super::a11y::explain(
             ui.small_button(t("Select only green")),
-            &t("Tick only the items InstallScope is confident are safe to remove."),
+            &t("Tick only the items SetupSweep is confident are safe to remove."),
         )
         .clicked()
         {
@@ -455,7 +455,7 @@ impl App {
             && flow.job.is_none()
             && flow.results.is_none()
         {
-            flow.hidden_for_safety = Some(installscope_core::revert::simplify(&mut flow.plan));
+            flow.hidden_for_safety = Some(setupsweep_core::revert::simplify(&mut flow.plan));
             flow.offer_unlogged = false;
             flow.remove_unlogged = false;
         }
@@ -640,10 +640,10 @@ impl App {
                 // Appends its verdict rows to this same results surface; the
                 // backup above (or its absence) remains the Undo.
                 {
-                    use installscope_core::canary;
-                    use installscope_core::leftovers::DeepIndex;
-                    use installscope_core::platform::expand_env;
-                    use installscope_core::util::protected_dirs;
+                    use setupsweep_core::canary;
+                    use setupsweep_core::leftovers::DeepIndex;
+                    use setupsweep_core::platform::expand_env;
+                    use setupsweep_core::util::protected_dirs;
                     let ix = DeepIndex::build(reg.as_ref(), None);
                     let exists: &dyn Fn(&str) -> bool = &|p| std::path::Path::new(p).exists();
                     let verdict = canary::run_from_plan(

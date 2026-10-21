@@ -1,6 +1,6 @@
 //! Autostart Gatekeeper: an opt-in review queue for new autostart entries.
 //!
-//! When turned on (Settings, or `installscope gatekeeper enable`), each scan
+//! When turned on (Settings, or `setupsweep gatekeeper enable`), each scan
 //! compares the programs that start with Windows — Run and RunOnce values and
 //! Startup-folder shortcuts, the set [`crate::startup::list_startup`] reports —
 //! against a stored baseline. Entries that are new or changed since the
@@ -8,12 +8,12 @@
 //! that explains it when the evidence supports that, and judged by the
 //! Installer Decrapifier rules. The user then decides: **allow** (keep the
 //! entry; the baseline advances to include it) or **remove** (delete it,
-//! backed up first like every other removal in InstallScope).
+//! backed up first like every other removal in SetupSweep).
 //!
 //! The Gatekeeper never blocks an installer while it runs and never removes
 //! anything on its own: with no decision from the user, an item stays pending
 //! and its entry stays exactly as it is. Detection runs only when something
-//! asks for a scan (the app, or `installscope gatekeeper scan`); there is no
+//! asks for a scan (the app, or `setupsweep gatekeeper scan`); there is no
 //! background watcher in this slice.
 
 use crate::backup::BackupWriter;
@@ -153,8 +153,14 @@ pub struct Queue {
     pub version: u32,
     pub baseline: Vec<WatchedEntry>,
     pub items: Vec<QueueItem>,
+    /// Local date when the user last opened or snoozed the pending-review
+    /// digest (`YYYY-MM-DD`). Empty means it has never been shown.
+    pub digest_last_shown: String,
 }
-crate::json_struct!(Queue, default, { version, baseline, items });
+crate::json_struct!(Queue, default, { version, baseline, items, digest_last_shown });
+
+/// Minimum interval between non-modal dashboard reminders.
+pub const DIGEST_INTERVAL_DAYS: i64 = 7;
 
 impl Queue {
     pub fn empty() -> Queue {
@@ -162,6 +168,26 @@ impl Queue {
             version: QUEUE_VERSION,
             baseline: Vec::new(),
             items: Vec::new(),
+            digest_last_shown: String::new(),
+        }
+    }
+
+    /// Whether pending entries should be surfaced in the dashboard digest.
+    /// Invalid stored dates fail open and future dates are treated as due, so
+    /// a clock correction or damaged field cannot hide the reminder forever.
+    pub fn digest_due_on(&self, today: crate::time::Date) -> bool {
+        if self.pending().is_empty() {
+            return false;
+        }
+        if self.digest_last_shown.is_empty() {
+            return true;
+        }
+        match crate::time::Date::parse_ymd(&self.digest_last_shown) {
+            Some(last) => {
+                let days = today.days_since(last);
+                days < 0 || days >= DIGEST_INTERVAL_DAYS
+            }
+            None => true,
         }
     }
 
@@ -174,7 +200,7 @@ impl Queue {
             .with_context(|| format!("reading {}", path.display()))?;
         if q.version != QUEUE_VERSION {
             anyhow::bail!(
-                "{} was written by a different InstallScope version (format {}); \
+                "{} was written by a different SetupSweep version (format {}); \
                  it was left untouched",
                 path.display(),
                 q.version
@@ -261,6 +287,19 @@ pub struct ScanSummary {
     pub added: Vec<String>,
     /// Ids of items created for entries that changed since the baseline.
     pub changed: Vec<String>,
+}
+
+/// Establish the first known-good snapshot without creating review items.
+/// Returns `true` only when the queue was empty and its baseline was seeded.
+/// This is used immediately before an explicitly monitored installation so
+/// that its post-install scan can identify what changed during that install.
+pub fn seed_baseline_if_empty(queue: &mut Queue, current: &[WatchedEntry]) -> bool {
+    if queue.baseline.is_empty() && queue.items.is_empty() {
+        queue.baseline = current.to_vec();
+        true
+    } else {
+        false
+    }
 }
 
 fn now_stamp() -> String {
@@ -705,9 +744,59 @@ mod tests {
     }
 
     #[test]
+    fn install_baseline_seed_is_non_reviewing_and_only_happens_once() {
+        let before = run_entry("Existing", "C:\\Apps\\existing.exe");
+        let mut q = Queue::empty();
+        assert!(seed_baseline_if_empty(
+            &mut q,
+            std::slice::from_ref(&before)
+        ));
+        assert_eq!(q.baseline, vec![before.clone()]);
+        assert!(q.items.is_empty());
+
+        let added = run_entry("Added", "C:\\Apps\\added.exe");
+        assert!(!seed_baseline_if_empty(
+            &mut q,
+            std::slice::from_ref(&added)
+        ));
+        let summary = run_scan(&mut q, &[before, added], &[]);
+        assert_eq!(summary.added.len(), 1);
+        assert_eq!(q.pending().len(), 1);
+    }
+
+    #[test]
+    fn digest_is_due_only_for_pending_items_and_handles_date_edges() {
+        let today = crate::time::Date::from_ymd(2026, 10, 21).unwrap();
+        let mut q = Queue::empty();
+        assert!(!q.digest_due_on(today));
+
+        q.items.push(QueueItem {
+            id: "pending".into(),
+            state: ItemState::Pending,
+            ..Default::default()
+        });
+        assert!(q.digest_due_on(today));
+        q.digest_last_shown = "2026-10-14".into();
+        assert!(q.digest_due_on(today));
+        q.digest_last_shown = "2026-10-15".into();
+        assert!(!q.digest_due_on(today));
+        q.digest_last_shown = "invalid".into();
+        assert!(q.digest_due_on(today));
+        q.digest_last_shown = "2026-10-22".into();
+        assert!(q.digest_due_on(today));
+
+        q.items[0].state = ItemState::Allowed;
+        assert!(!q.digest_due_on(today));
+    }
+
+    #[test]
     fn queue_round_trips_and_refuses_other_versions() {
         let tmp = crate::util::tempdir().unwrap();
         let st = Store::at(tmp.path()).unwrap();
+        let legacy: Queue =
+            crate::json::compat::from_str(r#"{"version":1,"baseline":[],"items":[]}"#).unwrap();
+        assert!(legacy.digest_last_shown.is_empty());
+
         let mut q = Queue::empty();
         run_scan(&mut q, &[run_entry("Tray", "C:\\T\\tray.exe")], &[]);
         q.save(&st).unwrap();

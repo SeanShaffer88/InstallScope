@@ -6,8 +6,8 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use installscope_core::alternatives::{self, Alternative, Managers, Via};
-use installscope_core::i18n::{t, tf};
+use setupsweep_core::alternatives::{self, Alternative, Managers, Via};
+use setupsweep_core::i18n::{t, tf};
 use std::collections::HashMap;
 
 #[derive(Default)]

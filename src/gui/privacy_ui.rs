@@ -4,8 +4,8 @@ use super::app::{App, Confirm};
 use super::theme;
 use super::widgets::*;
 use egui::RichText;
-use installscope_core::i18n::t;
-use installscope_core::privacy::{self, Control, State};
+use setupsweep_core::i18n::t;
+use setupsweep_core::privacy::{self, Control, State};
 
 impl App {
     pub fn ui_privacy(&mut self, ctx: &egui::Context) {
@@ -16,7 +16,7 @@ impl App {
                 theme::card(ui, |ui| {
                     ui.label(RichText::new(t("Reviewed Windows privacy controls")).strong());
                     ui.add_space(3.0);
-                    muted(ui, t("InstallScope reads the current registry value. Apply or clear one setting at a time; its previous value is saved in Backups before changing it."));
+                    muted(ui, t("SetupSweep reads the current registry value. Apply or clear one setting at a time; its previous value is saved in Backups before changing it."));
                     ui.add_space(6.0);
                     theme::warning_banner(ui, t("The badge shows the registry value, not proof that Windows enforced it. Windows version, edition, and organization policy can affect behavior. These settings do not turn off required diagnostic data, block network addresses, or disable security and update services."));
                 });
@@ -24,44 +24,65 @@ impl App {
 
                 for definition in privacy::CONTROLS {
                     let state = definition.state(self.reg.as_ref());
+                    let recall_supported = definition.control != Control::RecallSnapshots
+                        || privacy::recall_policy_supported(self.reg.as_ref());
                     let mut change = None;
                     theme::card(ui, |ui| {
                         ui.horizontal_wrapped(|ui| {
                             ui.label(RichText::new(t(definition.title)).strong());
                             ui.with_layout(
                                 egui::Layout::right_to_left(egui::Align::Center),
-                                |ui| match state {
-                                    State::Limited => {
-                                        theme::badge(ui, t("Value limits collection"), theme::OK)
-                                    }
-                                    State::Allowed => {
-                                        theme::badge(ui, t("Value allows collection"), theme::WARN)
-                                    }
-                                    State::Mixed => {
-                                        theme::badge(ui, t("Mixed values"), theme::WARN)
-                                    }
-                                    State::Unconfigured => {
-                                        theme::badge(ui, t("No value set"), theme::MUTED)
-                                    }
-                                    State::Unrecognized => {
-                                        theme::badge(ui, t("Unrecognized value"), theme::BAD)
-                                    }
+                                |ui| {
+                                    let (label, color) = match (definition.control, state) {
+                                        (Control::RecallSnapshots, State::Limited) => {
+                                            ("Snapshot saving blocked by policy", theme::OK)
+                                        }
+                                        (Control::RecallSnapshots, State::Allowed) => {
+                                            ("Policy permits snapshot saving", theme::WARN)
+                                        }
+                                        (Control::RecallSnapshots, State::Unconfigured) => {
+                                            ("No policy override", theme::MUTED)
+                                        }
+                                        (_, State::Limited) => {
+                                            ("Value limits collection", theme::OK)
+                                        }
+                                        (_, State::Allowed) => {
+                                            ("Value allows collection", theme::WARN)
+                                        }
+                                        (_, State::Mixed) => ("Mixed values", theme::WARN),
+                                        (_, State::Unconfigured) => ("No value set", theme::MUTED),
+                                        (_, State::Unrecognized) => {
+                                            ("Unrecognized value", theme::BAD)
+                                        }
+                                    };
+                                    theme::badge(ui, t(label), color);
                                 },
                             );
                         });
                         ui.add_space(4.0);
                         muted(ui, t(definition.effect));
                         small_muted(ui, t(definition.tradeoff));
+                        if let Some(warning) = definition.warning {
+                            ui.add_space(4.0);
+                            theme::warning_banner(ui, t(warning));
+                        }
                         ui.add_space(6.0);
                         ui.horizontal_wrapped(|ui| {
                             if definition.requires_admin && !self.elevated {
                                 theme::badge(ui, t("Administrator required"), theme::WARN);
                                 small_muted(
                                     ui,
-                                    t("Relaunch InstallScope as Administrator to change this PC-wide setting."),
+                                    t("Relaunch SetupSweep as Administrator to change this PC-wide setting."),
                                 );
                             } else {
-                                let apply = state != State::Limited;
+                                if !recall_supported {
+                                    theme::badge(ui, t("Unsupported Windows version or edition"), theme::WARN);
+                                    small_muted(
+                                        ui,
+                                        t("Limiting Recall snapshots requires Windows 11 build 26100.3915 or later and a supported Pro, Enterprise, Education, or IoT Enterprise edition. You can still clear an existing override."),
+                                    );
+                                }
+                                let apply = state != State::Limited && recall_supported;
                                 let label = if apply {
                                     t("Limit this setting")
                                 } else {
@@ -69,7 +90,7 @@ impl App {
                                 };
                                 if super::a11y::explain(
                                     ui.add_enabled(
-                                        apply,
+                                        apply && recall_supported,
                                         egui::Button::new(label).fill(theme::ACCENT),
                                     ),
                                     &t("Backs up the exact previous value, then writes the documented Windows setting."),
@@ -108,17 +129,20 @@ impl App {
                     if let Some(limit) = change {
                         let action = Confirm::PrivacyChange(definition.control, limit);
                         let body = if limit {
+                            let warning = definition.warning.map(|warning| format!("\n\n{}", t(warning))).unwrap_or_default();
                             format!(
-                                "{}\n\n{}\n\nInstallScope will back up the current registry value and write the documented setting. You can restore that backup from the Backups page.",
+                                "{}\n\n{}\n\nSetupSweep will back up the current registry value and write the documented setting. You can restore that backup from the Backups page.{}",
                                 t(definition.effect),
-                                t(definition.tradeoff)
+                                t(definition.tradeoff),
+                                warning,
                             )
                         } else {
+                            let warning = definition.warning.map(|warning| format!("\n\n{}", t(warning))).unwrap_or_default();
                             format!(
                                 "Clear only {}\\{}? The exact current value or values will be backed up first. Windows or an organization policy may set the effective behavior afterward.",
                                 definition.key,
                                 definition.value_names.join(", ")
-                            )
+                            ) + &warning
                         };
                         self.ask(
                             if limit { "Limit this privacy setting?" } else { "Clear this privacy setting value?" },
@@ -139,8 +163,15 @@ impl App {
             self.set_status(t("Unknown privacy setting; nothing changed."));
             return;
         };
+        if limit
+            && control == Control::RecallSnapshots
+            && !privacy::recall_policy_supported(self.reg.as_ref())
+        {
+            self.set_status(t("Recall snapshot policy is unavailable on this Windows version or edition; nothing changed."));
+            return;
+        }
         if definition.requires_admin && !self.elevated {
-            self.set_status(t("This setting applies to the whole PC. Relaunch InstallScope as Administrator to change it."));
+            self.set_status(t("This setting applies to the whole PC. Relaunch SetupSweep as Administrator to change it."));
             return;
         }
         match privacy::apply_with_backup(

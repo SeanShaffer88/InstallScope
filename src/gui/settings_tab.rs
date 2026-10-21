@@ -6,9 +6,9 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use installscope_core::i18n::{self, t, tf};
-use installscope_core::noise::{self, Learned};
-use installscope_core::settings::{FileRoot, Settings};
+use setupsweep_core::i18n::{self, t, tf};
+use setupsweep_core::noise::{self, Learned};
+use setupsweep_core::settings::{FileRoot, Settings};
 
 /// Keyboard shortcuts shown in Settings (keys, description).
 const SHORTCUTS: &[(&str, &str)] = &[
@@ -30,7 +30,7 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ("Ctrl+1 … Ctrl+9", "Go to a page"),
     ("Ctrl+Tab / Ctrl+Shift+Tab", "Next / previous page"),
     ("Ctrl+F", "Search"),
-    ("Ctrl+K", "Ask InstallScope (plain-language search)"),
+    ("Ctrl+K", "Ask SetupSweep (plain-language search)"),
     ("F5", "Refresh"),
     ("F10", "Go to the menu bar (then arrow keys)"),
     ("F1", "Help for this page"),
@@ -139,7 +139,7 @@ impl App {
         let settings = self.settings.clone();
         self.settings_ui.learned = None;
         self.settings_ui.learn_job = Some(Job::spawn(ctx, move |pr| {
-            use installscope_core::snapshot::{diff, take_snapshot};
+            use setupsweep_core::snapshot::{diff, take_snapshot};
             pr.set_phase(t("Taking the first snapshot…"));
             let before = take_snapshot(reg.as_ref(), &settings, pr).map_err(|e| e.to_string())?;
             for left in (1..=LEARN_SECONDS).rev() {
@@ -196,7 +196,7 @@ impl App {
                 .collect::<Vec<_>>()
         };
         let (regs, files) = (pick(&res.registry), pick(&res.files));
-        let date = installscope_core::time::DateTime::now_local().ymd();
+        let date = setupsweep_core::time::DateTime::now_local().ymd();
         noise::append_learned(&mut self.settings.registry_exclusions, &regs, &date);
         noise::append_learned(&mut self.settings.file_exclusions, &files, &date);
         self.save_settings();
@@ -211,7 +211,7 @@ impl App {
     fn ui_noise(&mut self, ui: &mut egui::Ui, ctx: &egui::Context) {
         if a11y::explain(
             ui.checkbox(&mut self.settings.auto_exclusions, t("Automatically ignore temporary files, logs and caches (recommended)")),
-            &t("Uses InstallScope's built-in list of volatile locations in addition to yours. It is updated with InstallScope."),
+            &t("Uses SetupSweep's built-in list of volatile locations in addition to yours. It is updated with SetupSweep."),
         )
         .changed()
         {
@@ -228,7 +228,7 @@ impl App {
                         }
                     });
             });
-        a11y::explain(builtin.header_response, &t("Show the built-in list of temporary files, logs and caches InstallScope ignores on its own. The list is part of InstallScope and cannot be edited here."));
+        a11y::explain(builtin.header_response, &t("Show the built-in list of temporary files, logs and caches SetupSweep ignores on its own. The list is part of SetupSweep and cannot be edited here."));
         ui.add_space(6.0);
         if let Some(job) = &self.settings_ui.learn_job {
             ui.horizontal(|ui| {
@@ -376,7 +376,7 @@ impl App {
                                 changed |= ui.selectable_value(&mut self.settings.language, code.clone(), name).changed();
                             }
                         });
-                        a11y::explain(lang_combo.response.labelled_by(lang_label.id), &t("The language InstallScope's interface is shown in. Windows default follows the language Windows itself uses."));
+                        a11y::explain(lang_combo.response.labelled_by(lang_label.id), &t("The language SetupSweep's interface is shown in. Windows default follows the language Windows itself uses."));
                         if changed {
                             i18n::set_language(&self.settings.language);
                         }
@@ -418,7 +418,7 @@ impl App {
                 ui.add_space(10.0);
                 theme::card(ui, |ui| {
                     ui.label(RichText::new(t("Keyboard")).heading());
-                    small_muted(ui, t("Everything in InstallScope can be used without a mouse. Screen readers such as Narrator and NVDA read every control."));
+                    small_muted(ui, t("Everything in SetupSweep can be used without a mouse. Screen readers such as Narrator and NVDA read every control."));
                     ui.add_space(4.0);
                     egui::Grid::new("keys").num_columns(2).spacing([18.0, 4.0]).show(ui, |ui| {
                         for (keys, what) in SHORTCUTS {
@@ -432,24 +432,24 @@ impl App {
                 theme::card(ui, |ui| {
                     ui.label(RichText::new(t("Safety")).heading());
                     ui.add_space(4.0);
-                    changed |= a11y::explain(ui.checkbox(&mut self.settings.create_restore_point, t("Create a System Restore point before uninstalling")), &t("InstallScope asks Windows for a restore point before each uninstall, so system changes can be rolled back if an uninstall goes wrong. A restore point does not bring back deleted files.")).changed();
+                    changed |= a11y::explain(ui.checkbox(&mut self.settings.create_restore_point, t("Create a System Restore point before uninstalling")), &t("SetupSweep asks Windows for a restore point before each uninstall, so system changes can be rolled back if an uninstall goes wrong. A restore point does not bring back deleted files.")).changed();
                     if self.settings.advanced_mode {
                         changed |= a11y::explain(
                             ui.checkbox(
                                 &mut self.settings.backup_before_removal,
                                 t("Back up everything before removing it (recommended)"),
                             ),
-                            &t("If disabled, files and registry changes made by InstallScope's removal and cleanup workflows cannot be restored from the Backups page."),
+                            &t("If disabled, files and registry changes made by SetupSweep's removal and cleanup workflows cannot be restored from the Backups page."),
                         )
                         .changed();
                         if !self.settings.backup_before_removal {
-                            theme::warning_banner(ui, t("Backups are off. InstallScope cannot restore files or registry changes made by removal and cleanup workflows."));
+                            theme::warning_banner(ui, t("Backups are off. SetupSweep cannot restore files or registry changes made by removal and cleanup workflows."));
                         }
-                        changed |= a11y::explain(ui.checkbox(&mut self.settings.confirm_actions, t("Ask before deleting things")), &t("Ask for confirmation before InstallScope deletes anything. Restoring to a restore point, deleting a backup and deep cleaning always ask even with this off, because they can't be undone.")).changed();
-                        small_muted(ui, t("When off, InstallScope deletes without asking first. Restoring your PC to a restore point, deleting a backup and deep cleaning always ask, because they can't be undone."));
+                        changed |= a11y::explain(ui.checkbox(&mut self.settings.confirm_actions, t("Ask before deleting things")), &t("Ask for confirmation before SetupSweep deletes anything. Restoring to a restore point, deleting a backup and deep cleaning always ask even with this off, because they can't be undone.")).changed();
+                        small_muted(ui, t("When off, SetupSweep deletes without asking first. Restoring your PC to a restore point, deleting a backup and deep cleaning always ask, because they can't be undone."));
                         changed |= a11y::explain(
                             ui.checkbox(&mut self.settings.use_recycle_bin, t("Also send removed files to the Recycle Bin")),
-                            &t("Removed files are also kept in the Recycle Bin, using extra disk space. This is separate from InstallScope's own backups."),
+                            &t("Removed files are also kept in the Recycle Bin, using extra disk space. This is separate from SetupSweep's own backups."),
                         )
                         .changed();
                         changed |= a11y::explain(
@@ -496,7 +496,7 @@ impl App {
                             ui.end_row();
                         });
                         if !self.settings.local_model_url.is_empty() {
-                            if let Err(e) = installscope_core::llm::parse_local_url(&self.settings.local_model_url) {
+                            if let Err(e) = setupsweep_core::llm::parse_local_url(&self.settings.local_model_url) {
                                 theme::warning_banner(ui, t(&e.to_string()));
                             }
                         }
@@ -510,7 +510,7 @@ impl App {
                     if self.settings.advanced_mode {
                         refresh |= a11y::explain(ui.checkbox(&mut self.settings.show_system_components, t("Show system components and updates")), &t("Also list Windows' own components and updates on the Programs page. They are part of Windows; most people never need to see them.")).changed();
                     }
-                    refresh |= a11y::explain(ui.checkbox(&mut self.settings.show_store_apps, t("Load Microsoft Store apps at startup")), &t("Load apps from the Microsoft Store into the program list when InstallScope starts. Turning it off starts InstallScope a little faster but hides those apps.")).changed();
+                    refresh |= a11y::explain(ui.checkbox(&mut self.settings.show_store_apps, t("Load Microsoft Store apps at startup")), &t("Load apps from the Microsoft Store into the program list when SetupSweep starts. Turning it off starts SetupSweep a little faster but hides those apps.")).changed();
                     if refresh {
                         changed = true;
                         self.programs.needs_refresh = true;
@@ -526,16 +526,16 @@ impl App {
                             self.auto_watch = Some(v);
                         }
                         if self.auto_watch.is_none() && self.auto_watch_job.is_none() {
-                            self.auto_watch_job = Some(super::Job::spawn(ui.ctx(), |_| installscope_core::autowatch::is_enabled()));
+                            self.auto_watch_job = Some(super::Job::spawn(ui.ctx(), |_| setupsweep_core::autowatch::is_enabled()));
                         }
                         let mut on = self.auto_watch.unwrap_or(false);
                         let r = ui.add_enabled(
                             self.elevated && self.auto_watch.is_some(),
                             egui::Checkbox::new(&mut on, t("Record installations automatically, even ones I forget to monitor")),
                         );
-                        let r = a11y::explain(r, &t("InstallScope starts with Windows and records installations on its own, so they can be removed precisely later. It needs Administrator rights, so the box is unavailable when InstallScope is not running as Administrator."));
+                        let r = a11y::explain(r, &t("SetupSweep starts with Windows and records installations on its own, so they can be removed precisely later. It needs Administrator rights, so the box is unavailable when SetupSweep is not running as Administrator."));
                         if r.changed() {
-                            let res = if on { installscope_core::autowatch::enable() } else { installscope_core::autowatch::disable() };
+                            let res = if on { setupsweep_core::autowatch::enable() } else { setupsweep_core::autowatch::disable() };
                             match res {
                                 Ok(()) => self.auto_watch = Some(on),
                                 Err(e) => self.set_status(e.to_string()),
@@ -557,7 +557,22 @@ impl App {
                             &t("Compares the programs that start with Windows with a saved baseline whenever a scan runs, and queues anything new for you to keep or remove. It never blocks an installer and never removes an entry without your decision."),
                         )
                         .changed();
-                        small_muted(ui, t("Opt-in and off by default. Nothing runs in the background: a scan happens when you click Scan now on the Autostart Gatekeeper page, or run \"installscope gatekeeper scan\". Run and RunOnce entries and Startup-folder shortcuts are covered; services and scheduled tasks stay on the Startup page."));
+                        small_muted(ui, t("Opt-in and off by default. Nothing runs in the background: a scan happens when you click Scan now on the Autostart Gatekeeper page, or run \"setupsweep gatekeeper scan\". Run and RunOnce entries and Startup-folder shortcuts are covered; services and scheduled tasks stay on the Startup page."));
+                        let mut after_install = self.settings.gatekeeper_scan_after_install;
+                        let scan_explanation = t("Seed a baseline before a monitored installation, then queue new or changed Run and Startup-folder entries after you save its install log. This only scans; you still decide whether to keep or remove each entry.");
+                        let scan_response = ui.add_enabled(
+                            self.settings.gatekeeper_enabled,
+                            egui::Checkbox::new(
+                                &mut after_install,
+                                t("Scan after monitored installs"),
+                            ),
+                        );
+                        let scan_changed = a11y::explain(scan_response, &scan_explanation).changed();
+                        if scan_changed {
+                            self.settings.gatekeeper_scan_after_install = after_install;
+                        }
+                        changed |= scan_changed;
+                        small_muted(ui, t("Runs only for installations recorded from this app’s Monitor page. It scans before and after the install, and never blocks the installer or changes startup entries."));
                         if a11y::explain(
                             ui.button(format!("→ {}", t("Open the review queue"))),
                             &t("Go to the Autostart Gatekeeper page, where every new startup entry waits until you keep or remove it."),
@@ -579,23 +594,23 @@ impl App {
                     let reg = self.reg.clone();
                     let (machine, mut user) = *self.settings_ui.shell_registered.get_or_insert_with(|| {
                         (
-                            installscope_core::shell::is_registered(reg.as_ref(), true),
-                            installscope_core::shell::is_registered(reg.as_ref(), false),
+                            setupsweep_core::shell::is_registered(reg.as_ref(), true),
+                            setupsweep_core::shell::is_registered(reg.as_ref(), false),
                         )
                     });
                     if machine {
-                        ui.label(format!("✔ {}", t("\"Install with InstallScope\" is in the right-click menu for all users (added by Setup).")));
+                        ui.label(format!("✔ {}", t("\"Install with SetupSweep\" is in the right-click menu for all users (added by Setup).")));
                     } else if a11y::explain(
-                        ui.checkbox(&mut user, t("Add \"Install with InstallScope\" to the right-click menu of installers")),
-                        &t("Put Install with InstallScope on the right-click menu of installer files (.exe and .msi), for your user account only, so installations can be monitored from Explorer."),
+                        ui.checkbox(&mut user, t("Add \"Install with SetupSweep\" to the right-click menu of installers")),
+                        &t("Put Install with SetupSweep on the right-click menu of installer files (.exe and .msi), for your user account only, so installations can be monitored from Explorer."),
                     )
                     .changed()
                     {
                         let res = if user {
                             let exe = std::env::current_exe().map(|p| p.to_string_lossy().to_string()).unwrap_or_default();
-                            installscope_core::shell::register(reg.as_ref(), &exe, &t("Install with InstallScope"), false)
+                            setupsweep_core::shell::register(reg.as_ref(), &exe, &t("Install with SetupSweep"), false)
                         } else {
-                            installscope_core::shell::unregister(reg.as_ref(), false)
+                            setupsweep_core::shell::unregister(reg.as_ref(), false)
                         };
                         if let Err(e) = res {
                             self.set_status(e.to_string());
@@ -611,7 +626,7 @@ impl App {
                 if !self.settings.advanced_mode {
                     theme::card(ui, |ui| {
                         small_muted(ui, t("Switch to Advanced mode to change what snapshots capture."));
-                        if a11y::explain(ui.button(t("Reset everything to defaults")), &t("Put every setting back to its default, except the language. InstallScope asks first; install logs and backups are not touched.")).clicked() {
+                        if a11y::explain(ui.button(t("Reset everything to defaults")), &t("Put every setting back to its default, except the language. SetupSweep asks first; install logs and backups are not touched.")).clicked() {
                             self.ask("Reset settings?", t("All settings except the language go back to their defaults."), "Reset", Confirm::ResetSettings);
                         }
                     });
@@ -644,7 +659,7 @@ impl App {
                             self.save_settings();
                             self.set_status(t("Settings saved."));
                         }
-                        if a11y::explain(ui.button(t("Reset everything to defaults")), &t("Put every setting back to its default, except the language. InstallScope asks first; install logs and backups are not touched.")).clicked() {
+                        if a11y::explain(ui.button(t("Reset everything to defaults")), &t("Put every setting back to its default, except the language. SetupSweep asks first; install logs and backups are not touched.")).clicked() {
                             self.ask("Reset settings?", t("All settings except the language go back to their defaults."), "Reset", Confirm::ResetSettings);
                         }
                     });
@@ -658,15 +673,15 @@ impl App {
                         ui.label(t("Data folder"));
                         ui.add(egui::Label::new(RichText::new(self.store.root.to_string_lossy()).monospace()).truncate());
                         if a11y::explain(ui.small_button(t("Open")), &t("Open the data folder in Explorer. Install logs, backups and settings are stored there.")).clicked() {
-                            installscope_core::platform::shell_open(&self.store.root.to_string_lossy());
+                            setupsweep_core::platform::shell_open(&self.store.root.to_string_lossy());
                         }
                     });
                     small_muted(
                         ui,
                         if self.store.portable {
-                            t("Portable mode: everything is stored next to InstallScope.exe.")
+                            t("Portable mode: everything is stored next to SetupSweep.exe.")
                         } else {
-                            t("Tip: put an empty file named \"portable\" next to InstallScope.exe to keep all data beside it.")
+                            t("Tip: put an empty file named \"portable\" next to SetupSweep.exe to keep all data beside it.")
                         },
                     );
                 });

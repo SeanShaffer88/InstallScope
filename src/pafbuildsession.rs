@@ -119,7 +119,7 @@ impl Review {
                 .write(true)
                 .create_new(true)
                 .open(&journal)?;
-            writeln!(file, "InstallScope build invocation journal. This is not a compiler log or official approval.")?;
+            writeln!(file, "SetupSweep build invocation journal. This is not a compiler log or official approval.")?;
             writeln!(
                 file,
                 "Package: {}\nCustom NSIS permitted for this attempt: {}",

@@ -6,7 +6,7 @@ rust-version = "1.85"
 license = "MIT"
 authors = ["Sean Shaffer"]
 description = "Reusable PortableApps package preflight and verified build artifact selection"
-repository = "https://github.com/SeanShaffer88/InstallScope"
+repository = "https://github.com/SeanShaffer88/SetupSweep"
 readme = "README.md"
 
 [dependencies]

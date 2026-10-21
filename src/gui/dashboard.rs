@@ -4,8 +4,8 @@ use super::app::{App, Tab};
 use super::theme;
 use super::widgets::*;
 use egui::RichText;
-use installscope_core::i18n::{t, tf};
-use installscope_core::model::human_size;
+use setupsweep_core::i18n::{t, tf};
+use setupsweep_core::model::human_size;
 
 /// One Command Deck metric tile: a big tabular numeral, a label, and — only
 /// when the tile needs attention — a 3px red top rule and a coloured numeral.
@@ -96,7 +96,7 @@ fn action_row(ui: &mut egui::Ui, icon: &str, title: &str, desc: &str, explain: &
 /// its resolved size in bytes (0 = unknown) and the evidence for calling
 /// it long-unused, if any.
 struct WasterCandidate {
-    program: installscope_core::programs::InstalledProgram,
+    program: setupsweep_core::programs::InstalledProgram,
     size: u64,
     basis: Option<super::programs::UnusedBasis>,
 }
@@ -119,7 +119,7 @@ enum WasterKind {
 struct WasterPanel {
     kind: WasterKind,
     /// (program, size in bytes, days) — largest first, at most 5.
-    entries: Vec<(installscope_core::programs::InstalledProgram, u64, i64)>,
+    entries: Vec<(setupsweep_core::programs::InstalledProgram, u64, i64)>,
     /// Old, sizeable programs left out of a `NotOpened` panel because
     /// Windows has no record of when they were last opened.
     unknown_opened: usize,
@@ -143,8 +143,8 @@ const WASTER_LIMIT: usize = 5;
 /// whose size is unknown cannot be ranked and are counted, not dropped
 /// silently.
 fn space_wasters(candidates: &[WasterCandidate]) -> Option<WasterPanel> {
-    let mut measured: Vec<(installscope_core::programs::InstalledProgram, u64, i64)> = Vec::new();
-    let mut installed: Vec<(installscope_core::programs::InstalledProgram, u64, i64)> = Vec::new();
+    let mut measured: Vec<(setupsweep_core::programs::InstalledProgram, u64, i64)> = Vec::new();
+    let mut installed: Vec<(setupsweep_core::programs::InstalledProgram, u64, i64)> = Vec::new();
     let mut unknown_size = 0usize;
     for c in candidates {
         let (days, is_measured) = match c.basis {
@@ -166,8 +166,8 @@ fn space_wasters(candidates: &[WasterCandidate]) -> Option<WasterPanel> {
         }
     }
     let largest_first =
-        |a: &(installscope_core::programs::InstalledProgram, u64, i64),
-         b: &(installscope_core::programs::InstalledProgram, u64, i64)| b.1.cmp(&a.1);
+        |a: &(setupsweep_core::programs::InstalledProgram, u64, i64),
+         b: &(setupsweep_core::programs::InstalledProgram, u64, i64)| b.1.cmp(&a.1);
     if !measured.is_empty() {
         measured.sort_by(largest_first);
         measured.truncate(WASTER_LIMIT);
@@ -196,7 +196,7 @@ impl App {
         egui::CentralPanel::default().frame(theme::content_frame()).show(ctx, |ui| {
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                 if !self.elevated {
-                    theme::warning_banner(ui, t("InstallScope is not running as Administrator. Some removals will fail. Use \"Run as Administrator\" in the left column."));
+                    theme::warning_banner(ui, t("SetupSweep is not running as Administrator. Some removals will fail. Use \"Run as Administrator\" in the left column."));
                     ui.add_space(10.0);
                 }
                 self.interrupted_ui(ui);
@@ -216,6 +216,72 @@ impl App {
                         });
                     });
                     ui.add_space(10.0);
+                }
+
+                let today = setupsweep_core::time::Date::today_local();
+                let digest_count = self
+                    .settings
+                    .gatekeeper_enabled
+                    .then(|| self.gatekeeper.queue.as_ref())
+                    .flatten()
+                    .filter(|queue| queue.digest_due_on(today))
+                    .map(|queue| queue.pending().len());
+                if let Some(count) = digest_count {
+                    let mut digest_action = None;
+                    theme::deck_panel(ui, |ui| {
+                        ui.horizontal_wrapped(|ui| {
+                            ui.vertical(|ui| {
+                                ui.label(RichText::new(t("Startup review digest")).strong());
+                                muted(
+                                    ui,
+                                    tf(
+                                        "{count} startup change(s) are waiting for your decision.",
+                                        &[("count", count.to_string())],
+                                    ),
+                                );
+                            });
+                            ui.with_layout(
+                                egui::Layout::right_to_left(egui::Align::Center),
+                                |ui| {
+                                    if super::a11y::explain(
+                                        ui.button(t("Remind me in 7 days")),
+                                        &t("Hide this dashboard reminder for seven days. Pending entries remain in the Gatekeeper queue and navigation badge."),
+                                    )
+                                    .clicked()
+                                    {
+                                        digest_action = Some(false);
+                                    }
+                                    if super::a11y::explain(
+                                        theme::primary_button(ui, t("Review startup changes")),
+                                        &t("Record that this reminder was shown and open the Gatekeeper review queue. Nothing changes until you decide for each entry."),
+                                    )
+                                    .clicked()
+                                    {
+                                        digest_action = Some(true);
+                                    }
+                                },
+                            );
+                        });
+                    });
+                    ui.add_space(10.0);
+                    if let Some(open_queue) = digest_action {
+                        if let Some(mut queue) = self.gatekeeper.queue.clone() {
+                            queue.digest_last_shown = today.to_string();
+                            match queue.save(&self.store) {
+                                Ok(_) => {
+                                    self.gatekeeper.queue = Some(queue);
+                                    if open_queue {
+                                        self.tab = Tab::Gatekeeper;
+                                        self.on_tab_opened(ctx, Tab::Gatekeeper);
+                                    }
+                                }
+                                Err(error) => self.set_status(tf(
+                                    "Could not save the reminder date: {error}",
+                                    &[("error", format!("{error:#}"))],
+                                )),
+                            }
+                        }
+                    }
                 }
 
                 let programs = self.programs.list.len();
@@ -265,14 +331,14 @@ impl App {
                     if super::a11y::explain(stat_tile(&mut cols[0], "programs", programs.to_string(), t("Programs installed"), theme::TEXT, false), &t("Open the Programs page: browse everything installed on this PC, and uninstall programs from there.")).clicked() {
                         go = Some((Tab::Programs, Some(super::programs::View::All)));
                     }
-                    if super::a11y::explain(stat_tile(&mut cols[1], "monitored", monitored.to_string(), t("Monitored"), theme::TEXT, false), &t("Open the Programs page showing only the installs InstallScope monitored. Their changes were recorded, so they can be removed precisely.")).clicked() {
+                    if super::a11y::explain(stat_tile(&mut cols[1], "monitored", monitored.to_string(), t("Monitored"), theme::TEXT, false), &t("Open the Programs page showing only the installs SetupSweep monitored. Their changes were recorded, so they can be removed precisely.")).clicked() {
                         go = Some((Tab::Programs, Some(super::programs::View::Monitored)));
                     }
                     let nc = if broken > 0 { theme::WARN } else { theme::TEXT };
                     if super::a11y::explain(stat_tile(&mut cols[2], "broken", broken.to_string(), t("Broken entries"), nc, broken > 0), &t("Open the Programs page showing entries whose program files are missing. They are usually leftovers of programs removed another way, and can be cleaned up from there.")).clicked() {
                         go = Some((Tab::Programs, Some(super::programs::View::Broken)));
                     }
-                    if super::a11y::explain(stat_tile(&mut cols[3], "backups", backups.to_string(), tf("Backups ({size})", &[("size", human_size(backup_bytes))]), theme::TEXT, false), &t("Open the Backups page: the backups InstallScope took before removals, ready to restore. This is where you undo a removal.")).clicked() {
+                    if super::a11y::explain(stat_tile(&mut cols[3], "backups", backups.to_string(), tf("Backups ({size})", &[("size", human_size(backup_bytes))]), theme::TEXT, false), &t("Open the Backups page: the backups SetupSweep took before removals, ready to restore. This is where you undo a removal.")).clicked() {
                         go = Some((Tab::Backups, None));
                     }
                 });
@@ -286,7 +352,7 @@ impl App {
                 ui.add_space(16.0);
                 theme::section_label(ui, t("Quick actions"));
                 ui.add_space(6.0);
-                if action_row(ui, "📡", "Install a program with monitoring", "Record everything it changes so it can be removed precisely later", &t("Open the Monitor page and run an installer while InstallScope watches. Everything it changes is recorded, so it can be removed precisely later.")) {
+                if action_row(ui, "📡", "Install a program with monitoring", "Record everything it changes so it can be removed precisely later", &t("Open the Monitor page and run an installer while SetupSweep watches. Everything it changes is recorded, so it can be removed precisely later.")) {
                     self.tab = Tab::Monitor;
                     self.start_install_and_monitor(ctx);
                 }
@@ -377,7 +443,7 @@ impl App {
                                         small_muted(ui, tf(row_note, &[("n", (days / 30).to_string())]));
                                         ui.add_space(8.0);
                                         ui.label(
-                                            RichText::new(installscope_core::model::human_size(*size))
+                                            RichText::new(setupsweep_core::model::human_size(*size))
                                                 .monospace(),
                                         );
                                     });
@@ -385,7 +451,7 @@ impl App {
                                 ui.separator();
                             }
                             ui.horizontal(|ui| {
-                                small_muted(ui, tf("{size} in total", &[("size", installscope_core::model::human_size(total))]));
+                                small_muted(ui, tf("{size} in total", &[("size", setupsweep_core::model::human_size(total))]));
                                 if super::a11y::explain(ui.button(t("Review and uninstall…")), &t("Start the uninstall wizard for every program listed above. You review everything before anything is removed, and removals are backed up unless backups are off in Settings.")).clicked() {
                                     let chosen: Vec<_> = wasters.iter().map(|w| w.0.clone()).collect();
                                     self.start_uninstall(chosen, false);
@@ -556,7 +622,7 @@ mod tests {
     use super::super::programs::UnusedBasis;
 
     fn candidate(name: &str, size: u64, basis: Option<UnusedBasis>) -> WasterCandidate {
-        let mut program = installscope_core::programs::InstalledProgram::default();
+        let mut program = setupsweep_core::programs::InstalledProgram::default();
         program.key = name.into();
         program.name = name.into();
         WasterCandidate {

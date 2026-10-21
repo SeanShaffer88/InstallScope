@@ -1,14 +1,14 @@
 //! Windows-only integration with explicitly supplied official frontends.
 //! Exercises build, install, launch, relocation and Data-preserving upgrade.
 use anyhow::{anyhow, Context, Result};
-use installscope_core::{
+use portable_builder_kit::process::{run_tool, ToolRequest};
+use setupsweep_core::{
     pafbuild::{self, PaTools},
     pafbuildsession::Review,
     pafproject::Project,
     pafstage::{Prepared, StagePlan},
     util,
 };
-use portable_builder_kit::process::{run_tool, ToolRequest};
 use std::{
     path::{Path, PathBuf},
     time::Duration,
@@ -304,13 +304,13 @@ fn main() -> Result<()> {
     let icon = work.0.join("icon.png");
     std::fs::write(
         &icon,
-        installscope_core::png::encode_rgba(256, 256, &vec![255; 256 * 256 * 4])
+        setupsweep_core::png::encode_rgba(256, 256, &vec![255; 256 * 256 * 4])
             .context("encode fixture icon")?,
     )?;
     let mut project=Project {
         source: source.to_string_lossy().into(), workspace: workspace.to_string_lossy().into(),
-        app_id:"ProbePortable".into(), name:"Probe Portable".into(),publisher:"InstallScope test fixture".into(),
-        homepage:"https://github.com/SeanShaffer88/InstallScope".into(),description:"Harmless packaging lifecycle fixture".into(),
+        app_id:"ProbePortable".into(), name:"Probe Portable".into(),publisher:"SetupSweep test fixture".into(),
+        homepage:"https://github.com/SeanShaffer88/SetupSweep".into(),description:"Harmless packaging lifecycle fixture".into(),
         category:"Utilities".into(),language:"English".into(),package_version:"1.0.0.0".into(),display_version:"1.0".into(),
         program:"Probe/probe.exe".into(),arguments:r#"touch "%PAL:DataDir%\probe.txt""#.into(),directory_move:"yes".into(),
         portability_notes:"Fixture writes only its explicitly supplied Data path. Verify folder relocation and Data-preserving upgrade below.".into(),
@@ -333,7 +333,7 @@ fn main() -> Result<()> {
         ],
     )?;
     let installed = destination.join("ProbePortable");
-    let installed_version = installscope_core::patools::ini_value(
+    let installed_version = setupsweep_core::patools::ini_value(
         &installed.join("App/AppInfo/appinfo.ini"),
         "Version",
         "PackageVersion",
@@ -395,7 +395,7 @@ fn main() -> Result<()> {
     if std::fs::read(installed.join("Data/keep.txt"))? != b"user settings survive upgrade" {
         return Err(anyhow!("upgrade lost user data"));
     }
-    if installscope_core::patools::ini_value(
+    if setupsweep_core::patools::ini_value(
         &installed.join("App/AppInfo/appinfo.ini"),
         "Version",
         "PackageVersion",

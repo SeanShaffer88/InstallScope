@@ -82,7 +82,7 @@ no official installer source is modified to simulate support.
 
 ## Persistence and responsiveness
 
-Project snapshots are InstallScope records outside the package. Saving uses a new
+Project snapshots are SetupSweep records outside the package. Saving uses a new
 filename, never replaces an existing file, and flushes the file on success. Failure
 can leave an incomplete new snapshot with a reported path; earlier files remain
 intact. No atomic-publication or power-loss-durability claim is made.
@@ -159,7 +159,7 @@ checks exported ICO/PNG data; Windows CI also attempts icon loading through Win3
 Distinguish passing results from configured tests. Windows GUI, screen-reader,
 scaling, file-dialog and close-confirmation interaction remain unverified.
 
-The legacy official-source Launcher plus InstallScope-installer fixture still
+The legacy official-source Launcher plus SetupSweep-installer fixture still
 stopped at its first Launcher dialog. It is not evidence that the official
 Installer frontend or this new wizard passed a complete package lifecycle test.
 

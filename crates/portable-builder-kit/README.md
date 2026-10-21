@@ -6,7 +6,7 @@ software without a Python runtime. MIT, Rust 1.85+. The Windows supervisor uses
 This is an independent project; no PortableApps.com endorsement is implied.
 
 This native core succeeds the initial Python reference implementation for
-InstallScope integration. It deliberately reuses the host's cryptography,
+SetupSweep integration. It deliberately reuses the host's cryptography,
 compiler provisioning and offers an optional reusable process supervisor. It does not duplicate the existing
 capture engine or claim to turn every installed application into a portable app.
 
@@ -102,7 +102,7 @@ check, path sandbox or promise of long-path support. `run_tool` applies the same
 resolution to its executable and working directory; arguments remain distinct
 caller-supplied values.
 
-InstallScope's capture workflow exposes **Cancel build**, requires both official
+SetupSweep's capture workflow exposes **Cancel build**, requires both official
 frontends, and retains working files on failure. Its newer guided workflow adds
 project persistence, reviewed staging, official command review and retained build
 attempts. Reviewed Windows execution is enabled after a passing real-tool lifecycle

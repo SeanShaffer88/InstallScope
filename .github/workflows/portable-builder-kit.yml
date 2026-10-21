@@ -81,7 +81,7 @@ jobs:
             Get-Content $_.FullName | Select-Object -Last 80
             Copy-Item $_.FullName (Join-Path compiler-diagnostics ($_.Directory.Parent.Name + '-' + $_.Name))
           }
-          Get-ChildItem "$env:TEMP/installscope-nsis-*.log" -ErrorAction SilentlyContinue | ForEach-Object {
+          Get-ChildItem "$env:TEMP/setupsweep-nsis-*.log" -ErrorAction SilentlyContinue | ForEach-Object {
             Write-Host "Compiler log: $($_.FullName)"
             Get-Content $_.FullName | Select-Object -Last 80
             New-Item -ItemType Directory compiler-diagnostics -Force | Out-Null

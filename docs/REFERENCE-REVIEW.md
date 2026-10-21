@@ -4,7 +4,7 @@ Reviewed 2026-10-21. These links are research leads, not policy sources. They
 do not establish that a setting works on every Windows edition or build. Use
 current Microsoft documentation for Windows behavior, and verify any new
 setting against supported Windows builds before adding it. No source code from
-these repositories was copied into InstallScope.
+these repositories was copied into SetupSweep.
 
 ## Resources
 
@@ -21,7 +21,7 @@ latest commit found in this review is from 2018. The current default-branch
 contents endpoint did not expose a `LICENSE` file, so the historical MIT file
 is not enough to infer the current branch's licensing state.
 
-This is not currently a fit for InstallScope's core workflows: pasted strings
+This is not currently a fit for SetupSweep's core workflows: pasted strings
 are not trustworthy installed-app identities. A future custom-list import
 would need a preview, exact identifier matching, explicit selection, and the
 existing reviewed removal/backup flow; it must never execute arbitrary pasted
@@ -55,7 +55,7 @@ restore workflow. The script dates back to 2021; the latest commit found was a
 README-only change in 2024. No license file was exposed on the current default
 branch, so its implementation must not be copied or redistributed.
 
-## InstallScope decisions
+## SetupSweep decisions
 
 - Keep Windows privacy changes narrow and user-selected. The Windows Privacy
   page records observed state and scope, explains tradeoffs, confirms each
@@ -70,7 +70,23 @@ branch, so its implementation must not be copied or redistributed.
   system services based on these references. Any proposed control needs a
   current authoritative source, supported-build scope, state inspection,
   confirmation, exact backup/restore behavior, and regression coverage.
-- Do not add a standalone list-cleaning surface without a concrete InstallScope
+- Do not add a standalone list-cleaning surface without a concrete SetupSweep
   workflow that benefits from it. If custom package-list import becomes a
   requirement, treat the text as untrusted input and resolve only exact known
   identities through the existing review flow.
+
+## Microsoft Recall policy review
+
+Reviewed 2026-10-21 against Microsoft's current [WindowsAI Policy CSP](https://learn.microsoft.com/en-us/windows/client-management/mdm/policy-csp-windowsai)
+and [Manage Recall for Windows clients](https://learn.microsoft.com/en-us/windows/client-management/manage-recall).
+The `DisableAIDataAnalysis` policy is documented for supported Pro,
+Enterprise, Education, and IoT Enterprise editions on Windows 11 24H2 with
+KB5055627 (build 26100.3915) and later. Enabling it prevents Recall snapshots
+from being saved, and Microsoft states that existing snapshots are deleted.
+
+SetupSweep exposes this as a current-account policy only after checking the
+installed build, update revision, and edition. It displays the deletion effect
+before confirmation and saves the exact prior registry value. That backup does
+not contain Recall snapshots and cannot restore them. Unknown or unsupported
+system profiles fail closed for applying the policy; an existing policy value
+can still be cleared after review.

@@ -7,10 +7,10 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use installscope_core::i18n::{t, tf};
-use installscope_core::model::{human_size, InstallLog};
-use installscope_core::pafbuild;
-use installscope_core::prescreen::{self, Level, Screening};
+use setupsweep_core::i18n::{t, tf};
+use setupsweep_core::model::{human_size, InstallLog};
+use setupsweep_core::pafbuild;
+use setupsweep_core::prescreen::{self, Level, Screening};
 use std::path::PathBuf;
 
 #[derive(Default)]
@@ -79,7 +79,7 @@ impl App {
                     match std::fs::read(work.join("install-log.json"))
                         .ok()
                         .and_then(|b| {
-                            installscope_core::json::compat::from_slice::<InstallLog>(&b).ok()
+                            setupsweep_core::json::compat::from_slice::<InstallLog>(&b).ok()
                         }) {
                         Some(mut log) => {
                             log.tags = vec!["sandbox-preview".into()];
@@ -111,7 +111,7 @@ impl App {
             .store
             .root
             .join("builder")
-            .join(installscope_core::util::new_id());
+            .join(setupsweep_core::util::new_id());
         pc.error = None;
         pc.sandbox_phase = t("Starting Windows Sandbox");
         match pafbuild::start_sandbox(&job, &work) {
@@ -219,7 +219,7 @@ impl App {
                 if !sandbox
                     && super::a11y::explain(
                         ui.button(format!("🧪 {}", t("Try it, then undo"))),
-                        &t("Installs it on this PC while recording every change, shows you what it did, then removes all of it. InstallScope tries to make a restore point first, as an extra safety net."),
+                        &t("Installs it on this PC while recording every change, shows you what it did, then removes all of it. SetupSweep tries to make a restore point first, as an extra safety net."),
                     )
                     .clicked()
                 {

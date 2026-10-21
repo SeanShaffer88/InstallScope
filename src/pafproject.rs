@@ -1,4 +1,4 @@
-//! Saved wizard projects. These are InstallScope records, not part of PAF.
+//! Saved wizard projects. These are SetupSweep records, not part of PAF.
 //! Official tools remain separate processes; no upstream implementation is copied.
 use crate::json;
 use anyhow::{anyhow, Context, Result};

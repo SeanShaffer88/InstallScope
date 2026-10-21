@@ -1,8 +1,8 @@
 //! Guided project planning, preparation and reviewed official-tool builds.
 use super::{a11y, theme, widgets::*};
 use egui::{RichText, Ui};
-use installscope_core::pafproject::{Component, Finding, Project, FORMAT_SOURCE, STEPS};
-use installscope_core::{
+use setupsweep_core::pafproject::{Component, Finding, Project, FORMAT_SOURCE, STEPS};
+use setupsweep_core::{
     pafassets,
     pafstage::{Prepared, StagePlan},
 };
@@ -40,11 +40,10 @@ pub struct Wizard {
     prepare_job: Option<super::Job<Result<Prepared, String>>>,
     prepared: Option<Prepared>,
     stage_status: Arc<Mutex<String>>,
-    build_review_job:
-        Option<super::Job<Result<installscope_core::pafbuildsession::Review, String>>>,
-    build_review: Option<installscope_core::pafbuildsession::Review>,
-    build_job: Option<super::Job<Result<installscope_core::pafbuildsession::Attempt, String>>>,
-    build_attempt: Option<installscope_core::pafbuildsession::Attempt>,
+    build_review_job: Option<super::Job<Result<setupsweep_core::pafbuildsession::Review, String>>>,
+    build_review: Option<setupsweep_core::pafbuildsession::Review>,
+    build_job: Option<super::Job<Result<setupsweep_core::pafbuildsession::Attempt, String>>>,
+    build_attempt: Option<setupsweep_core::pafbuildsession::Attempt>,
     allow_custom_code: bool,
 }
 fn text(ui: &mut Ui, label: &str, value: &mut String, explanation: &str) {
@@ -161,13 +160,13 @@ impl Wizard {
             if a11y::explain(ui.button("New project"),"Start a new project with unanswered permissions. Unsaved answers require confirmation before replacement.").clicked() {
                 if self.project!=self.saved {self.pending=Some(PendingProject::New);} else {self.reset();}
             }
-            if a11y::explain(ui.button("Open project…"),"Open a saved InstallScope PAF project. Unsaved work requires confirmation before replacement.").clicked() {
+            if a11y::explain(ui.button("Open project…"),"Open a saved SetupSweep PAF project. Unsaved work requires confirmation before replacement.").clicked() {
                 if let Some(p)=pick_file("Open package project","Project",&["json"]) {
                     if self.project != self.saved { self.pending=Some(PendingProject::Open(p)); } else { self.open(&ctx,p); }
                 }
             }
             if a11y::explain(ui.button("Save snapshot…"),"Save all answers and the current step to a new JSON file. Existing files are never overwritten; use a new filename for each revision.").clicked() {
-                if let Some(p)=save_file("Save project snapshot",&format!("portable-project-{}.json",installscope_core::util::new_id()),"Project","json") {
+                if let Some(p)=save_file("Save project snapshot",&format!("portable-project-{}.json",setupsweep_core::util::new_id()),"Project","json") {
                     if let Some(prepared)=&self.prepared {self.project.prepared_record=prepared.record.to_string_lossy().into_owned();}
                     let project=self.project.clone();self.io_cancellable=false;
                     self.io_job=Some(super::Job::spawn(&ctx,move |_| project.save_new(&p).map(|_|(p,project,None)).map_err(|e|format!("{e:#}"))));
@@ -242,7 +241,7 @@ impl Wizard {
                             &p.category
                         })
                         .show_ui(ui, |ui| {
-                            for c in installscope_core::pafbuild::CATEGORIES {
+                            for c in setupsweep_core::pafbuild::CATEGORIES {
                                 ui.selectable_value(&mut p.category, c.to_string(), c);
                             }
                         });
@@ -293,7 +292,7 @@ impl Wizard {
                     a11y::explain(selection.response.labelled_by(label.id),"The official Launcher defaults to warning when a package folder has moved. Allow moves only when the application handles them or verified launcher rules compensate. This does not fix absolute paths or prove portability.");
                     ui.hyperlink_to(
                         "Official Launcher settings",
-                        installscope_core::pafproject::LAUNCH_SOURCE,
+                        setupsweep_core::pafproject::LAUNCH_SOURCE,
                     );
                     ui.label("The draft includes the executable, optional arguments and the folder-move policy you selected. File moves, registry handling and custom code require separate review; notes are never converted into cleanup commands automatically.");
                 }
@@ -322,7 +321,7 @@ impl Wizard {
                     ui.label("Installer configuration: use documented defaults. No installer.ini is generated when no custom options have been selected. Existing advanced configuration must be reviewed before a future build.");
                     ui.hyperlink_to(
                         "Official Installer download and documentation",
-                        installscope_core::pafbuild::INSTALLER_URL,
+                        setupsweep_core::pafbuild::INSTALLER_URL,
                     );
                 }
                 7 => {
@@ -491,10 +490,10 @@ impl Wizard {
             )
             .clicked()
             {
-                installscope_core::platform::shell_open(&prepared.package.to_string_lossy());
+                setupsweep_core::platform::shell_open(&prepared.package.to_string_lossy());
             }
             if let Some(root) = prepared.record.parent() {
-                if a11y::explain(ui.button("Open project records and previous builds"),"Open the project folder containing its preparation report and retained build-attempt directories. No build output is executed.").clicked(){installscope_core::platform::shell_open(&root.to_string_lossy());}
+                if a11y::explain(ui.button("Open project records and previous builds"),"Open the project folder containing its preparation report and retained build-attempt directories. No build output is executed.").clicked(){setupsweep_core::platform::shell_open(&root.to_string_lossy());}
             }
         }
         self.build_panel(ui);
@@ -656,8 +655,8 @@ impl Wizard {
             egui::Window::new("Unsaved package project").collapsible(false).resizable(false).show(ctx,|ui| {
                 ui.label("The package project has unsaved answers. Keep working and save a snapshot, or close and discard the in-memory changes. Saved files are unaffected.");
                 if self.io_job.is_some() || self.prepare_job.is_some() || self.build_job.is_some() { ui.label("A project operation or build is still finishing. Wait for it before closing; preparation and builds can be cancelled from the wizard."); }
-                if a11y::explain(ui.button("Keep working"),"Return to InstallScope and retain all answers. Use Save snapshot in Guided PAF project to save them.").clicked() {self.confirm_close=false;}
-                if a11y::explain(ui.add_enabled(self.io_job.is_none() && self.prepare_job.is_none() && self.build_job.is_none(),egui::Button::new("Close and discard unsaved answers")),"Close InstallScope and discard the unsaved project answers. Existing project snapshots and original application files remain unchanged.").clicked() {
+                if a11y::explain(ui.button("Keep working"),"Return to SetupSweep and retain all answers. Use Save snapshot in Guided PAF project to save them.").clicked() {self.confirm_close=false;}
+                if a11y::explain(ui.add_enabled(self.io_job.is_none() && self.prepare_job.is_none() && self.build_job.is_none(),egui::Button::new("Close and discard unsaved answers")),"Close SetupSweep and discard the unsaved project answers. Existing project snapshots and original application files remain unchanged.").clicked() {
                     self.allow_close=true;self.confirm_close=false;ctx.send_viewport_cmd(egui::ViewportCommand::Close);
                 }
             });
@@ -697,7 +696,7 @@ impl Wizard {
             let project=self.project.clone();let path=PathBuf::from(&project.prepared_record);
             if !path.is_absolute(){self.error=Some("Choose an absolute path to the companion project.json.".into());}
             else {self.reconnect_job=Some(super::Job::spawn(ui.ctx(),move |progress|{
-                let result=installscope_core::pafstage::reopen(&path,&project,&||progress.cancelled()).and_then(|p|p.ok_or_else(||anyhow::anyhow!("No completed preparation was found beside that record"))).map_err(|e|format!("{e:#}"));(project,result)
+                let result=setupsweep_core::pafstage::reopen(&path,&project,&||progress.cancelled()).and_then(|p|p.ok_or_else(||anyhow::anyhow!("No completed preparation was found beside that record"))).map_err(|e|format!("{e:#}"));(project,result)
             }));}
         }
         if let Some(job) = &self.reconnect_job {
@@ -738,7 +737,7 @@ impl Wizard {
         ui.label("Use trusted, privately controlled working folders and installed official tools. Close other builds using those tool folders: the official compiler log paths are shared. No downloads or elevation are requested.");
         if a11y::explain(ui.add_enabled(self.build_review_job.is_none(),egui::Button::new("Review official build commands")),"Recheck recorded application bytes and configuration, resolve the selected tools, and show their exact process arguments. No tool runs and no files are written.").clicked() {
             let prepared=prepared.clone();let project=self.project.clone();self.build_review=None;self.allow_custom_code=false;
-            self.build_review_job=Some(super::Job::spawn(ui.ctx(),move |progress| installscope_core::pafbuildsession::Review::create(&prepared,&project,&||progress.cancelled()).map_err(|e|format!("{e:#}"))));
+            self.build_review_job=Some(super::Job::spawn(ui.ctx(),move |progress| setupsweep_core::pafbuildsession::Review::create(&prepared,&project,&||progress.cancelled()).map_err(|e|format!("{e:#}"))));
         }
         if let Some(job) = &self.build_review_job {
             ui.spinner();
@@ -834,7 +833,7 @@ impl Wizard {
             for warning in &attempt.warnings {
                 ui.label(format!("Log warning: {warning}"));
             }
-            if a11y::explain(ui.button("Open build results and logs"),"Open the retained build directory, including failed-attempt diagnostics. No generated installer or launcher is executed.").clicked(){installscope_core::platform::shell_open(&attempt.directory.to_string_lossy());}
+            if a11y::explain(ui.button("Open build results and logs"),"Open the retained build directory, including failed-attempt diagnostics. No generated installer or launcher is executed.").clicked(){setupsweep_core::platform::shell_open(&attempt.directory.to_string_lossy());}
         }
     }
     fn open(&mut self, ctx: &egui::Context, path: PathBuf) {
@@ -843,7 +842,7 @@ impl Wizard {
             Project::load(&path)
                 .and_then(|p| {
                     let restored =
-                        installscope_core::pafstage::reopen(&path, &p, &|| progress.cancelled())
+                        setupsweep_core::pafstage::reopen(&path, &p, &|| progress.cancelled())
                             .map_err(|e| format!("{e:#}"));
                     if progress.cancelled() {
                         return Err(anyhow::anyhow!(

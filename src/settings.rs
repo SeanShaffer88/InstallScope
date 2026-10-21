@@ -30,7 +30,7 @@ pub struct Settings {
     pub registry_exclusions: Vec<String>,
     /// Glob patterns for file noise to ignore.
     pub file_exclusions: Vec<String>,
-    /// Also apply InstallScope's built-in list of volatile locations (temporary
+    /// Also apply SetupSweep's built-in list of volatile locations (temporary
     /// files, logs, browser and app caches).
     pub auto_exclusions: bool,
     /// Copy everything to a backup before deleting it.
@@ -67,6 +67,9 @@ pub struct Settings {
     /// Off by default; the Gatekeeper never blocks an installer and never
     /// removes anything without your decision.
     pub gatekeeper_enabled: bool,
+    /// After a monitored GUI installation is saved, scan Run/RunOnce and
+    /// Startup-folder entries into the Gatekeeper review queue.
+    pub gatekeeper_scan_after_install: bool,
     /// Brighter text and stronger outlines.
     pub high_contrast: bool,
     /// The welcome screen has been completed.
@@ -96,7 +99,7 @@ pub struct Settings {
     /// exclusions (`crate::util::Exclusions`).
     pub cleaner_protect: Vec<String>,
 }
-crate::json_struct!(Settings, default, { language, zoom, registry_roots, file_roots, registry_exclusions, file_exclusions, auto_exclusions, backup_before_removal, create_restore_point, remove_unlogged_files, confirm_actions, use_recycle_bin, restart_explorer, close_programs, local_model_url, local_model_name, show_system_components, show_store_apps, advanced_mode, gatekeeper_enabled, high_contrast, first_run_done, portableapps_dir, packager_name, portable_out_dir, profiles, active_profile, rewind_budget_bytes, cleaner_protect });
+crate::json_struct!(Settings, default, { language, zoom, registry_roots, file_roots, registry_exclusions, file_exclusions, auto_exclusions, backup_before_removal, create_restore_point, remove_unlogged_files, confirm_actions, use_recycle_bin, restart_explorer, close_programs, local_model_url, local_model_name, show_system_components, show_store_apps, advanced_mode, gatekeeper_enabled, gatekeeper_scan_after_install, high_contrast, first_run_done, portableapps_dir, packager_name, portable_out_dir, profiles, active_profile, rewind_budget_bytes, cleaner_protect });
 
 /// A named monitoring scope: what snapshots capture and ignore.
 #[derive(Clone, Debug, PartialEq, Default)]
@@ -224,6 +227,7 @@ impl Default for Settings {
             show_store_apps: false,
             advanced_mode: false,
             gatekeeper_enabled: false,
+            gatekeeper_scan_after_install: false,
             high_contrast: false,
             first_run_done: false,
             portableapps_dir: String::new(),
@@ -445,6 +449,7 @@ mod restore_point_default_tests {
     #[test]
     fn missing_field_gets_the_new_default() {
         assert!(settings_from("{}").create_restore_point);
+        assert!(!settings_from("{}").gatekeeper_scan_after_install);
     }
 
     #[test]
