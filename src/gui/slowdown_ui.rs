@@ -166,7 +166,7 @@ impl App {
                 if r.is_empty() {
                     ui.label(if r.total_events == 0 { t("Not enough history yet. Run installscope history or installscope slowdown to capture a baseline, then run it again after changes. Refresh reads that saved history.") } else { t("No recorded changes in this range. Widen the dates and Refresh.") });
                 }
-                ui.label(t("Measured entries appear first, highest startup cost first; unmeasured entries follow by recency. No measurement means unknown impact, not zero. Services and scheduled-task history are not covered yet."));
+                ui.label(t("Measured entries appear first, highest startup cost first; unmeasured entries follow by recency. No measurement means unknown impact, not zero. Service and scheduled-task changes are included when the local inventory can read them; a change near an install is a clue, not proof of cause."));
                 egui::ScrollArea::vertical().max_height((ui.available_height() - 48.0).max(80.0)).id_salt("slowdown_events").show(ui, |ui| {
                     for (event, impact) in r.events.iter().zip(&loaded.impact) {
                         ui.separator();

@@ -94,8 +94,8 @@ USAGE:
   installscope startup enable|disable <name>     Turn a startup program on or off
   installscope history [--since YYYY-MM-DD] [--json]
                                             Record new changes, then list the
-                                            recorded ones (installs, updates,
-                                            removals, autostart changes)
+                                            recorded ones (program, startup,
+                                            service, task changes)
   installscope slowdown [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--json]
                                             What changed in the period, ranked
                                             by measured startup impact where
@@ -457,8 +457,9 @@ installscope history — the recorded change history
 
 Usage: installscope history [--since YYYY-MM-DD] [--json]
 
-First records any new changes (installs, updates, removals, autostart
-changes) into history.json, then lists them, newest first.
+First records observed program, startup, service and scheduled-task changes
+into history.json, then lists them, newest first. Inventory omissions can
+reflect access limits; an observed change does not establish its cause.
 Confirmation: none.",
     ),
     (

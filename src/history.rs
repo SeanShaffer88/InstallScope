@@ -4,22 +4,23 @@
 //! changed between two dates. That answer is only as good as the history
 //! behind it, so this module's job is to *record* the raw material durably:
 //! dated events for program installs, updates (version changes) and removals,
-//! and for autostart entries added, removed or changed.
+//! for autostart entries added, removed or changed, and for service and
+//! scheduled-task configuration observed changing between captures.
 //!
 //! ## Where events come from
 //!
 //! Nothing here monitors anything new. [`HistoryStore::capture`] is handed
-//! three things InstallScope already sees — the saved install logs, the
-//! installed-program list and the startup list — and derives events from
+//! existing local observations — saved install logs, installed programs,
+//! startup entries, services and scheduled tasks — and derives events from
 //! them:
 //!
 //! - **Install logs** carry exact timestamps and versions, so a first log for
 //!   a program is an install and a later log with a different version is an
 //!   update. A program with logs that has vanished from the installed list
 //!   (and from the stored baseline) is a removal.
-//! - **Diffs against the stored baseline** (the program and autostart state
+//! - **Diffs against the stored baseline** (program, startup, service and task state
 //!   as of the previous capture) catch everything monitoring missed:
-//!   unmonitored installs, updates and removals and autostart changes. Their
+//!   unmonitored installs, updates and removals and startup/service/task changes. Their
 //!   timestamp is when the change was *observed*, which is the honest claim.
 //!
 //! The very first capture only establishes the baseline and records no
@@ -32,7 +33,8 @@
 //!
 //! ```json
 //! { "version": 1, "started": 1760000000, "events": [...],
-//!   "programs": [...], "autostart": [...], "seen_logs": [...] }
+//!   "programs": [...], "autostart": [...], "services": [...],
+//!   "tasks": [...], "seen_logs": [...] }
 //! ```
 //!
 //! `version` is the schema version ([`SCHEMA_VERSION`]). Loading is tolerant
@@ -75,6 +77,12 @@ pub enum HistoryEventKind {
     AutostartAdded,
     AutostartRemoved,
     AutostartChanged,
+    ServiceAdded,
+    ServiceRemoved,
+    ServiceChanged,
+    TaskAdded,
+    TaskRemoved,
+    TaskChanged,
 }
 crate::json_enum!(HistoryEventKind {
     ProgramInstalled,
@@ -82,7 +90,13 @@ crate::json_enum!(HistoryEventKind {
     ProgramRemoved,
     AutostartAdded,
     AutostartRemoved,
-    AutostartChanged
+    AutostartChanged,
+    ServiceAdded,
+    ServiceRemoved,
+    ServiceChanged,
+    TaskAdded,
+    TaskRemoved,
+    TaskChanged
 });
 
 impl Default for HistoryEventKind {
@@ -101,6 +115,12 @@ impl HistoryEventKind {
             HistoryEventKind::AutostartAdded => "Autostart added",
             HistoryEventKind::AutostartRemoved => "Autostart removed",
             HistoryEventKind::AutostartChanged => "Autostart changed",
+            HistoryEventKind::ServiceAdded => "Service added",
+            HistoryEventKind::ServiceRemoved => "Service no longer listed",
+            HistoryEventKind::ServiceChanged => "Service changed",
+            HistoryEventKind::TaskAdded => "Scheduled task added",
+            HistoryEventKind::TaskRemoved => "Scheduled task no longer listed",
+            HistoryEventKind::TaskChanged => "Scheduled task changed",
         }
     }
 
@@ -209,6 +229,71 @@ impl AutostartState {
     }
 }
 
+/// Read-only configuration remembered for one Windows service.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct ServiceState {
+    pub name: String,
+    pub display_name: String,
+    pub image_path: String,
+    pub start: u32,
+    pub delayed: bool,
+    pub is_driver: bool,
+}
+crate::json_struct!(ServiceState, default, { name, display_name, image_path, start, delayed, is_driver });
+
+impl ServiceState {
+    pub fn of(service: &crate::startup::ServiceEntry) -> Self {
+        Self {
+            name: service.name.clone(),
+            display_name: service.display_name.clone(),
+            image_path: service.image_path.clone(),
+            start: service.start,
+            delayed: service.delayed,
+            is_driver: service.is_driver,
+        }
+    }
+
+    fn id(&self) -> String {
+        fold(&self.name)
+    }
+
+    fn start_label(&self) -> &'static str {
+        match (self.start, self.delayed) {
+            (0, _) => "boot",
+            (1, _) => "system",
+            (2, true) => "delayed automatic",
+            (2, false) => "automatic",
+            (3, _) => "manual",
+            (4, _) => "disabled",
+            _ => "unknown",
+        }
+    }
+}
+
+/// Read-only configuration remembered for one scheduled task.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TaskState {
+    pub name: String,
+    pub command: String,
+    pub author: String,
+    pub enabled: bool,
+}
+crate::json_struct!(TaskState, default, { name, command, author, enabled });
+
+impl TaskState {
+    pub fn of(task: &crate::startup::TaskEntry) -> Self {
+        Self {
+            name: task.name.clone(),
+            command: task.command.clone(),
+            author: task.author.clone(),
+            enabled: task.enabled,
+        }
+    }
+    fn id(&self) -> String {
+        fold(&self.name)
+    }
+}
+
 /// The versioned history file: the events plus the baselines the next
 /// capture diffs against. Serialized as `history.json`; see the module docs.
 #[derive(Clone, Debug, PartialEq)]
@@ -223,11 +308,19 @@ pub struct HistoryStore {
     pub programs: Vec<ProgramState>,
     /// Autostart state as of the last capture.
     pub autostart: Vec<AutostartState>,
+    /// Service configuration as of the last capture.
+    pub services: Vec<ServiceState>,
+    /// Scheduled-task configuration as of the last capture.
+    pub tasks: Vec<TaskState>,
+    /// Whether service history has a trustworthy starting observation.
+    pub services_tracked: bool,
+    /// Whether scheduled-task history has a starting observation.
+    pub tasks_tracked: bool,
     /// Install-log ids already turned into events.
     pub seen_logs: Vec<String>,
 }
 crate::json_struct!(HistoryStore, default, {
-    version, started, events, programs, autostart, seen_logs
+    version, started, events, programs, autostart, services [default], tasks [default], services_tracked [default], tasks_tracked [default], seen_logs
 });
 
 impl Default for HistoryStore {
@@ -238,6 +331,10 @@ impl Default for HistoryStore {
             events: Vec::new(),
             programs: Vec::new(),
             autostart: Vec::new(),
+            services: Vec::new(),
+            tasks: Vec::new(),
+            services_tracked: false,
+            tasks_tracked: false,
             seen_logs: Vec::new(),
         }
     }
@@ -300,12 +397,32 @@ impl HistoryStore {
         autostart_now: &[StartupEntry],
         now: i64,
     ) -> Vec<HistoryEvent> {
+        self.capture_full(logs, programs_now, autostart_now, &[], &[], now)
+    }
+
+    /// Capture all read-only system inventories. Callers pass empty slices
+    /// when a platform or permission cannot supply an inventory.
+    pub fn capture_full(
+        &mut self,
+        logs: &[InstallLog],
+        programs_now: &[InstalledProgram],
+        autostart_now: &[StartupEntry],
+        services_now: &[crate::startup::ServiceEntry],
+        tasks_now: &[crate::startup::TaskEntry],
+        now: i64,
+    ) -> Vec<HistoryEvent> {
         let programs: Vec<ProgramState> = programs_now.iter().map(ProgramState::of).collect();
         let autostart: Vec<AutostartState> = autostart_now.iter().map(AutostartState::of).collect();
+        let services: Vec<ServiceState> = services_now.iter().map(ServiceState::of).collect();
+        let tasks: Vec<TaskState> = tasks_now.iter().map(TaskState::of).collect();
         if self.started == 0 {
             self.started = now;
             self.programs = programs;
             self.autostart = autostart;
+            self.services = services;
+            self.tasks = tasks;
+            self.services_tracked = true;
+            self.tasks_tracked = true;
             self.seen_logs = logs.iter().map(|l| l.id.clone()).collect();
             return Vec::new();
         }
@@ -314,6 +431,15 @@ impl HistoryStore {
         let mut fresh = events_from_logs(logs, &seen, &programs, &self.programs, now);
         fresh.extend(diff_programs(&self.programs, &programs, now));
         fresh.extend(diff_autostart(&self.autostart, &autostart, now));
+        // The fields were added to an existing history schema. Seed their
+        // baselines once without treating the system's existing entries as
+        // changes that just occurred.
+        if self.services_tracked {
+            fresh.extend(diff_services(&self.services, &services, now));
+        }
+        if self.tasks_tracked {
+            fresh.extend(diff_tasks(&self.tasks, &tasks, now));
+        }
         dedupe(&mut fresh);
         sort_events(&mut fresh);
 
@@ -329,6 +455,10 @@ impl HistoryStore {
         }
         self.programs = programs;
         self.autostart = autostart;
+        self.services = services;
+        self.tasks = tasks;
+        self.services_tracked = true;
+        self.tasks_tracked = true;
         fresh
     }
 
@@ -357,7 +487,15 @@ fn sort_events(events: &mut [HistoryEvent]) {
 /// Collapse exact duplicates that two sources reported for the same change
 /// (e.g. an update seen both in a new install log and in the program diff).
 fn dedupe(events: &mut Vec<HistoryEvent>) {
-    let mut seen: HashSet<(HistoryEventKind, String, String, String, String)> = HashSet::new();
+    let mut seen: HashSet<(
+        HistoryEventKind,
+        String,
+        String,
+        String,
+        String,
+        String,
+        String,
+    )> = HashSet::new();
     events.retain(|e| {
         seen.insert((
             e.kind,
@@ -365,6 +503,8 @@ fn dedupe(events: &mut Vec<HistoryEvent>) {
             e.date.clone(),
             e.from_version.clone(),
             e.to_version.clone(),
+            e.target.clone(),
+            e.detail.clone(),
         ))
     });
 }
@@ -576,6 +716,143 @@ pub fn diff_autostart(
     out
 }
 
+/// Services added, removed or reconfigured between observations. Service
+/// names are the stable identity; executable path and start mode are context,
+/// not a claim that the service is running or caused a slowdown.
+pub fn diff_services(
+    before: &[ServiceState],
+    after: &[ServiceState],
+    ts: i64,
+) -> Vec<HistoryEvent> {
+    let before: HashMap<String, &ServiceState> = before.iter().map(|s| (s.id(), s)).collect();
+    let after: HashMap<String, &ServiceState> = after.iter().map(|s| (s.id(), s)).collect();
+    let mut out = Vec::new();
+    for (id, now) in &after {
+        match before.get(id) {
+            None => {
+                let mut e =
+                    HistoryEvent::new(ts, HistoryEventKind::ServiceAdded, &now.display_name);
+                e.target = now.image_path.clone();
+                e.detail = format!(
+                    "{} start{}",
+                    now.start_label(),
+                    if now.is_driver { "; driver" } else { "" }
+                );
+                out.push(e);
+            }
+            Some(old) => {
+                let mut changes = Vec::new();
+                if old.start != now.start || old.delayed != now.delayed {
+                    changes.push(format!(
+                        "start type: {} → {}",
+                        old.start_label(),
+                        now.start_label()
+                    ));
+                }
+                if old.image_path != now.image_path {
+                    changes.push(format!(
+                        "image path changed: {} → {}",
+                        old.image_path, now.image_path
+                    ));
+                }
+                if old.display_name != now.display_name {
+                    changes.push(format!(
+                        "display name changed: {} → {}",
+                        old.display_name, now.display_name
+                    ));
+                }
+                if old.is_driver != now.is_driver {
+                    changes.push(if now.is_driver {
+                        "service classified as driver".into()
+                    } else {
+                        "service no longer classified as driver".into()
+                    });
+                }
+                if !changes.is_empty() {
+                    let mut e =
+                        HistoryEvent::new(ts, HistoryEventKind::ServiceChanged, &now.display_name);
+                    e.target = now.image_path.clone();
+                    e.detail = changes.join("; ");
+                    out.push(e);
+                }
+            }
+        }
+    }
+    for (id, old) in &before {
+        if !after.contains_key(id) {
+            let mut e = HistoryEvent::new(ts, HistoryEventKind::ServiceRemoved, &old.display_name);
+            e.target = old.image_path.clone();
+            e.detail = format!("was {}", old.start_label());
+            out.push(e);
+        }
+    }
+    sort_events(&mut out);
+    out
+}
+
+/// Scheduled tasks added, removed or reconfigured between observations.
+/// The task path is its identity; command and enabled state are the watched
+/// properties. Task XML can be unreadable, in which case it is omitted by
+/// the inventory API and must not be interpreted as an intentional removal.
+pub fn diff_tasks(before: &[TaskState], after: &[TaskState], ts: i64) -> Vec<HistoryEvent> {
+    let before: HashMap<String, &TaskState> = before.iter().map(|t| (t.id(), t)).collect();
+    let after: HashMap<String, &TaskState> = after.iter().map(|t| (t.id(), t)).collect();
+    let mut out = Vec::new();
+    for (id, now) in &after {
+        match before.get(id) {
+            None => {
+                let mut e = HistoryEvent::new(ts, HistoryEventKind::TaskAdded, &now.name);
+                e.target = now.command.clone();
+                e.detail = format!(
+                    "{}; {}",
+                    if now.enabled { "enabled" } else { "disabled" },
+                    now.author
+                );
+                out.push(e);
+            }
+            Some(old) => {
+                let mut changes = Vec::new();
+                if old.command != now.command {
+                    changes.push(format!(
+                        "command changed: {} → {}",
+                        old.command, now.command
+                    ));
+                }
+                if old.enabled != now.enabled {
+                    changes.push(if now.enabled {
+                        "enabled".into()
+                    } else {
+                        "disabled".into()
+                    });
+                }
+                if old.author != now.author {
+                    changes.push(format!("author changed: {} → {}", old.author, now.author));
+                }
+                if !changes.is_empty() {
+                    let mut e = HistoryEvent::new(ts, HistoryEventKind::TaskChanged, &now.name);
+                    e.target = now.command.clone();
+                    e.detail = changes.join("; ");
+                    out.push(e);
+                }
+            }
+        }
+    }
+    for (id, old) in &before {
+        if !after.contains_key(id) {
+            let mut e = HistoryEvent::new(ts, HistoryEventKind::TaskRemoved, &old.name);
+            e.target = old.command.clone();
+            e.detail = if old.enabled {
+                "was enabled".into()
+            } else {
+                "was disabled".into()
+            };
+            out.push(e);
+        }
+    }
+    sort_events(&mut out);
+    out
+}
+
 /// The events a `slowdown` report covers, plus the context that keeps it
 /// honest: when recording began and how much history exists in total.
 pub struct SlowdownReport {
@@ -759,6 +1036,142 @@ mod tests {
         }];
         let before2 = vec![entry("Keep", "keep.exe", true)];
         assert_eq!(diff_autostart(&before2, &elsewhere, NOW).len(), 2);
+    }
+
+    #[test]
+    fn service_diff_tracks_start_type_image_and_lifecycle() {
+        let svc =
+            |name: &str, display: &str, image: &str, start: u32, delayed: bool| ServiceState {
+                name: name.into(),
+                display_name: display.into(),
+                image_path: image.into(),
+                start,
+                delayed,
+                is_driver: false,
+            };
+        let before = vec![
+            svc("AcmeSvc", "Acme Service", "svc.exe", 2, false),
+            svc("Gone", "Old Service", "old.exe", 3, false),
+        ];
+        let after = vec![
+            svc("acmesvc", "Acme Service", "svc-new.exe", 4, false),
+            svc("Fresh", "Fresh Service", "fresh.exe", 3, false),
+        ];
+        let events = diff_services(&before, &after, NOW);
+        assert_eq!(events.len(), 3, "{events:?}");
+        let changed = events
+            .iter()
+            .find(|e| e.kind == HistoryEventKind::ServiceChanged)
+            .unwrap();
+        assert!(changed.detail.contains("automatic → disabled"));
+        assert!(changed.detail.contains("image path changed"));
+        assert_eq!(changed.target, "svc-new.exe");
+        assert!(events
+            .iter()
+            .any(|e| e.kind == HistoryEventKind::ServiceAdded && e.subject == "Fresh Service"));
+        assert!(events
+            .iter()
+            .any(|e| e.kind == HistoryEventKind::ServiceRemoved && e.subject == "Old Service"));
+        assert!(diff_services(&after, &after, NOW).is_empty());
+    }
+
+    #[test]
+    fn task_diff_tracks_command_enabled_and_lifecycle() {
+        let task = |name: &str, command: &str, enabled: bool| TaskState {
+            name: name.into(),
+            command: command.into(),
+            author: "Acme".into(),
+            enabled,
+        };
+        let before = vec![
+            task("\\Acme\\Update", "old.exe", true),
+            task("\\Acme\\Gone", "gone.exe", false),
+        ];
+        let after = vec![
+            task("\\acme\\update", "new.exe", false),
+            task("\\Acme\\Fresh", "fresh.exe", true),
+        ];
+        let events = diff_tasks(&before, &after, NOW);
+        assert_eq!(events.len(), 3, "{events:?}");
+        let changed = events
+            .iter()
+            .find(|e| e.kind == HistoryEventKind::TaskChanged)
+            .unwrap();
+        assert!(changed.detail.contains("old.exe → new.exe"));
+        assert!(changed.detail.contains("disabled"));
+        assert_eq!(changed.target, "new.exe");
+        assert!(events.iter().any(|e| e.kind == HistoryEventKind::TaskAdded));
+        assert!(events
+            .iter()
+            .any(|e| e.kind == HistoryEventKind::TaskRemoved));
+    }
+
+    #[test]
+    fn extended_capture_baselines_platform_state_without_initial_events() {
+        let mut store = HistoryStore::default();
+        let service = crate::startup::ServiceEntry {
+            name: "Svc".into(),
+            display_name: "Service".into(),
+            image_path: "svc.exe".into(),
+            start: 2,
+            delayed: false,
+            windows: false,
+            is_driver: false,
+        };
+        let task = crate::startup::TaskEntry {
+            name: "\\Acme\\Task".into(),
+            file: String::new(),
+            command: "task.exe".into(),
+            author: "Acme".into(),
+            enabled: true,
+            microsoft: false,
+        };
+        assert!(store
+            .capture_full(&[], &[], &[], &[service.clone()], &[task.clone()], NOW)
+            .is_empty());
+        assert_eq!(store.services.len(), 1);
+        assert_eq!(store.tasks.len(), 1);
+        let changed = crate::startup::ServiceEntry {
+            start: 4,
+            ..service
+        };
+        let fresh = store.capture_full(&[], &[], &[], &[changed], &[task], NOW + 60);
+        assert_eq!(fresh.len(), 1);
+        assert_eq!(fresh[0].kind, HistoryEventKind::ServiceChanged);
+    }
+
+    #[test]
+    fn adding_service_and_task_history_to_an_existing_store_seeds_without_fabricating_events() {
+        let mut store = HistoryStore::default();
+        store.started = NOW - 86_400;
+        let service = crate::startup::ServiceEntry {
+            name: "ExistingSvc".into(),
+            display_name: "Existing Service".into(),
+            image_path: "svc.exe".into(),
+            start: 3,
+            delayed: false,
+            windows: false,
+            is_driver: false,
+        };
+        let task = crate::startup::TaskEntry {
+            name: "\\Vendor\\Existing".into(),
+            file: String::new(),
+            command: "task.exe".into(),
+            author: "Vendor".into(),
+            enabled: true,
+            microsoft: false,
+        };
+        assert!(store
+            .capture_full(&[], &[], &[], &[service.clone()], &[task.clone()], NOW)
+            .is_empty());
+        assert!(store.services_tracked && store.tasks_tracked);
+        let changed = crate::startup::TaskEntry {
+            enabled: false,
+            ..task
+        };
+        let events = store.capture_full(&[], &[], &[], &[service], &[changed], NOW + 60);
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].kind, HistoryEventKind::TaskChanged);
     }
 
     #[test]

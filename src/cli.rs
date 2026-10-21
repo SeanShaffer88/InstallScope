@@ -400,17 +400,21 @@ fn store() -> anyhow::Result<Store> {
     Store::open()
 }
 
-/// Fold the current install logs, program list and startup list into the
+/// Fold the current install logs and read-only system inventories into
 /// Slowdown Detective history and save it. Cheap reads only — no snapshot.
 fn capture_history(st: &Store, reg: &dyn Registry) -> installscope_core::history::HistoryStore {
     let mut h = installscope_core::history::HistoryStore::load(&st.root);
     let logs = st.list_logs();
     let programs_now = programs::list_programs(reg, false);
     let autostart = installscope_core::startup::list_startup(reg);
-    h.capture(
+    let services = installscope_core::startup::list_services(reg);
+    let tasks = installscope_core::startup::list_tasks();
+    h.capture_full(
         &logs,
         &programs_now,
         &autostart,
+        &services,
+        &tasks,
         installscope_core::time::unix_now(),
     );
     if let Err(e) = h.save(&st.root) {
@@ -1617,7 +1621,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 );
             } else if events.is_empty() {
                 match h.started_date() {
-                    Some(d) => println!("No changes recorded yet. Recording began {d}; installs, updates, removals and autostart changes will appear here as they happen."),
+                    Some(d) => println!("No changes recorded yet. Recording began {d}; program, startup, service and scheduled-task changes will appear here as they are observed."),
                     None => println!("No changes recorded yet."),
                 }
             } else {
@@ -1700,7 +1704,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                         println!(
                             "\nNot enough history yet: InstallScope has only just begun \
                              recording, so there is no earlier state to compare against. \
-                             Installs, updates, removals and autostart changes from now on \
+                             Program, startup, service and scheduled-task changes from now on \
                              will build the history this report needs."
                         );
                     } else {

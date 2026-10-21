@@ -120,7 +120,7 @@ states what has shipped and what is still open.
 - **Slowdown Detective** — history capture, CLI reports and a read-only GUI now
   cover recorded installs, updates, removals and autostart changes, with inclusive
   date filters and current startup measurements where available. Remaining:
-  services/scheduled-task history, before/after measurements, and contextual
+  before/after measurements, and contextual
   Delay/Disable/Uninstall actions through reviewed safety workflows. Timing alone
   must never be presented as proof of causation.
 - **Autostart Gatekeeper** — opt-in (Advanced) review of the programs that
