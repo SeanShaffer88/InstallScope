@@ -250,7 +250,7 @@ Turn a program's installer into a portable package.
   - **Visual C++ runtimes** the installer put into Windows are copied next to the program, so the portable version doesn't need the Redistributable.
   - **Things that can't travel:** services, drivers, Explorer extensions and COM components, files written into the Windows folder, and programs that always ask for administrator rights.
   - **64-bit-only programs** are marked as such in the package.
-- **Nothing else to install:** InstallScope compiles the launcher itself with the official launcher source and compiler bundled with it, exactly as the portable-app generator does. Release downloads include it; otherwise it is downloaded once (about 6 MB) and checked against a pinned SHA-256 fingerprint. The package installer is built with InstallScope's own installer script, which installs packages like platform installers do (keeping your settings on upgrades, with silent installs and the platform's `/DESTINATION=` option). If the platform's own installer is already present, InstallScope uses it instead.
+- **Official packaging tools:** install the official PortableApps.com Launcher Generator and Installer and choose their PortableApps folder. After capture, review the prepared files and displayed tool commands, then click Compile. Missing tools stop the build; the desktop workflow does not download or substitute a replacement compiler/installer. Recognized custom NSIS entry points require explicit permission for each attempt. Official tool windows may appear; tool provenance, full compiler-output capture and current-tool lifecycle verification remain release gates.
 - **Compile again with one click** after editing the launcher settings.
 
 ### Bloatware Shield
@@ -459,11 +459,11 @@ Developers embedding package creation can use the native Rust
 preflight and verified build-artifact selection without adding a Python runtime.
 InstallScope uses it to reject failed external tools and stale or ambiguous
 installer output. Package compilation supports cancellation and bounded compiler
-execution, with compiler-tree cleanup on Windows. When using InstallScope's
-installer, the pinned official Launcher may show an unsupported-install warning
-on first launch or upgrade because it expects an official Installer receipt.
-InstallScope preserves that warning and explains the distinction; use the
-official Installer for official distribution. These checks do not certify full format compliance or runtime
+execution, with compiler-tree cleanup on Windows. The desktop capture workflow
+requires the official Launcher Generator and Installer. A legacy source-build API
+and InstallScope-installer fixture remain for development compatibility; that
+fixture still times out at its first Launcher dialog and is not the official-tool
+acceptance test. These checks do not certify full format compliance or runtime
 portability; the SDK README records verification boundaries and release gates.
 
 ## Contributing

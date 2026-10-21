@@ -27,9 +27,8 @@ pub struct BuilderState {
     sandbox: Option<bool>,
     out_dir: String,
     tools: Option<PaTools>,
-    /// The built-in PortableApps.com Launcher source is already on this PC.
-    toolchain_ready: bool,
-    tools_job: Option<Job<(PaTools, bool)>>,
+    tools_job: Option<Job<PaTools>>,
+    allow_custom_code: bool,
     /// What the capture is doing, as shown to the user.
     stage: Arc<Mutex<String>>,
     /// Set when the user says the installation is finished (this-PC mode).
@@ -83,21 +82,14 @@ impl App {
 
     fn refresh_tools(&mut self, ctx: &egui::Context) {
         let dir = self.settings.portableapps_dir.clone();
-        let root = self.store.root.clone();
-        self.builder.tools_job = Some(Job::spawn(ctx, move |_| {
-            (
-                pafbuild::find_tools(&dir),
-                installscope_core::patools::find(&root).is_some(),
-            )
-        }));
+        self.builder.tools_job = Some(Job::spawn(ctx, move |_| pafbuild::find_tools(&dir)));
     }
 
     pub fn poll_builder(&mut self, ctx: &egui::Context) {
         let b = &mut self.builder;
-        if let Some((tools, ready)) = b.tools_job.as_ref().and_then(|j| j.poll()) {
+        if let Some(tools) = b.tools_job.as_ref().and_then(|j| j.poll()) {
             b.tools_job = None;
             b.tools = Some(tools);
-            b.toolchain_ready = ready;
         }
         if let Some(r) = b.capture_job.as_ref().and_then(|j| j.poll()) {
             b.capture_job = None;
@@ -169,9 +161,12 @@ impl App {
         }
     }
 
-    /// Make the launcher and installer straight away.
-    fn after_capture(&mut self, ctx: &egui::Context) {
-        self.start_compile(ctx);
+    /// Keep the prepared files for review before any build tool runs.
+    fn after_capture(&mut self, _ctx: &egui::Context) {
+        self.builder.allow_custom_code = false;
+        self.set_status(t(
+            "Capture complete. Review the tool commands, then compile.",
+        ));
     }
 
     fn start_compile(&mut self, ctx: &egui::Context) {
@@ -182,13 +177,13 @@ impl App {
         self.builder.error = None;
         self.builder.compiled = None;
         let stage = self.builder.stage.clone();
-        let root = self.store.root.clone();
+        let allow_custom_code = std::mem::take(&mut self.builder.allow_custom_code);
         self.builder.compile_job = Some(Job::spawn(ctx, move |progress| {
-            let r = pafbuild::compile_with_cancel(
+            let r = pafbuild::compile_official_with_cancel(
                 &dir,
                 &pkg.app_id,
                 &tools,
-                &root,
+                allow_custom_code,
                 &|p| *stage.lock().unwrap() = p.to_string(),
                 &|| progress.cancelled(),
             )
@@ -553,9 +548,9 @@ impl App {
         } else if !self.builder.use_sandbox && !self.elevated {
             t("Unavailable: installing on this PC needs Administrator rights. Run InstallScope as Administrator, or choose Windows Sandbox above.")
         } else if self.builder.use_sandbox {
-            t("Starts the capture: the installer runs in Windows Sandbox, InstallScope records what it installs, and the PortableApps.com package is built into the Save to folder.")
+            t("Starts the capture: the installer runs in Windows Sandbox, InstallScope records what it installs, and the package files are prepared in the Save to folder. Review them before compiling with the official tools.")
         } else {
-            t("Starts the capture: the installer runs on this PC while InstallScope records it, and the PortableApps.com package is built into the Save to folder.")
+            t("Starts the capture: the installer runs on this PC while InstallScope records it, and the package files are prepared in the Save to folder. Review them before compiling with the official tools.")
         };
         ui.add_enabled_ui(ok && (self.builder.use_sandbox || self.elevated), |ui| {
             if super::a11y::explain(
@@ -576,26 +571,32 @@ impl App {
         let tools = self.builder.tools.clone();
         ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new("✔").color(theme::OK));
-            ui.label(t("PortableApps.com Launcher: built in"));
+            ui.label(t(
+                "PortableApps.com Launcher Generator: official tool required",
+            ));
             small_muted(
                 ui,
-                if self.builder.toolchain_ready {
-                    t("ready")
+                if tools
+                    .as_ref()
+                    .and_then(|t| t.launcher_generator.as_ref())
+                    .is_some()
+                {
+                    t("found")
                 } else {
-                    t("the official source is downloaded from GitHub the first time (about 6 MB)")
+                    t("install the official Launcher and choose its PortableApps folder below")
                 },
             );
         });
         ui.horizontal_wrapped(|ui| {
-            ui.label(RichText::new("✔").color(theme::OK));
+            ui.label(RichText::new(if tools.as_ref().and_then(|t|t.installer.as_ref()).is_some(){"✔"}else{"!"}).color(theme::MUTED));
             match tools.as_ref().and_then(|t| t.installer.clone()) {
                 Some(p) => {
                     ui.label(t("Installer: the official PortableApps.com Installer"));
                     small_muted(ui, p.display().to_string());
                 }
                 None => {
-                    ui.label(t("Installer: InstallScope"));
-                    small_muted(ui, t("The official Launcher can show an unsupported-install warning on first launch and after upgrades with this installer. Use the official PortableApps.com Installer to avoid that warning and for official distribution."));
+                    ui.label(t("Official PortableApps.com Installer: not found"));
+                    small_muted(ui, t("Install the official PortableApps.com Installer and choose its PortableApps folder below. A missing official tool stops compilation; no replacement installer is selected."));
                 }
             }
         });
@@ -689,9 +690,13 @@ impl App {
         };
         theme::card(ui, |ui| {
             ui.label(
-                RichText::new(format!("✔ {}", t("The package is ready")))
-                    .strong()
-                    .color(theme::OK),
+                RichText::new(if self.builder.compiled.is_some() {
+                    t("Build completed; portability testing is still required")
+                } else {
+                    t("Captured files are ready for review")
+                })
+                .strong()
+                .color(theme::OK),
             );
             field(ui, "Folder", &dir.display().to_string());
             field(ui, "Program", &pkg.main_exe);
@@ -727,10 +732,48 @@ impl App {
                 small_muted(ui, t(&i.detail));
             }
             ui.add_space(6.0);
+            self.ui_builder_tools(ui, &ctx);
+            ui.label(RichText::new(t("Build command review")).strong());
+            small_muted(ui, t("Official-tool integration is awaiting lifecycle verification. Review the tool windows: full compiler-output capture is not connected yet."));
+            if let Some(tools) = &self.builder.tools {
+                for (label, tool) in [
+                    ("Launcher Generator", &tools.launcher_generator),
+                    ("Installer", &tools.installer),
+                ] {
+                    if let Some(tool) = tool {
+                        field(ui, label, &tool.display().to_string());
+                        field(ui, "Argument (package folder)", &dir.display().to_string());
+                        if let Some(parent) = tool.parent() {
+                            field(ui, "Working directory", &parent.display().to_string());
+                        }
+                    }
+                }
+            }
+            field(
+                ui,
+                "Launcher output",
+                &dir.join(format!("{}.exe", pkg.app_id))
+                    .display()
+                    .to_string(),
+            );
+            small_muted(ui,format!("Installer output is checked in {} and {} for one new/updated {}_*.paf.exe. Official tool windows may appear. No shell or automatic elevation is used.",dir.parent().unwrap_or(&dir).display(),dir.display(),pkg.app_id));
+            if pafbuild::official_custom_code(&dir)
+                .iter()
+                .any(|p| p.exists())
+            {
+                theme::warning_banner(ui,t("Custom NSIS code is present. It can run commands during compilation or installation. Review the source before allowing this build."));
+                for path in pafbuild::official_custom_code(&dir)
+                    .iter()
+                    .filter(|p| p.exists())
+                {
+                    field(ui, "Custom code", &path.display().to_string());
+                }
+                super::a11y::explain(ui.checkbox(&mut self.builder.allow_custom_code,t("Allow the reviewed custom code for this build")),&t("Explicitly allow custom NSIS source to run as part of this build. This permission resets after each attempt. Presence checks are not a complete audit of scripts or includes."));
+            }
             ui.horizontal_wrapped(|ui| {
                 if super::a11y::explain(
                     ui.button(t("Open folder")),
-                    &t("Opens the finished package's folder in File Explorer."),
+                    &t("Opens the prepared package folder in File Explorer."),
                 )
                 .clicked()
                 {
@@ -762,7 +805,7 @@ impl App {
                 }
                 if super::a11y::explain(
                     ui.add(egui::Button::new(if self.builder.compiled.is_some() { t("Compile again") } else { t("Compile") })),
-                    &t("Make the launcher and the .paf.exe installer again, for example after editing the Launcher settings."),
+                    &t("Run the official Launcher Generator and Installer shown above, passing the package folder as an argument. Review their messages and test the resulting package. Custom code needs explicit permission for each attempt."),
                 )
                 .clicked()
                 {

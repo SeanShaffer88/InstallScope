@@ -117,8 +117,8 @@ installs the package, runs its test payload, relocates it and verifies an upgrad
 preserves `Data`. The pinned official Launcher warns when it has no official
 Installer receipt. The test explicitly acknowledges that warning for its own
 harmless fixture; it neither disables the production warning nor forges an
-upstream receipt. InstallScope explains this limitation when its own installer
-is selected. That is not a test of the official Installer frontend, nor a
+upstream receipt. The desktop capture workflow now requires the official Launcher Generator and
+Installer and does not select this development fallback. That is not a test of the official Installer frontend, nor a
 complete clean-environment or cross-drive portability test. CI configuration by
 itself is not a passing result.
 

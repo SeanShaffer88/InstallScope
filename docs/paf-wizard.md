@@ -76,8 +76,14 @@ with a supported PortableApps.com option.
 
 No GPL implementation has been copied into this module. Official tools are planned
 as separately invoked executables, with a license/provenance review before bundling.
-The new workflow will require the official Installer; the existing capture workflow
-and its legacy compiler API are separate and retain their documented limits.
+The new workflow will require the official Installer. The existing capture screen
+now also requires both official frontends, stops after capture for command review,
+and gates recognized custom NSIS entry points on explicit per-build consent.
+Missing tools stop before compilation/download. Existing launchers are retained
+until the Generator handles them; unchanged output is rejected. The legacy
+source-build API remains for development compatibility, not a desktop fallback.
+This adapter is compiled and contract-tested, but current official frontend
+execution, provenance checks and compiler-output capture remain unverified.
 
 ## Next implementation batches
 

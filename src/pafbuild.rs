@@ -1300,6 +1300,10 @@ pub struct Compiled {
     pub paf: Option<PathBuf>,
 }
 
+/// Legacy source-build compatibility API; the desktop uses
+/// [`compile_official_with_cancel`] instead. This path can acquire the pinned
+/// development toolchain and use the InstallScope installer fallback.
+///
 /// Run the Launcher Generator (makes `AppID.exe`) and then the Installer
 /// (makes `AppID_version.paf.exe` next to the package folder). Official frontends
 /// receive the package directory; tool-specific UI may still appear.
@@ -1388,6 +1392,84 @@ pub fn compile_with_cancel(
     Ok(out)
 }
 
+/// Custom entry points recognized by the official-tool documentation, including
+/// the legacy Launcher path. Presence is a consent gate, not a complete script audit.
+pub fn official_custom_code(pkg_dir: &Path) -> [PathBuf; 3] {
+    [
+        "App/AppInfo/Launcher/Custom.nsh",
+        "Other/Source/PortableApps.comInstallerCustom.nsh",
+        "Other/Source/PortableApps.comLauncherCustom.nsh",
+    ]
+    .map(|p| pkg_dir.join(p))
+}
+
+/// Official frontends only. Never downloads tools or substitutes a compiler.
+/// The caller supplies a prepared working package, not original application files.
+/// Tool interfaces may display their own UI. No official approval is implied.
+pub fn compile_official_with_cancel(
+    pkg_dir: &Path,
+    app_id: &str,
+    tools: &PaTools,
+    allow_custom_code: bool,
+    report: &dyn Fn(&str),
+    cancel: &dyn Fn() -> bool,
+) -> Result<Compiled> {
+    if cancel() {
+        return Err(anyhow!("Build cancelled"));
+    }
+    if !allow_custom_code {
+        for path in official_custom_code(pkg_dir) {
+            if path.try_exists()? {
+                return Err(anyhow!("Custom NSIS code was found. Review it and explicitly allow it for this build before executing the official tools."));
+            }
+        }
+    }
+    let generator=tools.launcher_generator.as_ref().ok_or_else(||anyhow!("Locate the official PortableApps.com Launcher Generator before building. No fallback tool was used."))?;
+    let installer=tools.installer.as_ref().ok_or_else(||anyhow!("Locate the official PortableApps.com Installer before building. No fallback tool was used."))?;
+    if !generator.is_file() || !installer.is_file() {
+        return Err(anyhow!(
+            "An official tool path is unavailable. Locate the installed tools and try again."
+        ));
+    }
+    portable_builder_kit::validate_app_id(app_id)?;
+    if portable_builder_kit::package_app_id(pkg_dir)? != app_id {
+        return Err(anyhow!(
+            "Package AppID does not match the requested launcher"
+        ));
+    }
+    let hash = |path: &Path| -> std::io::Result<[u8; 32]> {
+        crate::util::sha256_reader(std::fs::File::open(path)?)
+    };
+    let launcher = pkg_dir.join(format!("{app_id}.exe"));
+    let stamp = |path: &Path| -> Result<Option<(std::time::SystemTime, [u8; 32])>> {
+        if !path.try_exists()? {
+            return Ok(None);
+        }
+        portable_builder_kit::validate_executable(path)?;
+        Ok(Some((std::fs::metadata(path)?.modified()?, hash(path)?)))
+    };
+    let before = stamp(&launcher)?;
+    report("Running the official Launcher Generator");
+    run_package_tool(generator, pkg_dir, cancel)?;
+    let after = stamp(&launcher)?;
+    if after.is_none() || after == before {
+        return Err(anyhow!("Could not verify a newly created or updated launcher. Review the official Generator's messages; the previous output was not accepted as a new build."));
+    }
+    let parent = pkg_dir.parent().unwrap_or(pkg_dir);
+    let watch = portable_builder_kit::ArtifactWatch::capture(
+        &[parent.to_path_buf(), pkg_dir.to_path_buf()],
+        app_id,
+        &hash,
+    )?;
+    report("Running the official PortableApps.com Installer");
+    let outcome = run_package_tool(installer, pkg_dir, cancel)?;
+    let artifact = watch.finish(outcome.exit_code, &hash)?;
+    Ok(Compiled {
+        launcher: Some(launcher),
+        paf: Some(artifact.path),
+    })
+}
+
 fn run_package_tool(
     tool: &Path,
     package: &Path,
@@ -1407,6 +1489,50 @@ fn run_package_tool(
 mod tests {
     use super::*;
 
+    #[test]
+    fn official_build_rejects_custom_code_without_consent() {
+        let temp = crate::util::tempdir().unwrap();
+        let path = temp.path().join("App/AppInfo/Launcher/Custom.nsh");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, b"!error must-not-run").unwrap();
+        let error = compile_official_with_cancel(
+            temp.path(),
+            "DemoPortable",
+            &PaTools::default(),
+            false,
+            &|_| panic!("must not run"),
+            &|| false,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("Custom NSIS"));
+        assert_eq!(std::fs::read(path).unwrap(), b"!error must-not-run");
+    }
+    #[test]
+    fn official_build_requires_tools_before_preparation() {
+        let temp = crate::util::tempdir().unwrap();
+        let missing = temp.path().join("must-not-exist");
+        let error = compile_official_with_cancel(
+            &missing,
+            "DemoPortable",
+            &PaTools::default(),
+            false,
+            &|_| panic!("must not run a tool"),
+            &|| false,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("official"));
+        assert!(!missing.exists());
+        let error = compile_official_with_cancel(
+            &missing,
+            "DemoPortable",
+            &PaTools::default(),
+            false,
+            &|_| panic!("must not run a tool"),
+            &|| true,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("cancelled"));
+    }
     #[test]
     fn cancellation_prevents_preparation_or_tool_acquisition() {
         let temp = crate::util::tempdir().unwrap();

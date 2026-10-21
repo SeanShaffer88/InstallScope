@@ -7,6 +7,7 @@ All notable changes to InstallScope are documented here. The format follows
 ## [Unreleased]
 
 ### Guided PAF projects
+- Capture now stops for review and requires the official Launcher Generator and Installer. The desktop build path no longer downloads/substitutes the development toolchain or InstallScope installer. It shows executable/argument/working-directory details, rejects unchanged launcher output, and requires explicit per-build consent for recognized custom NSIS entry points. Real current official-tool execution remains a release gate.
 - Added a ten-screen project planning workflow with versioned save/reopen snapshots, explicit license declarations, component inventory, background path checks, source-linked findings and configuration previews. Saving never overwrites an existing snapshot. Opening another project or closing the regular app requires confirmation when answers are unsaved. This is a foundation, not a finished builder: source assembly, artwork conversion, official-tool execution and package/report export remain unconnected and are labeled accordingly.
 
 ### Developer SDK
