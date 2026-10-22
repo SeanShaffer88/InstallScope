@@ -118,7 +118,7 @@ fn every_command_has_help_that_names_its_confirmation() {
             "{name}: no confirmation line"
         );
         assert!(
-            text.starts_with(format!("setupsweep {name}").as_str()),
+            text.starts_with(format!("setupscope {name}").as_str()),
             "{name}: heading"
         );
     }

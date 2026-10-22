@@ -4,8 +4,8 @@ use super::app::{App, Confirm};
 use super::theme;
 use super::widgets::*;
 use egui::RichText;
-use setupsweep_core::i18n::t;
-use setupsweep_core::privacy::{self, Control, State};
+use setupscope_core::i18n::t;
+use setupscope_core::privacy::{self, Control, State};
 
 impl App {
     pub fn ui_privacy(&mut self, ctx: &egui::Context) {
@@ -16,7 +16,7 @@ impl App {
                 theme::card(ui, |ui| {
                     ui.label(RichText::new(t("Reviewed Windows privacy controls")).strong());
                     ui.add_space(3.0);
-                    muted(ui, t("SetupSweep reads the current registry value. Apply or clear one setting at a time; its previous value is saved in Backups before changing it."));
+                    muted(ui, t("SetupScope reads the current registry value. Apply or clear one setting at a time; its previous value is saved in Backups before changing it."));
                     ui.add_space(6.0);
                     theme::warning_banner(ui, t("The badge shows the registry value, not proof that Windows enforced it. Windows version, edition, and organization policy can affect behavior. These settings do not turn off required diagnostic data, block network addresses, or disable security and update services."));
                 });
@@ -72,7 +72,7 @@ impl App {
                                 theme::badge(ui, t("Administrator required"), theme::WARN);
                                 small_muted(
                                     ui,
-                                    t("Relaunch SetupSweep as Administrator to change this PC-wide setting."),
+                                    t("Relaunch SetupScope as Administrator to change this PC-wide setting."),
                                 );
                             } else {
                                 if !recall_supported {
@@ -131,7 +131,7 @@ impl App {
                         let body = if limit {
                             let warning = definition.warning.map(|warning| format!("\n\n{}", t(warning))).unwrap_or_default();
                             format!(
-                                "{}\n\n{}\n\nSetupSweep will back up the current registry value and write the documented setting. You can restore that backup from the Backups page.{}",
+                                "{}\n\n{}\n\nSetupScope will back up the current registry value and write the documented setting. You can restore that backup from the Backups page.{}",
                                 t(definition.effect),
                                 t(definition.tradeoff),
                                 warning,
@@ -171,7 +171,7 @@ impl App {
             return;
         }
         if definition.requires_admin && !self.elevated {
-            self.set_status(t("This setting applies to the whole PC. Relaunch SetupSweep as Administrator to change it."));
+            self.set_status(t("This setting applies to the whole PC. Relaunch SetupScope as Administrator to change it."));
             return;
         }
         match privacy::apply_with_backup(

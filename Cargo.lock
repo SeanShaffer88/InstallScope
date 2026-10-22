@@ -2524,7 +2524,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "setupsweep"
+name = "setupscope"
 version = "0.1.0"
 dependencies = [
  "anyhow",

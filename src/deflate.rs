@@ -1178,11 +1178,11 @@ mod tests {
         out
     }
 
-    /// With SETUPSWEEP_DEFLATE_DUMP set, write each sample's compressed form
+    /// With SETUPSCOPE_DEFLATE_DUMP set, write each sample's compressed form
     /// there so another decoder can check it.
     #[test]
     fn dump_for_other_decoders() {
-        let Some(dir) = std::env::var_os("SETUPSWEEP_DEFLATE_DUMP") else {
+        let Some(dir) = std::env::var_os("SETUPSCOPE_DEFLATE_DUMP") else {
             return;
         };
         for (i, s) in samples().iter().enumerate() {

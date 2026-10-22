@@ -1,8 +1,8 @@
-; SetupSweep installer (NSIS 3, Unicode)
+; SetupScope installer (NSIS 3, Unicode)
 ; Copyright (C) 2026 Sean Shaffer — MIT
 ;
-; Build:  makensis -DVERSION=0.1.0 -DEXE=path\to\SetupSweep.exe installer\setupsweep.nsi
-; Output: SetupSweep-Setup-<VERSION>.exe next to this script (or -DOUTDIR=...)
+; Build:  makensis -DVERSION=0.1.0 -DEXE=path\to\SetupScope.exe installer\setupscope.nsi
+; Output: SetupScope-Setup-<VERSION>.exe next to this script (or -DOUTDIR=...)
 
 Unicode true
 ManifestDPIAware true
@@ -13,20 +13,20 @@ SetCompressor /SOLID lzma
   !define VERSION "0.0.0"
 !endif
 !ifndef EXE
-  !define EXE "..\target\release\setupsweep.exe"
+  !define EXE "..\target\release\setupscope.exe"
 !endif
 !ifndef OUTDIR
   !define OUTDIR "."
 !endif
 
-!define APP "SetupSweep"
+!define APP "SetupScope"
 !define PUBLISHER "Sean Shaffer"
-!define URL "https://github.com/SeanShaffer88/SetupSweep"
+!define URL "https://github.com/SeanShaffer88/SetupScope"
 ; Breaking rename: the Expunge-era uninstall key is not reused.
-!define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\SetupSweep"
+!define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\SetupScope"
 
 Name "${APP} ${VERSION}"
-OutFile "${OUTDIR}\SetupSweep-Setup-${VERSION}.exe"
+OutFile "${OUTDIR}\SetupScope-Setup-${VERSION}.exe"
 InstallDir "$PROGRAMFILES64\${APP}"
 InstallDirRegKey HKLM "${UNINST_KEY}" "InstallLocation"
 BrandingText "${APP} ${VERSION} · © ${PUBLISHER}"
@@ -46,15 +46,15 @@ VIAddVersionKey /LANG=1033 "ProductVersion" "${VERSION}"
 !include "WinVer.nsh"
 
 !macro AddShellVerb EXT
-  WriteRegStr HKLM "Software\Classes\SystemFileAssociations\${EXT}\shell\SetupSweepInstall" "MUIVerb" "Install with SetupSweep"
-  WriteRegStr HKLM "Software\Classes\SystemFileAssociations\${EXT}\shell\SetupSweepInstall" "Icon" '"$INSTDIR\SetupSweep.exe",0'
-  WriteRegStr HKLM "Software\Classes\SystemFileAssociations\${EXT}\shell\SetupSweepInstall\command" "" '"$INSTDIR\SetupSweep.exe" --monitor-install "%1"'
+  WriteRegStr HKLM "Software\Classes\SystemFileAssociations\${EXT}\shell\SetupSweepInstall" "MUIVerb" "Install with SetupScope"
+  WriteRegStr HKLM "Software\Classes\SystemFileAssociations\${EXT}\shell\SetupSweepInstall" "Icon" '"$INSTDIR\SetupScope.exe",0'
+  WriteRegStr HKLM "Software\Classes\SystemFileAssociations\${EXT}\shell\SetupSweepInstall\command" "" '"$INSTDIR\SetupScope.exe" --monitor-install "%1"'
 !macroend
 
-!define MUI_ICON "..\assets\setupsweep.ico"
-!define MUI_UNICON "..\assets\setupsweep.ico"
+!define MUI_ICON "..\assets\setupscope.ico"
+!define MUI_UNICON "..\assets\setupscope.ico"
 !define MUI_ABORTWARNING
-!define MUI_FINISHPAGE_RUN "$INSTDIR\SetupSweep.exe"
+!define MUI_FINISHPAGE_RUN "$INSTDIR\SetupScope.exe"
 !define MUI_FINISHPAGE_LINK "${URL}"
 !define MUI_FINISHPAGE_LINK_LOCATION "${URL}"
 
@@ -82,10 +82,10 @@ VIAddVersionKey /LANG=1033 "ProductVersion" "${VERSION}"
 !insertmacro MUI_RESERVEFILE_LANGDLL
 
 Function .onInit
-  ; SetupSweep is built for Windows 11 only (build 22000 or later, 64-bit).
+  ; SetupScope is built for Windows 11 only (build 22000 or later, 64-bit).
   ${IfNot} ${RunningX64}
   ${OrIfNot} ${AtLeastBuild} 22000
-    MessageBox MB_ICONSTOP "SetupSweep requires 64-bit Windows 11."
+    MessageBox MB_ICONSTOP "SetupScope requires 64-bit Windows 11."
     Abort
   ${EndIf}
   SetRegView 64
@@ -96,10 +96,10 @@ Function un.onInit
   SetRegView 64
 FunctionEnd
 
-Section "SetupSweep" SecMain
+Section "SetupScope" SecMain
   SectionIn RO
   SetOutPath "$INSTDIR"
-  File "/oname=SetupSweep.exe" "${EXE}"
+  File "/oname=SetupScope.exe" "${EXE}"
   !ifdef TOOLS
     ; The PortableApps.com Launcher (official source and its NSIS compiler)
     ; used by PortableApps Forge.
@@ -112,13 +112,13 @@ Section "SetupSweep" SecMain
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
   ; Start menu
-  CreateShortcut "$SMPROGRAMS\${APP}.lnk" "$INSTDIR\SetupSweep.exe"
+  CreateShortcut "$SMPROGRAMS\${APP}.lnk" "$INSTDIR\SetupScope.exe"
 
   ; Apps & features entry
   WriteRegStr HKLM "${UNINST_KEY}" "DisplayName" "${APP}"
   WriteRegStr HKLM "${UNINST_KEY}" "DisplayVersion" "${VERSION}"
   WriteRegStr HKLM "${UNINST_KEY}" "Publisher" "${PUBLISHER}"
-  WriteRegStr HKLM "${UNINST_KEY}" "DisplayIcon" "$INSTDIR\SetupSweep.exe,0"
+  WriteRegStr HKLM "${UNINST_KEY}" "DisplayIcon" "$INSTDIR\SetupScope.exe,0"
   WriteRegStr HKLM "${UNINST_KEY}" "InstallLocation" "$INSTDIR"
   WriteRegStr HKLM "${UNINST_KEY}" "URLInfoAbout" "${URL}"
   WriteRegStr HKLM "${UNINST_KEY}" "HelpLink" "${URL}/issues"
@@ -130,18 +130,18 @@ Section "SetupSweep" SecMain
   WriteRegDWORD HKLM "${UNINST_KEY}" "EstimatedSize" $0
 SectionEnd
 
-Section "Right-click: Install with SetupSweep" SecShell
-  ; Adds "Install with SetupSweep" to the context menu of .exe and .msi files.
+Section "Right-click: Install with SetupScope" SecShell
+  ; Adds "Install with SetupScope" to the context menu of .exe and .msi files.
   !insertmacro AddShellVerb ".exe"
   !insertmacro AddShellVerb ".msi"
 SectionEnd
 
 Section "Desktop shortcut" SecDesktop
-  CreateShortcut "$DESKTOP\${APP}.lnk" "$INSTDIR\SetupSweep.exe"
+  CreateShortcut "$DESKTOP\${APP}.lnk" "$INSTDIR\SetupScope.exe"
 SectionEnd
 
 Section "Uninstall"
-  Delete "$INSTDIR\SetupSweep.exe"
+  Delete "$INSTDIR\SetupScope.exe"
   Delete "$INSTDIR\LICENSE.txt"
   Delete "$INSTDIR\Uninstall.exe"
   RMDir /r "$INSTDIR\tools\PortableApps.comLauncher"
@@ -152,6 +152,6 @@ Section "Uninstall"
   DeleteRegKey HKLM "${UNINST_KEY}"
   DeleteRegKey HKLM "Software\Classes\SystemFileAssociations\.exe\shell\SetupSweepInstall"
   DeleteRegKey HKLM "Software\Classes\SystemFileAssociations\.msi\shell\SetupSweepInstall"
-  ; Install logs and backups in %LOCALAPPDATA%\SetupSweep are kept on uninstall
+  ; Install logs and backups in %LOCALAPPDATA%\SetupScope are kept on uninstall
   ; and may be needed to undo earlier removals. Expunge-era data is left untouched.
 SectionEnd

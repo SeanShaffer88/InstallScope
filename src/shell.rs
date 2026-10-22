@@ -1,9 +1,9 @@
-//! Explorer integration: the "Install with SetupSweep" right-click command on
+//! Explorer integration: the "Install with SetupScope" right-click command on
 //! installers (.exe and .msi).
 //!
 //! The installer registers it for all users under HKLM; the in-app toggle
 //! (used by the portable version) registers it for the current user under
-//! HKCU. Both point at `SetupSweep.exe --monitor-install "<file>"`.
+//! HKCU. Both point at `SetupScope.exe --monitor-install "<file>"`.
 //!
 //! On Windows 11 the command appears under "Show more options" (the classic
 //! menu); the compact top-level menu only accepts packaged (MSIX) apps.
@@ -83,8 +83,8 @@ mod tests {
         assert!(!is_registered(&reg, false));
         register(
             &reg,
-            "C:\\Tools\\SetupSweep.exe",
-            "Install with SetupSweep",
+            "C:\\Tools\\SetupScope.exe",
+            "Install with SetupScope",
             false,
         )
         .unwrap();
@@ -97,7 +97,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             cmd,
-            "\"C:\\Tools\\SetupSweep.exe\" --monitor-install \"%1\""
+            "\"C:\\Tools\\SetupScope.exe\" --monitor-install \"%1\""
         );
         unregister(&reg, false).unwrap();
         assert!(!is_registered(&reg, false));

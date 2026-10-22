@@ -7,10 +7,10 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use setupsweep_core::cleaner::{self, Category, CategoryScan, CleanFile};
-use setupsweep_core::i18n::{t, tf};
-use setupsweep_core::model::human_size;
-use setupsweep_core::slimmer::{self, Analysis, DeepItem};
+use setupscope_core::cleaner::{self, Category, CategoryScan, CleanFile};
+use setupscope_core::i18n::{t, tf};
+use setupscope_core::model::human_size;
+use setupscope_core::slimmer::{self, Analysis, DeepItem};
 
 pub(super) enum ReceiptUpdate {
     Loaded(i64, Vec<cleaner::CleanReport>),
@@ -36,9 +36,9 @@ pub struct CleanerState {
     /// first shown, when it is loaded from the persisted setting.
     pub protect_text: Option<String>,
     /// Scheduled cleaning, read from Task Scheduler on first view.
-    pub schedule: Option<Option<(setupsweep_core::schedule::Frequency, Vec<String>)>>,
+    pub schedule: Option<Option<(setupscope_core::schedule::Frequency, Vec<String>)>>,
     pub schedule_error: Option<String>,
-    pub schedule_job: Option<Job<Option<(setupsweep_core::schedule::Frequency, Vec<String>)>>>,
+    pub schedule_job: Option<Job<Option<(setupscope_core::schedule::Frequency, Vec<String>)>>>,
 }
 
 impl Default for CleanerState {
@@ -157,7 +157,7 @@ impl App {
         self.cleaner.receipt_error = None;
         self.cleaner.receipt_message = None;
         self.cleaner.receipt_job = Some(Job::spawn(&self.ctx, move |_| {
-            setupsweep_core::cleanup_receipt::save(&root, &reports)
+            setupscope_core::cleanup_receipt::save(&root, &reports)
                 .map(|()| ReceiptUpdate::Message(t("Cleanup report saved locally. It contains full paths and replaces the previous saved report.")))
                 .map_err(|e| format!("{e:#}"))
         }));
@@ -171,7 +171,7 @@ impl App {
         self.cleaner.receipt_error = None;
         self.cleaner.receipt_message = None;
         self.cleaner.receipt_job = Some(Job::spawn(&self.ctx, move |_| {
-            setupsweep_core::cleanup_receipt::delete(&root)
+            setupscope_core::cleanup_receipt::delete(&root)
                 .map(|()| ReceiptUpdate::Message(t("Saved cleanup report deleted. Displayed results and files mentioned in the report were not changed.")))
                 .map_err(|e| format!("{e:#}"))
         }));
@@ -199,21 +199,21 @@ impl App {
             ui.label(format!(
                 "{} {} UTC",
                 t("Loaded historical report saved:"),
-                setupsweep_core::time::DateTime::from_unix_utc(at).ymd_hm()
+                setupscope_core::time::DateTime::from_unix_utc(at).ymd_hm()
             ));
         }
         if save {
-            self.ask("Save cleanup report?", t("Save the displayed cleanup results, including full paths and operating-system errors, to cleanup-report.json in SetupSweep's data folder. This replaces the previous valid saved report and cannot undo deletions. A damaged or unsupported report will not be overwritten. No network is used."), "Save report", Confirm::SaveCleanupReport);
+            self.ask("Save cleanup report?", t("Save the displayed cleanup results, including full paths and operating-system errors, to cleanup-report.json in SetupScope's data folder. This replaces the previous valid saved report and cannot undo deletions. A damaged or unsupported report will not be overwritten. No network is used."), "Save report", Confirm::SaveCleanupReport);
         }
         if delete {
-            self.ask("Delete saved cleanup report?", t("Permanently delete cleanup-report.json from SetupSweep's data folder. This cannot be undone. Displayed results remain available, and no file mentioned inside the report will be touched."), "Delete report", Confirm::DeleteCleanupReport);
+            self.ask("Delete saved cleanup report?", t("Permanently delete cleanup-report.json from SetupScope's data folder. This cannot be undone. Displayed results remain available, and no file mentioned inside the report will be touched."), "Delete report", Confirm::DeleteCleanupReport);
         }
         if load {
             let root = self.store.root.clone();
             self.cleaner.receipt_error = None;
             self.cleaner.receipt_message = None;
             self.cleaner.receipt_job = Some(Job::spawn(&self.ctx, move |_| {
-                setupsweep_core::cleanup_receipt::load(&root)
+                setupscope_core::cleanup_receipt::load(&root)
                     .map(|report| match report {
                         Some((at, reports)) => ReceiptUpdate::Loaded(at, reports),
                         None => ReceiptUpdate::Message(t("No saved cleanup report. Save results after a reviewed cleanup to keep them between launches.")),
@@ -299,7 +299,7 @@ impl App {
         let job = Job::spawn(&self.ctx, move |pr| {
             if rp {
                 pr.set_phase(t("Creating a restore point…"));
-                setupsweep_core::restore::create_restore_point("Before SetupSweep deep cleanup")
+                setupscope_core::restore::create_restore_point("Before SetupScope deep cleanup")
                     .map_err(|error| {
                         format!("Restore point not created; deep cleanup was canceled: {error:#}")
                     })?;
@@ -318,7 +318,7 @@ impl App {
             if !self.elevated {
                 theme::warning_banner(
                     ui,
-                    t("Run SetupSweep as Administrator to use deep cleanup."),
+                    t("Run SetupScope as Administrator to use deep cleanup."),
                 );
                 return;
             }
@@ -381,7 +381,7 @@ impl App {
                                 if a11y::explain(
                                     ui.button(t("Clean up")),
                                     &tf(
-                                        "Clean up {name}. SetupSweep asks for confirmation first; the cleanup uses Windows' own tools and can't be undone.",
+                                        "Clean up {name}. SetupScope asks for confirmation first; the cleanup uses Windows' own tools and can't be undone.",
                                         &[("name", t(item.title()))],
                                     ),
                                 )
@@ -436,7 +436,7 @@ impl App {
                         self.tab = super::app::Tab::Programs;
                         self.programs.view = super::programs::View::Store;
                         if self.programs.store_apps.is_empty() && self.programs.store_job.is_none() {
-                            self.programs.store_job = Some(Job::spawn(&self.ctx, |_| setupsweep_core::programs::list_store_apps()));
+                            self.programs.store_job = Some(Job::spawn(&self.ctx, |_| setupscope_core::programs::list_store_apps()));
                         }
                     }
                 });
@@ -629,7 +629,7 @@ impl App {
                                 ui.add_enabled_ui(!locked, |ui| ui.checkbox(on, "")).inner;
                             let why = if locked {
                                 tf(
-                                    "{name} can only be cleaned when SetupSweep runs as Administrator, so it stays unticked.",
+                                    "{name} can only be cleaned when SetupScope runs as Administrator, so it stays unticked.",
                                     &[("name", t(title))],
                                 )
                             } else if cat.id == "recycle_bin" {
@@ -836,7 +836,7 @@ impl App {
     }
 
     fn ui_schedule(&mut self, ui: &mut egui::Ui) {
-        use setupsweep_core::schedule::{self, Frequency};
+        use setupscope_core::schedule::{self, Frequency};
         // Task Scheduler is asked in the background (it takes a moment).
         if let Some(r) = self.cleaner.schedule_job.as_ref().and_then(|j| j.poll()) {
             self.cleaner.schedule_job = None;
@@ -869,10 +869,10 @@ impl App {
                     });
                 a11y::explain(
                     combo.response,
-                    &t("How often Windows Task Scheduler cleans the ticked categories automatically, even when SetupSweep is closed. A new choice applies straight away; Off turns scheduled cleaning off."),
+                    &t("How often Windows Task Scheduler cleans the ticked categories automatically, even when SetupScope is closed. A new choice applies straight away; Off turns scheduled cleaning off."),
                 );
             });
-            small_muted(ui, t("Cleans the kinds of junk ticked above through Windows Task Scheduler, even when SetupSweep is closed."));
+            small_muted(ui, t("Cleans the kinds of junk ticked above through Windows Task Scheduler, even when SetupScope is closed."));
             if let Some((_, cats)) = &current {
                 let names: Vec<String> = cats.iter().map(|id| t(cat_text(id).0)).collect();
                 small_muted(

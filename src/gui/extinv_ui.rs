@@ -1,7 +1,7 @@
 //! Browser extensions page (Tools): inventory of installed extensions,
 //! grouped by browser and profile, with reversible Disable/Restore.
 //!
-//! Disabling moves the extension's files into SetupSweep's data folder and
+//! Disabling moves the extension's files into SetupScope's data folder and
 //! records the exact original location; restoring moves them back. Nothing
 //! is ever deleted, and the profile's other data is never touched.
 
@@ -10,8 +10,8 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use setupsweep_core::extinv::{self, InstalledExtension};
-use setupsweep_core::i18n::{t, tf};
+use setupscope_core::extinv::{self, InstalledExtension};
+use setupscope_core::i18n::{t, tf};
 
 #[derive(Default)]
 pub struct ExtInvState {
@@ -112,7 +112,7 @@ impl App {
             self.ask(
                 "Disable extension",
                 tf(
-                    "{name} ({browser}, profile \"{profile}\") will stop working in the browser, but its files are kept by SetupSweep and it can be restored with one click.\r\n\r\nPlease close {browser} first; a running browser may lock files.",
+                    "{name} ({browser}, profile \"{profile}\") will stop working in the browser, but its files are kept by SetupScope and it can be restored with one click.\r\n\r\nPlease close {browser} first; a running browser may lock files.",
                     &[
                         ("name", item.name),
                         ("browser", item.browser),
@@ -169,7 +169,7 @@ impl App {
                     ui.heading(t("No browser extensions found"));
                     muted(
                         ui,
-                        t("SetupSweep looked through the profiles of the supported Chromium-based and Firefox-based browsers and found no extensions."),
+                        t("SetupScope looked through the profiles of the supported Chromium-based and Firefox-based browsers and found no extensions."),
                     );
                     ui.add_space(8.0);
                     if ui.button(format!("⟳ {}", t("Scan again"))).clicked() {
@@ -204,7 +204,7 @@ impl App {
                         }
                     });
                 });
-                small_muted(ui, t("Disabling an extension moves its files into SetupSweep's data folder; nothing is deleted and the rest of your profile is untouched. Restoring puts the files back exactly. Close the browser before disabling or restoring."));
+                small_muted(ui, t("Disabling an extension moves its files into SetupScope's data folder; nothing is deleted and the rest of your profile is untouched. Restoring puts the files back exactly. Close the browser before disabling or restoring."));
             });
             ui.add_space(8.0);
             // Group by browser, then profile.
@@ -243,7 +243,7 @@ impl App {
         let key = key_of(item);
         let held = item.held.is_some();
         let state_text = if held {
-            t("Disabled by SetupSweep")
+            t("Disabled by SetupScope")
         } else {
             match item.enabled {
                 Some(true) => t("Enabled"),
@@ -288,7 +288,7 @@ impl App {
                         } else {
                             if ui
                                 .button(t("Disable"))
-                                .on_hover_text(t("Move this extension's files into SetupSweep's data folder; nothing is deleted"))
+                                .on_hover_text(t("Move this extension's files into SetupScope's data folder; nothing is deleted"))
                                 .clicked()
                             {
                                 self.confirm_disable_extension(&key);

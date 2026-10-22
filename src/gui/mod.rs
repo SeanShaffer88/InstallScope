@@ -1,4 +1,4 @@
-//! The SetupSweep desktop interface (egui, rendered with DirectX 12 on Windows).
+//! The SetupScope desktop interface (egui, rendered with DirectX 12 on Windows).
 
 mod a11y;
 mod alt_ui;
@@ -33,7 +33,7 @@ mod theme;
 mod transfer_ui;
 mod widgets;
 
-use setupsweep_core::snapshot::Progress;
+use setupscope_core::snapshot::Progress;
 use std::sync::mpsc;
 use std::sync::Arc;
 
@@ -89,7 +89,7 @@ impl<T: Send + 'static> Job<T> {
         let ctx = ctx.clone();
         std::thread::spawn(move || {
             #[cfg(windows)]
-            setupsweep_core::platform::windows::lower_thread_priority();
+            setupscope_core::platform::windows::lower_thread_priority();
             let r = f(&p);
             let _ = tx.send(r);
             ctx.request_repaint();
@@ -109,11 +109,10 @@ impl<T: Send + 'static> Job<T> {
     }
 }
 
-/// Window/taskbar icon: the small-size variant (red card, black E), which
-/// stays legible at taskbar size.
+/// Scoped Precision S mark, mechanically resized for the taskbar.
 fn load_icon() -> Option<egui::IconData> {
     let bytes = include_bytes!("../../assets/icon-taskbar.png");
-    let img = setupsweep_core::png::decode(bytes).ok()?;
+    let img = setupscope_core::png::decode(bytes).ok()?;
     Some(egui::IconData {
         rgba: img.pixels,
         width: img.width,
@@ -176,10 +175,10 @@ pub fn run(install_target: Option<String>, launch_args: Vec<String>) -> anyhow::
     #[cfg(not(all(windows, feature = "native-ui-preview")))]
     {
         let mut viewport = egui::ViewportBuilder::default()
-            .with_title("SetupSweep")
+            .with_title("SetupScope")
             .with_inner_size([1180.0, 760.0])
             .with_min_inner_size([820.0, 520.0])
-            .with_app_id("SetupSweep");
+            .with_app_id("SetupScope");
         if let Some(icon) = load_icon() {
             viewport = viewport.with_icon(Arc::new(icon));
         }
@@ -190,7 +189,7 @@ pub fn run(install_target: Option<String>, launch_args: Vec<String>) -> anyhow::
             ..Default::default()
         };
         eframe::run_native(
-            "SetupSweep",
+            "SetupScope",
             options,
             Box::new(|cc| {
                 install_fonts(&cc.egui_ctx);
@@ -198,5 +197,17 @@ pub fn run(install_target: Option<String>, launch_args: Vec<String>) -> anyhow::
             }),
         )?;
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod branding_tests {
+    #[test]
+    fn selected_taskbar_art_decodes() {
+        let icon = super::load_icon().expect("selected brand icon must decode");
+        assert_eq!((icon.width, icon.height), (32, 32));
+        assert_eq!(icon.rgba.len(), 32 * 32 * 4);
+        assert!(icon.rgba.chunks_exact(4).any(|p| p[3] == 0));
+        assert!(icon.rgba.chunks_exact(4).any(|p| p[0] > 150 && p[0] > p[1] * 2 && p[3] > 200));
     }
 }

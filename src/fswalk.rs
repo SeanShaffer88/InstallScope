@@ -1,4 +1,4 @@
-//! Recursive directory listing (the part of a `walkdir`-style API SetupSweep
+//! Recursive directory listing (the part of a `walkdir`-style API SetupScope
 //! uses), iterative with an explicit stack so deep trees can't overflow.
 //!
 //! The root is reported at depth 0. Links and junctions are reported but

@@ -1,28 +1,28 @@
 [package]
-name = "setupsweep"
+name = "setupscope"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.91"
 resolver = "3"
 authors = ["Sean Shaffer"]
-description = "Windows install, cleanup, uninstall, and recovery toolkit."
+description = "Windows desktop development toolkit with local diagnostics and reviewed workflows."
 license = "MIT"
-repository = "https://github.com/SeanShaffer88/SetupSweep"
-homepage = "https://github.com/SeanShaffer88/SetupSweep"
+repository = "https://github.com/SeanShaffer88/SetupScope"
+homepage = "https://github.com/SeanShaffer88/SetupScope"
 readme = "README.md"
-keywords = ["uninstaller", "windows", "install-monitor", "registry", "snapshot"]
+keywords = ["windows", "developer-tools", "diagnostics", "environment", "desktop"]
 categories = ["command-line-utilities", "os::windows-apis", "gui"]
 build = "build.rs"
 
 [lib]
-name = "setupsweep_core"
+name = "setupscope_core"
 path = "src/lib.rs"
 
 [features]
 native-ui-preview = []
 
 [[bin]]
-name = "setupsweep"
+name = "setupscope"
 path = "src/main.rs"
 
 [dependencies]

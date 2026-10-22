@@ -18,9 +18,9 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use setupsweep_core::decrap::Verdict;
-use setupsweep_core::gatekeeper::{self as gk, Attribution, ItemState, Queue};
-use setupsweep_core::i18n::{t, tf};
+use setupscope_core::decrap::Verdict;
+use setupscope_core::gatekeeper::{self as gk, Attribution, ItemState, Queue};
+use setupscope_core::i18n::{t, tf};
 
 /// What one scan found, and the queue as it was saved.
 pub struct ScanDone {
@@ -145,7 +145,7 @@ impl App {
             pr.set_phase(t("Reading the programs that start with Windows"));
             let mut queue = Queue::load(&store).map_err(|e| format!("{e:#}"))?;
             let current: Vec<gk::WatchedEntry> =
-                setupsweep_core::startup::list_startup(reg.as_ref())
+                setupscope_core::startup::list_startup(reg.as_ref())
                     .iter()
                     .map(gk::WatchedEntry::from)
                     .collect();
@@ -206,11 +206,11 @@ impl App {
 
     /// Ask before removing an entry, stating what will happen to it and how
     /// it can be undone — including when backups are off.
-    fn confirm_gatekeeper_remove(&mut self, item: &setupsweep_core::gatekeeper::QueueItem) {
+    fn confirm_gatekeeper_remove(&mut self, item: &setupscope_core::gatekeeper::QueueItem) {
         let backup = if self.settings.backup_enabled() {
             t("A backup is taken first, so it can be put back from the Backups page.")
         } else {
-            t("Backups are off in Settings, so no backup is taken first and this cannot be undone from SetupSweep.")
+            t("Backups are off in Settings, so no backup is taken first and this cannot be undone from SetupScope.")
         };
         let body = tf(
             "\"{name}\" ({command}) will be deleted, so it no longer starts with Windows.\r\n\r\n{backup}\r\n\r\nIf you would rather it stayed, choose Cancel and click Keep instead.",
@@ -314,7 +314,7 @@ impl App {
                         let mut on = self.settings.gatekeeper_enabled;
                         let switched = a11y::explain(
                             ui.checkbox(&mut on, t("Watch for new autostart entries")),
-                            &t("Compare the programs that start with Windows with a saved baseline, and keep anything new in this review queue. Nothing is blocked while it installs and nothing is removed without your decision. A scan runs only when you ask for one here, with the button below, or with \"setupsweep gatekeeper scan\"."),
+                            &t("Compare the programs that start with Windows with a saved baseline, and keep anything new in this review queue. Nothing is blocked while it installs and nothing is removed without your decision. A scan runs only when you ask for one here, with the button below, or with \"setupscope gatekeeper scan\"."),
                         );
                         if switched.changed() {
                             self.settings.gatekeeper_enabled = on;
@@ -330,9 +330,9 @@ impl App {
                             |ui| {
                                 let can_scan = self.settings.gatekeeper_enabled && !busy;
                                 let why = if !self.settings.gatekeeper_enabled {
-                                    t("Turn the Gatekeeper on first, then SetupSweep can look for new autostart entries.")
+                                    t("Turn the Gatekeeper on first, then SetupScope can look for new autostart entries.")
                                 } else if busy {
-                                    t("SetupSweep is already working on the queue.")
+                                    t("SetupScope is already working on the queue.")
                                 } else {
                                     t("Compare the programs that start with Windows with the saved baseline now. New or changed entries are added to the queue; nothing is removed.")
                                 };
@@ -407,7 +407,7 @@ impl App {
                 } else {
                     ui.label(RichText::new(t("Waiting for your decision")).heading());
                     ui.add_space(4.0);
-                    let mut items: Vec<&setupsweep_core::gatekeeper::QueueItem> =
+                    let mut items: Vec<&setupscope_core::gatekeeper::QueueItem> =
                         queue.pending();
                     items.sort_by(|a, b| a.first_seen.cmp(&b.first_seen));
                     for item in items {
@@ -503,7 +503,7 @@ impl App {
                         self.gatekeeper.show_decided = show;
                     }
                     if self.gatekeeper.show_decided {
-                        let mut items: Vec<&setupsweep_core::gatekeeper::QueueItem> = queue
+                        let mut items: Vec<&setupscope_core::gatekeeper::QueueItem> = queue
                             .items
                             .iter()
                             .filter(|i| i.state != ItemState::Pending)

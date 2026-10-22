@@ -1,4 +1,4 @@
-//! Test helper for SetupSweep's locked-file tests; not part of SetupSweep. It
+//! Test helper for SetupScope's locked-file tests; not part of SetupScope. It
 //! holds files the way real programs do:
 //!
 //!   lockholder open <file> <seconds>      keep a file open, sharing nothing

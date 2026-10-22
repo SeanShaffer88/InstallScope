@@ -1,13 +1,13 @@
-# SetupSweep project guidance
+# SetupScope project guidance
 
 The Windows Desktop Software Project Policy below is the authoritative
 engineering and product-quality guidance for this repository. Apply it to
 planning, implementation, verification, and release work.
 
-## Confirmed SetupSweep decisions
+## Confirmed SetupScope decisions
 
 - Project documentation must not mention competitor software, except software
-  that is actually included in SetupSweep (bundled components); the license
+  that is actually included in SetupScope (bundled components); the license
   attributions for bundled components must always be kept.
 - Keep the product in Rust on `windows-sys`; do not substitute another
   language, framework family, or runtime without the user's approval.
@@ -20,13 +20,13 @@ planning, implementation, verification, and release work.
   literal support claim: define and test explicit support tiers and reject
   unsupported formats safely.
 - Replace the current `egui`/`eframe`/`wgpu` interface in measured phases with
-  a custom native Win32 UI. Preserve SetupSweep's established dark, black, and red
+  a custom native Win32 UI. Preserve SetupScope's established dark, black, and red
   visual direction. Do not attempt a full rewrite in one change; retain working
   workflows and verify each migrated slice before expanding it.
 - The Installer Decrapifier uses deterministic local rules by default and may
   use an optional OpenAI-compatible model restricted to loopback. It acts on
   an after-install review checklist; it must not block installers live.
-- The Disposable Runner belongs inside SetupSweep and uses hybrid restricted-token
+- The Disposable Runner belongs inside SetupScope and uses hybrid restricted-token
   containment plus a Job Object. Its per-run network toggle is on by default.
 - Continue to honor existing safety behavior: review and back up destructive
   changes, use least privilege, and keep processing local unless the user
@@ -347,7 +347,7 @@ Core standards:
 
 Standing defaults (a project brief may override a specific default):
 
-- Product-family look: the black/red aesthetic matching SetupSweep is preferred, not mandatory.
+- Product-family look: the black/red aesthetic matching SetupScope is preferred, not mandatory.
 - Rust is the default for new projects and for new components where it fits; existing stacks are preserved — this is not a rewrite mandate.
 - Support as many Windows versions as makes sense for the project; consider Windows 10 support when feasible without materially extending development time. Never claim support that has not been verified.
 - Status and task reports include a Progress % and an ETA whenever they can be estimated responsibly.

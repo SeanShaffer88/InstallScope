@@ -624,8 +624,8 @@ mod tests {
 
     #[test]
     fn our_archives_open_elsewhere() {
-        // Checked against Python's zipfile through SETUPSWEEP_ZIP_DUMP.
-        let Some(dir) = std::env::var_os("SETUPSWEEP_ZIP_DUMP") else {
+        // Checked against Python's zipfile through SETUPSCOPE_ZIP_DUMP.
+        let Some(dir) = std::env::var_os("SETUPSCOPE_ZIP_DUMP") else {
             return;
         };
         let zip = build(&[

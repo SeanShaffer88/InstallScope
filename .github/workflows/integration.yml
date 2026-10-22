@@ -1,7 +1,7 @@
 name: Integration
 
 # Real installers on a clean Windows runner: install under monitoring, remove
-# with SetupSweep, and verify nothing the installation added is left. Runs
+# with SetupScope, and verify nothing the installation added is left. Runs
 # weekly, on release tags, and on demand (Actions tab > Integration > Run).
 on:
   schedule:
@@ -26,8 +26,8 @@ jobs:
         run: cargo build --profile ci --locked
       - uses: actions/upload-artifact@v4
         with:
-          name: setupsweep-ci
-          path: target/ci/setupsweep.exe
+          name: setupscope-ci
+          path: target/ci/setupscope.exe
           retention-days: 1
 
   installer:
@@ -92,14 +92,14 @@ jobs:
       - uses: actions/download-artifact@v4
         if: env.SELECTED == 'true'
         with:
-          name: setupsweep-ci
+          name: setupscope-ci
           path: target/release
-      - name: Portable SetupSweep with a focused monitoring scope
+      - name: Portable SetupScope with a focused monitoring scope
         if: env.SELECTED == 'true'
         shell: pwsh
         run: |
           New-Item -ItemType Directory it, it/SetupSweepData | Out-Null
-          Copy-Item target/release/setupsweep.exe it/SetupSweep.exe
+          Copy-Item target/release/setupscope.exe it/SetupScope.exe
           New-Item it/portable -ItemType File | Out-Null
           # Extra folders this installer type writes to (AppData, Package Cache).
           $roots = @('${{ matrix.roots }}'.Split('|') | Where-Object { $_ } | ForEach-Object { @{ path = $_; recursive = $true } })
@@ -145,12 +145,12 @@ jobs:
           $file = "$env:RUNNER_TEMP\${{ matrix.file }}"
           $exe = '${{ matrix.exe }}'.Replace('{file}', $file)
           $argv = '${{ matrix.args }}'.Replace('{file}', $file).Split('|')
-          # SetupSweep.exe is a GUI-subsystem program, so PowerShell would not wait
+          # SetupScope.exe is a GUI-subsystem program, so PowerShell would not wait
           # for it; Start-Process -Wait does.
           $all = @('monitor', '--no-prompt', '--json', '--', $exe) + $argv | ForEach-Object { if ($_ -match ' ') { '"' + $_ + '"' } else { $_ } }
-          # Wait for SetupSweep itself, not for programs the installer leaves
+          # Wait for SetupScope itself, not for programs the installer leaves
           # running (Start-Process -Wait waits for every descendant).
-          $p = Start-Process ./it/SetupSweep.exe -ArgumentList $all -PassThru -NoNewWindow -RedirectStandardOutput out.json -RedirectStandardError err.txt
+          $p = Start-Process ./it/SetupScope.exe -ArgumentList $all -PassThru -NoNewWindow -RedirectStandardOutput out.json -RedirectStandardError err.txt
           $null = $p.Handle
           if (-not $p.WaitForExit(20 * 60 * 1000)) {
             $recent = Get-Process | Where-Object { $_.StartTime -gt (Get-Date).AddMinutes(-25) } | Sort-Object StartTime | Select-Object -Last 12 | ForEach-Object { "$($_.ProcessName)($($_.Id))" }
@@ -178,17 +178,17 @@ jobs:
         if: env.SELECTED == 'true' && steps.download.outputs.skip != 'true'
         shell: pwsh
         run: |
-          $p = Start-Process ./it/SetupSweep.exe -ArgumentList 'repackage', '${{ steps.monitor.outputs.id }}', "$PWD\silent" -Wait -PassThru -NoNewWindow -RedirectStandardOutput out.txt -RedirectStandardError err.txt
+          $p = Start-Process ./it/SetupScope.exe -ArgumentList 'repackage', '${{ steps.monitor.outputs.id }}', "$PWD\silent" -Wait -PassThru -NoNewWindow -RedirectStandardOutput out.txt -RedirectStandardError err.txt
           (Get-Content out.txt) + (Get-Content err.txt) | ForEach-Object { Write-Host $_ }
           if ($p.ExitCode -ne 0) { Write-Output ("::error::" + (((Get-Content err.txt) | Select-Object -Last 6) -join ' | ')); throw "repackage failed" }
           $setup = Get-ChildItem silent -Filter '*Setup.exe' | Select-Object -First 1
           if (-not $setup) { throw "no Setup.exe" }
           Write-Host "Silent setup: $($setup.Name) ($([math]::Round($setup.Length / 1MB, 1)) MB)"
-      - name: Remove with SetupSweep
+      - name: Remove with SetupScope
         if: env.SELECTED == 'true' && steps.download.outputs.skip != 'true'
         shell: pwsh
         run: |
-          $p = Start-Process ./it/SetupSweep.exe -ArgumentList 'revert', '${{ steps.monitor.outputs.id }}', '--close-programs', '--restart-explorer', '--keep-log' -Wait -PassThru -NoNewWindow -RedirectStandardOutput out.txt -RedirectStandardError err.txt
+          $p = Start-Process ./it/SetupScope.exe -ArgumentList 'revert', '${{ steps.monitor.outputs.id }}', '--close-programs', '--restart-explorer', '--keep-log' -Wait -PassThru -NoNewWindow -RedirectStandardOutput out.txt -RedirectStandardError err.txt
           $out = (Get-Content out.txt) + (Get-Content err.txt)
           $out | Set-Content revert.txt
           $out | ForEach-Object { Write-Host $_ }
@@ -197,7 +197,7 @@ jobs:
         if: env.SELECTED == 'true' && steps.download.outputs.skip != 'true'
         shell: pwsh
         run: |
-          $p = Start-Process ./it/SetupSweep.exe -ArgumentList 'check-clean', '${{ steps.monitor.outputs.id }}' -Wait -PassThru -NoNewWindow -RedirectStandardOutput out.txt -RedirectStandardError err.txt
+          $p = Start-Process ./it/SetupScope.exe -ArgumentList 'check-clean', '${{ steps.monitor.outputs.id }}' -Wait -PassThru -NoNewWindow -RedirectStandardOutput out.txt -RedirectStandardError err.txt
           $out = (Get-Content out.txt) + (Get-Content err.txt)
           $out | ForEach-Object { Write-Host $_ }
           if ($p.ExitCode -ne 0) {
@@ -218,7 +218,7 @@ jobs:
             $out | Where-Object { $_ -match '^- ' } | Select-Object -First 2 | ForEach-Object { Write-Output "::error::$_" }
             throw "leftovers remain"
           }
-          $still = ./it/SetupSweep.exe programs | Out-String -Stream | Select-String -SimpleMatch "${{ steps.monitor.outputs.name }}"
+          $still = ./it/SetupScope.exe programs | Out-String -Stream | Select-String -SimpleMatch "${{ steps.monitor.outputs.name }}"
           if ($still) { throw "the program is still listed: $still" }
 
   portable:
@@ -250,7 +250,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          name: setupsweep-ci
+          name: setupscope-ci
           path: target/release
       - name: Download installer
         shell: pwsh
@@ -267,9 +267,9 @@ jobs:
           New-Item -ItemType Directory pkg | Out-Null
           '' | Set-Content empty.txt
           $all = @('portable-build', "$env:RUNNER_TEMP\${{ matrix.file }}", '--name', '"${{ matrix.app }}"', '--silent', '--here', '--no-prompt', '--out', "$PWD\pkg")
-          # Wait for SetupSweep itself, not for programs the installer leaves
+          # Wait for SetupScope itself, not for programs the installer leaves
           # running (Start-Process -Wait waits for every descendant).
-          $p = Start-Process target/release/setupsweep.exe -ArgumentList $all -PassThru -NoNewWindow -RedirectStandardInput empty.txt -RedirectStandardOutput out.txt -RedirectStandardError err.txt
+          $p = Start-Process target/release/setupscope.exe -ArgumentList $all -PassThru -NoNewWindow -RedirectStandardInput empty.txt -RedirectStandardOutput out.txt -RedirectStandardError err.txt
           $null = $p.Handle
           if (-not $p.WaitForExit(25 * 60 * 1000)) {
             $recent = Get-Process | Where-Object { $_.StartTime -gt (Get-Date).AddMinutes(-30) } | Sort-Object StartTime | Select-Object -Last 12 | ForEach-Object { "$($_.ProcessName)($($_.Id))" }

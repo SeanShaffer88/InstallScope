@@ -407,7 +407,7 @@ pub fn run_hidden(program: &str, args: &[&str]) -> Result<(i32, String)> {
     Ok((out.status.code().unwrap_or(-1), text.trim().to_string()))
 }
 
-/// First Windows 11 build. SetupSweep is built for Windows 11 only.
+/// First Windows 11 build. SetupScope is built for Windows 11 only.
 pub const MIN_WINDOWS_BUILD: u32 = 22000;
 
 /// Windows build number (for example 26100), or 0 if unknown.
@@ -517,7 +517,7 @@ pub fn system_registry() -> Box<dyn Registry> {
     #[cfg(not(windows))]
     {
         let r = MemRegistry::new();
-        if std::env::var("SETUPSWEEP_DEMO").is_ok() {
+        if std::env::var("SETUPSCOPE_DEMO").is_ok() {
             demo_programs(&r);
         }
         Box::new(r)
@@ -856,7 +856,7 @@ pub fn is_elevated() -> bool {
     #[cfg(not(windows))]
     {
         // Demo builds can pretend to be elevated, for screenshots.
-        std::env::var_os("SETUPSWEEP_DEMO_ADMIN").is_some()
+        std::env::var_os("SETUPSCOPE_DEMO_ADMIN").is_some()
     }
 }
 
@@ -908,8 +908,8 @@ mod tests {
 
     #[test]
     fn env_expansion() {
-        std::env::set_var("SETUPSWEEP_TEST_VAR", "C:\\X");
-        assert_eq!(expand_env("%SETUPSWEEP_TEST_VAR%\\y"), "C:\\X\\y");
+        std::env::set_var("SETUPSCOPE_TEST_VAR", "C:\\X");
+        assert_eq!(expand_env("%SETUPSCOPE_TEST_VAR%\\y"), "C:\\X\\y");
         assert_eq!(expand_env("%NOPE_NOT_SET%\\y"), "%NOPE_NOT_SET%\\y");
         assert_eq!(expand_env("100%"), "100%");
     }

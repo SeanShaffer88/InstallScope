@@ -160,7 +160,7 @@ pub fn parse_events(xml: &str) -> BootInfo {
 }
 
 /// Task Scheduler folder for delayed programs.
-pub const DELAY_FOLDER: &str = "SetupSweep\\Delayed";
+pub const DELAY_FOLDER: &str = "SetupScope\\Delayed";
 
 fn task_name(entry_name: &str) -> String {
     let safe: String = entry_name
@@ -187,7 +187,7 @@ pub fn task_xml(program: &str, args: &str, user: &str, delay_secs: u32) -> Strin
     format!(
         r#"<?xml version="1.0" encoding="UTF-16"?>
 <Task version="1.2" xmlns="http://schemas.microsoft.com/windows/2004/02/mit/task">
-  <RegistrationInfo><Description>Started later by SetupSweep (delayed start).</Description></RegistrationInfo>
+  <RegistrationInfo><Description>Started later by SetupScope (delayed start).</Description></RegistrationInfo>
   <Triggers><LogonTrigger><Enabled>true</Enabled><UserId>{user}</UserId><Delay>PT{delay_secs}S</Delay></LogonTrigger></Triggers>
   <Principals><Principal id="Author"><UserId>{user}</UserId><LogonType>InteractiveToken</LogonType><RunLevel>LeastPrivilege</RunLevel></Principal></Principals>
   <Settings><MultipleInstancesPolicy>IgnoreNew</MultipleInstancesPolicy><DisallowStartIfOnBatteries>false</DisallowStartIfOnBatteries><StopIfGoingOnBatteries>false</StopIfGoingOnBatteries><ExecutionTimeLimit>PT0S</ExecutionTimeLimit><Priority>7</Priority></Settings>
@@ -240,7 +240,7 @@ pub fn delay(
         .map(|d| format!("{d}\\{}", crate::platform::user_name()))
         .unwrap_or_else(|_| crate::platform::user_name());
     let xml = task_xml(&program, &args, &user, delay_secs);
-    let file = std::env::temp_dir().join(format!("setupsweep-delay-{}.xml", std::process::id()));
+    let file = std::env::temp_dir().join(format!("setupscope-delay-{}.xml", std::process::id()));
     // Task Scheduler expects UTF-16 with a byte-order mark.
     let mut bytes = vec![0xFF, 0xFE];
     for u in xml.encode_utf16() {
@@ -315,8 +315,8 @@ mod tests {
         assert!(x.contains("<Arguments>--min</Arguments>"));
         assert!(x.contains("<UserId>PC\\alex</UserId>"));
         assert!(!task_xml("a.exe", "", "u", 60).contains("<Arguments>"));
-        let csv = "\"\\SetupSweep\\Delayed\\Spotify\",\"N/A\",\"Ready\"\r\n\"\\Microsoft\\Other\",\"x\",\"Ready\"\r\n\"\\SetupSweep\\Delayed\\Discord\",\"N/A\",\"Ready\"";
+        let csv = "\"\\SetupScope\\Delayed\\Spotify\",\"N/A\",\"Ready\"\r\n\"\\Microsoft\\Other\",\"x\",\"Ready\"\r\n\"\\SetupScope\\Delayed\\Discord\",\"N/A\",\"Ready\"";
         assert_eq!(parse_task_list(csv), vec!["Discord", "Spotify"]);
-        assert_eq!(task_name("a/b"), "SetupSweep\\Delayed\\a_b");
+        assert_eq!(task_name("a/b"), "SetupScope\\Delayed\\a_b");
     }
 }

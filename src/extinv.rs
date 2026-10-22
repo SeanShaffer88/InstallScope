@@ -13,7 +13,7 @@
 //!   unpacked `<id>\` folder). The only step both browser families honor
 //!   without editing their internal databases is "the files are not there":
 //!   on the next start the browser treats the extension as not installed.
-//! - So disabling *moves* the extension's folder/file into SetupSweep's
+//! - So disabling *moves* the extension's folder/file into SetupScope's
 //!   own data folder (`<data>\extinv\disabled\…`) — nothing is ever deleted —
 //!   and records the exact original path in `<data>\extinv\records.json`.
 //!   Restoring moves it back to exactly that path. The profile's other data
@@ -47,7 +47,7 @@ impl Family {
 }
 
 /// One extension found on this PC (enabled, browser-disabled, or held by
-/// SetupSweep after a reversible disable).
+/// SetupScope after a reversible disable).
 #[derive(Clone, Debug)]
 pub struct InstalledExtension {
     /// Display name of the browser, e.g. "Chrome".
@@ -73,7 +73,7 @@ pub struct InstalledExtension {
     /// `Extensions\<id>` folder; for Firefox the `.xpi` file (or unpacked
     /// folder) under `extensions\`.
     pub source_path: PathBuf,
-    /// `Some` when SetupSweep holds this extension (it was disabled
+    /// `Some` when SetupScope holds this extension (it was disabled
     /// through this module); the record is the way back.
     pub held: Option<DisabledRecord>,
 }
@@ -92,7 +92,7 @@ pub struct DisabledRecord {
     pub version: String,
     /// Original location of the extension's folder/file.
     pub source_path: String,
-    /// Where it is held now, inside SetupSweep's data folder.
+    /// Where it is held now, inside SetupScope's data folder.
     pub held_path: String,
     /// When it was disabled (local time string, for display).
     pub moved_at: String,
@@ -102,7 +102,7 @@ crate::json_struct!(DisabledRecord, default, {
     source_path, held_path, moved_at
 });
 
-/// A browser SetupSweep knows how to locate profiles for.
+/// A browser SetupScope knows how to locate profiles for.
 struct BrowserDef {
     name: &'static str,
     family: Family,
@@ -203,7 +203,7 @@ const NON_PROFILE_DIRS: &[&str] = &[
     "ShaderCache",
 ];
 
-/// Inventory every extension on this PC, plus the ones SetupSweep is
+/// Inventory every extension on this PC, plus the ones SetupScope is
 /// holding. Never fails as a whole: an unreadable browser/profile just
 /// contributes nothing (or the on-disk fallback), per profile.
 pub fn discover(store_root: &Path) -> Vec<InstalledExtension> {
@@ -676,7 +676,7 @@ fn percent_decode(s: &str) -> String {
 // ---------------------------------------------------------------------------
 // Disable / restore bookkeeping
 
-/// The folder (under SetupSweep's data root) holding disabled extensions
+/// The folder (under SetupScope's data root) holding disabled extensions
 /// and the records file.
 pub fn extinv_dir(store_root: &Path) -> PathBuf {
     store_root.join("extinv")
@@ -709,7 +709,7 @@ fn save_records(store_root: &Path, records: &[DisabledRecord]) -> Result<()> {
     Ok(())
 }
 
-/// Disable `ext` reversibly: move its files into SetupSweep's holding
+/// Disable `ext` reversibly: move its files into SetupScope's holding
 /// area and record exactly what moved. Nothing is deleted.
 pub fn disable(store_root: &Path, ext: &InstalledExtension) -> Result<DisabledRecord> {
     if ext.held.is_some() {

@@ -83,7 +83,7 @@ pub const CONTROLS: [Definition; 4] = [
         value_names: &["DisableAIDataAnalysis"],
         limited_value: 1,
         requires_admin: false,
-        warning: Some("Enabling this policy deletes previously saved Recall snapshots. SetupSweep backs up the policy value, not snapshot contents; clearing the policy cannot restore deleted snapshots."),
+        warning: Some("Enabling this policy deletes previously saved Recall snapshots. SetupScope backs up the policy value, not snapshot contents; clearing the policy cannot restore deleted snapshots."),
     },
 ];
 

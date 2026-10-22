@@ -30,7 +30,7 @@ pub struct Settings {
     pub registry_exclusions: Vec<String>,
     /// Glob patterns for file noise to ignore.
     pub file_exclusions: Vec<String>,
-    /// Also apply SetupSweep's built-in list of volatile locations (temporary
+    /// Also apply SetupScope's built-in list of volatile locations (temporary
     /// files, logs, browser and app caches).
     pub auto_exclusions: bool,
     /// Copy everything to a backup before deleting it.

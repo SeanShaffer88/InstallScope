@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <assembly xmlns="urn:schemas-microsoft-com:asm.v1" manifestVersion="1.0">
-  <assemblyIdentity type="win32" name="SeanShaffer.SetupSweep" version="0.1.0.0" processorArchitecture="amd64"/>
-  <description>SetupSweep</description>
+  <assemblyIdentity type="win32" name="SeanShaffer.SetupScope" version="0.1.0.0" processorArchitecture="amd64"/>
+  <description>SetupScope</description>
   <dependency>
     <dependentAssembly>
       <assemblyIdentity type="win32" name="Microsoft.Windows.Common-Controls" version="6.0.0.0"
                         processorArchitecture="*" publicKeyToken="6595b64144ccf1df" language="*"/>
     </dependentAssembly>
   </dependency>
-  <!-- Starts without a UAC prompt; SetupSweep checks for admin rights itself and
+  <!-- Starts without a UAC prompt; SetupScope checks for admin rights itself and
        offers to relaunch elevated, so the CLI also works from normal shells. -->
   <trustInfo xmlns="urn:schemas-microsoft-com:asm.v3">
     <security>

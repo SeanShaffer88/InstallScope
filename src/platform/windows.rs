@@ -379,7 +379,7 @@ pub fn is_elevated() -> bool {
     }
 }
 
-/// A process started by SetupSweep (installer, uninstaller, tool).
+/// A process started by SetupScope (installer, uninstaller, tool).
 pub struct ChildProcess {
     handle: HANDLE,
 }
@@ -510,7 +510,7 @@ pub fn shell_open(target: &str) {
     }
 }
 
-/// Restart SetupSweep elevated with the given arguments. Returns true if the new
+/// Restart SetupScope elevated with the given arguments. Returns true if the new
 /// process launched.
 pub fn relaunch_elevated(args: &[String]) -> bool {
     let exe = std::env::current_exe()
@@ -1264,7 +1264,7 @@ pub fn watch_folder(
 }
 
 /// Stop Windows showing "There is no disk in the drive" and similar
-/// dialogs when SetupSweep touches an empty card reader or removed drive.
+/// dialogs when SetupScope touches an empty card reader or removed drive.
 pub fn quiet_critical_errors() {
     #[link(name = "kernel32")]
     extern "system" {
@@ -1553,7 +1553,7 @@ pub fn close_programs(exes: &[&Path]) -> crate::locks::Closed {
     // Programs with a window are asked to close, so they can save. Console
     // and windowless ones are ended directly: the Restart Manager would
     // signal their whole console, which can include whoever started them
-    // (SetupSweep's own command line, a terminal).
+    // (SetupScope's own command line, a terminal).
     let mut procs: Vec<RM_UNIQUE_PROCESS> = Vec::new();
     let mut end_directly: Vec<u32> = Vec::new();
     let mut names: Vec<(u32, String)> = Vec::new();
