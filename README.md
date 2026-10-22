@@ -89,4 +89,3 @@ Next accepted work includes bounded build-log triage, workspace/Dev Drive guidan
 ## License and contributions
 
 Sean-owned SetupSweep code is licensed under the [MIT License](LICENSE). Bundled and third-party components retain their own licenses and notices. Please include a minimal reproduction and redact private paths, secrets and installation data when reporting an issue.
-
