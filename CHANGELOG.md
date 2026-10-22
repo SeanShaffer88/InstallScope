@@ -13,7 +13,7 @@ All notable changes to SetupScope are documented here. The format follows
 ## [Unreleased]
 
 ### Changed
-- Renamed the product, Windows executable and CLI to **SetupScope**. The installed data folder, portable data folder, scheduled-task and registry identifiers, environment variables, and transfer-package extension now use `SetupScope` / `.setupsweep`. This is a breaking rename: prior InstallScope data and `.installscope` transfer packages are not imported.
+- Renamed the product, Windows executable and CLI to **SetupScope**. Existing `SetupSweep` / `SetupSweepData` data folders, shell/task compatibility identifiers and the `.setupsweep` transfer extension remain unchanged. No existing data is renamed or deleted. The earlier InstallScope migration limits remain historical behavior.
 
 ### Added
 - Read-only Storage overview: choose a folder/drive, scan in the background, cancel at filesystem checkpoints, and inspect the largest 200 immediate entries by logical size. Summary totals cover all measured entries; skipped links, errors and depth limits are labeled as partial, with bounded error details. No deletion, allocation accounting, or treemap is included in this first view.

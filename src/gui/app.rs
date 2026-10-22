@@ -1246,7 +1246,7 @@ pub fn logo_image() -> egui::ColorImage {
     decode_png(include_bytes!("../../assets/icon-256.png"))
 }
 
-/// Small logo (red card, black E), legible at sidebar/taskbar size.
+/// Scoped Precision S logo, resized for small UI surfaces.
 pub fn logo_small_image() -> egui::ColorImage {
     decode_png(include_bytes!("../../assets/icon-taskbar.png"))
 }
