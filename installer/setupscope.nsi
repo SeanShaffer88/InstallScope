@@ -90,10 +90,6 @@ Function ValidateDirectory
   done:
 FunctionEnd
 
-Function .onVerifyInstDir
-  Call ValidateDirectory
-FunctionEnd
-
 Section "SetupScope (required)" App
   SectionIn RO
   !insertmacro CheckRunning

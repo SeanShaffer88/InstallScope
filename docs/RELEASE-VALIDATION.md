@@ -2,7 +2,7 @@
 
 ## Scope and environment
 
-The package targets Windows 11 x64 and the five Workflow Board tools plus their integrated workflows. The recorded live host is Windows build 26300, x64. Cargo semantic version is 1.0.0; Windows product/file version is 1.0.0.0. This is an unsigned portable application. ARM64 runtime, Windows 10 and other Windows builds are not certified. No new GitHub release is published by local packaging.
+The packages target Windows 11 x64 and the five Workflow Board tools plus their integrated workflows. The recorded live host is Windows build 26300, x64. Cargo semantic version is 1.0.0; Windows product/file version is 1.0.0.0. Both portable ZIP and per-user installer are unsigned. ARM64 runtime, Windows 10 and other Windows builds are not certified. Local packaging does not itself publish a GitHub release.
 
 ## Verified
 
@@ -74,3 +74,9 @@ The PowerShell 5.1 clean-host harness passed 12 consistency/loader/CLI/diagnosti
 ## Final local package
 
 Local 1.0.0.0 packaging was requested with VM checks skipped. The current package passed 18 packaged functional checks and 12 isolated-host checks; saved portable user data remained byte-identical. Direct PE imports reference Windows DLLs/contracts, with no direct VC/.NET/Python/Node runtime imports (PE-DEPENDENCY-CHECK.json). This static check does not establish transitive driver or clean-OS compatibility. LOCAL-HOST-CHECK.json records the exact tested executable hashes. Existing compiler/Clippy warnings remain documented by the local check logs; no clean-machine, human native-speaker, broad DPI or screen-reader certification is claimed.
+
+## Publication follow-up
+
+GitHub Linux CI exposed a test fixture using a Windows-only absolute path; the fixture now uses the host temporary directory. Windows CI exposed the 200 ms durable-write lock wait expiring under disk contention. The wait is now bounded at ten seconds while keeping atomic publication and conflict handling. The updated binaries passed the full 534 local tests, Clippy, release build and the 12 isolated-host checks again. Earlier interactive screenshots predate this persistence-only correction; no new interactive GUI certification is claimed.
+
+The per-user NSIS installer uses the verified portable binaries, omits the portable marker, registers Windows Installed Apps, and offers optional shortcuts. It rejects a running GUI, portable destinations and unrelated nonempty folders. Uninstall uses explicit file lists and preserves user data and unknown files. Silent install, same-version upgrade, loader, running-app guard and uninstall were checked on the current host. The reproducible `scripts/Test-Installer.ps1` also verifies installed checksums and destination guards. The release's installer-validation JSON records the exact final installer digest and check results. Clean-VM, interactive installer-page, reboot and signed-package acceptance remain unverified.
