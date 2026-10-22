@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/logo-wide.png" alt="SetupSweep" width="600">
+  <img src="assets/setupscope-banner.png" alt="SetupScope" width="100%">
 </p>
 
-<h1 align="center">SetupSweep</h1>
+<h1 align="center">SetupScope</h1>
 <p align="center"><b>A local-first Windows developer toolkit for understanding installs, inspecting development environments and reviewing system changes.</b></p>
 <p align="center">
   <a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue"></a>
@@ -40,27 +40,57 @@ The regular interface contains the working developer pages. The native Win32 int
 
 ## Screenshots
 
-Captured from the current local Windows x64 development build (0.1.0), using the regular interface without elevation. These are actual app captures, not mockups; they show local milestones that may be newer than hosted source or releases.
+Captured from the local Windows x64 SetupScope build on 2026-10-22, without elevation. These show the focused local development interface; hosted source and historical releases can lag behind it. The captures show default states, not successful diagnostic results or certification of every action. Older captures remain archival.
 
-### Developer workspace
+<details>
+<summary>Workflow Board</summary>
 
-<img src="docs/screenshots/developer-diagnostics-current.png" alt="SetupSweep Developer diagnostics showing the current developer tool sections and read-only readiness controls" width="1000">
+![SetupScope — Workflow Board](docs/screenshots/focused-workflow-board.png)
 
-### Passive WSL/container observations
+</details>
 
-<img src="docs/screenshots/wsl-container-readiness-current.png" alt="Actual WSL and container host scan showing observation dates, partial status and CLI candidate evidence" width="1000">
+<details>
+<summary>Project Readiness</summary>
 
-### Review before diagnostic export
+![SetupScope — Project Readiness](docs/screenshots/focused-project-readiness.png)
 
-<img src="docs/screenshots/diagnostic-bundle-current.png" alt="Redacted runtime JSON preview with save disabled until its review checkbox is acknowledged" width="1000">
+</details>
+
+<details>
+<summary>Build Troubleshooting</summary>
+
+![SetupScope — Build Troubleshooting](docs/screenshots/focused-build-troubleshooting.png)
+
+</details>
+
+<details>
+<summary>Environment Profiles And Recovery</summary>
+
+![SetupScope — Environment Profiles And Recovery](docs/screenshots/focused-environment-profiles.png)
+
+</details>
+
+<details>
+<summary>Ports And Processes</summary>
+
+![SetupScope — Ports And Processes](docs/screenshots/focused-ports-processes.png)
+
+</details>
+
+<details>
+<summary>WSL And Containers</summary>
+
+![SetupScope — WSL And Containers](docs/screenshots/focused-wsl-containers.png)
+
+</details>
 
 ## Build and test locally
 
 Use Windows, Rust **1.91 or newer**, the MSVC C++ build tools and a Windows SDK. Target Windows 11 for local validation. ARM64 and broader Windows-version acceptance remain open; source compilation alone does not establish support.
 
 ```powershell
-git clone https://github.com/SeanShaffer88/SetupSweep.git
-cd SetupSweep
+git clone https://github.com/SeanShaffer88/SetupScope.git
+cd SetupScope
 cargo build --locked
 cargo run --locked
 cargo test --locked
@@ -70,13 +100,13 @@ cargo build --release --locked
 
 If a locked-file test requires its fixture helper, build it first with `cargo build --example lockholder --locked`. In the current local checkout, `scripts/local.ps1` also wraps build, run, test, check and release steps.
 
-The first build can download Rust dependencies. GitHub Actions and paid hosted builds are not required for local development. Existing releases, if available, are listed on the [Releases page](https://github.com/SeanShaffer88/SetupSweep/releases); verify the individual release's scope, architecture and checksums rather than assuming it includes the newest local tools.
+The first build can download Rust dependencies. GitHub Actions and paid hosted builds are not required for local development. Existing releases, if available, are listed on the [Releases page](https://github.com/SeanShaffer88/SetupScope/releases); verify the individual release's scope, architecture and checksums rather than assuming it includes the newest local tools.
 
 ## Privacy, data and safety
 
 - Core diagnostic work runs locally; there is no automatic diagnostic upload or telemetry collection.
 - Explicit clipboard/report exports can contain local paths. Redacted bundles deliberately exclude raw paths, environment values, credentials, project contents and sensitive recovery receipts.
-- Installed-mode data normally lives under `%LOCALAPPDATA%\SetupSweep`; portable mode uses `SetupSweepData` beside the executable. Preserve that folder when replacing the program.
+- Installed-mode data normally lives under `%LOCALAPPDATA%\SetupSweep` (legacy compatibility path); portable mode uses `SetupSweepData` beside the executable. Preserve that folder when replacing the program.
 - Vendor installers, uninstallers, launch profiles and optional integrations can have their own effects. A read-only diagnostic result does not authorize a change or prove isolation.
 - Review destructive plans and test vendor workflows in a disposable environment. Backups and restore-point safeguards do not replace a system backup.
 
@@ -88,4 +118,8 @@ Next accepted work includes bounded build-log triage, workspace/Dev Drive guidan
 
 ## License and contributions
 
-Sean-owned SetupSweep code is licensed under the [MIT License](LICENSE). Bundled and third-party components retain their own licenses and notices. Please include a minimal reproduction and redact private paths, secrets and installation data when reporting an issue.
+Sean-owned SetupScope code is licensed under the [MIT License](LICENSE). Bundled and third-party components retain their own licenses and notices. Please include a minimal reproduction and redact private paths, secrets and installation data when reporting an issue.
+
+## SetupScope branding and compatibility
+
+SetupScope is the new name of SetupSweep. The scoped Precision S mark and layered-window banner are the current brand. Earlier screenshots, releases and commit history may show the former name. Existing `SetupSweepData` portable folders and installed data locations remain compatible; renaming does not delete or migrate saved data. The rename does not certify unfinished workflows or change the scope of historical releases.

@@ -1,7 +1,7 @@
 //! Read-only storage survey. No deletion or automatic opening of discovered files.
 use super::{a11y, app::App, theme, widgets::pick_folder, Job};
 use egui::RichText;
-use setupsweep_core::{
+use setupscope_core::{
     i18n::t,
     model::human_size,
     storage::{self, StorageReport},

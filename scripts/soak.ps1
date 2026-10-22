@@ -1,12 +1,12 @@
 <#
 .SYNOPSIS
   Soak test: install, remove and verify real programs over and over for
-  hours or days, with SetupSweep's background watcher running throughout.
+  hours or days, with SetupScope's background watcher running throughout.
 
 .DESCRIPTION
-  Each cycle installs one program under monitoring, removes it with SetupSweep
+  Each cycle installs one program under monitoring, removes it with SetupScope
   (closing it if it started, restarting Explorer if needed), and checks that
-  nothing it added is left. Meanwhile `setupsweep watch` runs as it does after
+  nothing it added is left. Meanwhile `setupscope watch` runs as it does after
   sign-in, and its handle count and memory are sampled every cycle.
 
   Fails (exit 1) when:
@@ -21,12 +21,12 @@
 
 .EXAMPLE
   # Three days on a test VM, from an elevated PowerShell:
-  .\scripts\soak.ps1 -SetupSweep .\target\release\setupsweep.exe -Hours 72
+  .\scripts\soak.ps1 -SetupScope .\target\release\setupscope.exe -Hours 72
 #>
 param(
-  [Parameter(Mandatory)] [string] $SetupSweep,
+  [Parameter(Mandatory)] [string] $SetupScope,
   [double] $Hours = 5,
-  [string] $Work = "$env:TEMP\setupsweep-soak",
+  [string] $Work = "$env:TEMP\setupscope-soak",
   # Cycles before the watcher's resource use is taken as the baseline.
   [int] $WarmupCycles = 3,
   # Allowed growth over the baseline before it counts as a leak.
@@ -49,8 +49,8 @@ $installers = @(
 )
 
 New-Item -ItemType Directory -Force $Work, "$Work\cache", "$Work\app\SetupSweepData" | Out-Null
-$exe = "$Work\app\SetupSweep.exe"
-Copy-Item $SetupSweep $exe -Force
+$exe = "$Work\app\SetupScope.exe"
+Copy-Item $SetupScope $exe -Force
 # Portable mode keeps logs and backups in the work folder.
 New-Item "$Work\app\portable" -ItemType File -Force | Out-Null
 @{
@@ -74,9 +74,9 @@ foreach ($i in $installers) {
   }
 }
 
-# Run SetupSweep and wait for it alone (not for programs an installer leaves
+# Run SetupScope and wait for it alone (not for programs an installer leaves
 # running). Returns its exit code, standard output and error output.
-function Invoke-SetupSweep([string[]] $argv, [int] $minutes = $StepMinutes) {
+function Invoke-SetupScope([string[]] $argv, [int] $minutes = $StepMinutes) {
   $quoted = $argv | ForEach-Object { if ($_ -match ' ') { '"' + $_ + '"' } else { $_ } }
   $p = Start-Process $exe -ArgumentList $quoted -PassThru -NoNewWindow `
     -RedirectStandardOutput "$Work\out.txt" -RedirectStandardError "$Work\err.txt"
@@ -90,7 +90,7 @@ function Invoke-SetupSweep([string[]] $argv, [int] $minutes = $StepMinutes) {
 
 # Install logs background monitoring recorded on its own.
 function Get-AutoLogs {
-  $r = Invoke-SetupSweep @('logs', '--tag', 'auto', '--json') 2
+  $r = Invoke-SetupScope @('logs', '--tag', 'auto', '--json') 2
   if ($r.code -ne 0 -or -not $r.out) { return @() }
   @($r.out | ConvertFrom-Json)
 }
@@ -115,7 +115,7 @@ while ((Get-Date) -lt $deadline -and $failures.Count -eq 0) {
   $ok = $true; $detail = ''
 
   $t = [Diagnostics.Stopwatch]::StartNew()
-  $r = Invoke-SetupSweep (@('monitor', '--no-prompt', '--json', '--', $iexe) + $iargs)
+  $r = Invoke-SetupScope (@('monitor', '--no-prompt', '--json', '--', $iexe) + $iargs)
   $installS = [math]::Round($t.Elapsed.TotalSeconds)
   $removeS = 0
   if ($r.code -ne 0) {
@@ -123,12 +123,12 @@ while ((Get-Date) -lt $deadline -and $failures.Count -eq 0) {
   } else {
     $log = $r.out | ConvertFrom-Json
     $t.Restart()
-    $r = Invoke-SetupSweep @('revert', $log.id, '--close-programs', '--restart-explorer', '--keep-log')
+    $r = Invoke-SetupScope @('revert', $log.id, '--close-programs', '--restart-explorer', '--keep-log')
     $removeS = [math]::Round($t.Elapsed.TotalSeconds)
     if ($r.code -ne 0) {
       $ok = $false; $detail = 'revert: ' + ((($r.out + $r.err) -split "`n" | Select-String 'FAIL' | Select-Object -First 3) -join ' | ')
     } else {
-      $r = Invoke-SetupSweep @('check-clean', $log.id)
+      $r = Invoke-SetupScope @('check-clean', $log.id)
       if ($r.code -ne 0) {
         $ok = $false; $detail = 'leftovers: ' + ((($r.out + $r.err) -split "`n" | Where-Object { $_ } | Select-Object -First 5) -join ' | ')
       }
@@ -180,7 +180,7 @@ $summary = @"
 | Failures | $($failures.Count) |
 | Watcher handles (first, last) | $($rows[0].watch_handles), $($rows[-1].watch_handles) |
 | Watcher private memory MB (first, last) | $($rows[0].watch_private_mb), $($rows[-1].watch_private_mb) |
-| SetupSweep data MB (last) | $($rows[-1].data_mb) |
+| SetupScope data MB (last) | $($rows[-1].data_mb) |
 "@
 if ($failures.Count) { $summary += "`n**First failure:** $($failures[0])`n" }
 $summary | Set-Content "$Work\soak-summary.md"

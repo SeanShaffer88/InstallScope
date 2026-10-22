@@ -3,36 +3,36 @@
 //! implements the commands stays a manageable size.
 
 pub(super) const HELP: &str = "\
-SetupSweep — Windows Install, Uninstall & Developer Tools
+SetupScope — Windows Install, Uninstall & Developer Tools
 Copyright (C) 2026 Sean Shaffer. MIT License: free software, no warranty.
 
 USAGE:
-  setupsweep                                   Start the graphical interface
-  setupsweep monitor [--name NAME] -- <installer> [args...]
+  setupscope                                   Start the graphical interface
+  setupscope monitor [--name NAME] -- <installer> [args...]
                                             Snapshot, run the installer, wait,
                                             snapshot again, save an install log
-  setupsweep snapshot <file.snap>              Save a snapshot of the system
-  setupsweep diff <before.snap> <after.snap> [--name NAME]
+  setupscope snapshot <file.snap>              Save a snapshot of the system
+  setupscope diff <before.snap> <after.snap> [--name NAME]
                                             Compare two snapshots, save a log
-  setupsweep logs [--group G] [--tag T] [--json]
+  setupscope logs [--group G] [--tag T] [--json]
                                             List saved install logs
-  setupsweep tag <log-id> [--group G] [--tags a,b]
+  setupscope tag <log-id> [--group G] [--tags a,b]
                                             Set a log's group and tags
-  setupsweep programs [--all] [--trust] [--json]
+  setupscope programs [--all] [--trust] [--json]
                                             List installed programs (--trust adds
                                             each program's digital signature)
-  setupsweep verify <file>                     Check a file's digital signature
+  setupscope verify <file>                     Check a file's digital signature
                                             (exit 2 if unsigned or invalid)
-  setupsweep revert <log-id> [--dry-run] [--remove-unlogged] [--no-backup] [--recycle]
+  setupscope revert <log-id> [--dry-run] [--remove-unlogged] [--no-backup] [--recycle]
                           [--close-programs] [--restart-explorer] [--keep-log] [--yes]
                                             Undo an installation precisely
-  setupsweep rewind <log-id> --list         App Rewind (early prototype): the
+  setupscope rewind <log-id> --list         App Rewind (early prototype): the
                                             recorded states of one program
-  setupsweep rewind <log-id> --capture [--before]
+  setupscope rewind <log-id> --capture [--before]
                                             Record the program's current file
                                             contents as a state (--before records
                                             them as the log's before-state)
-  setupsweep rewind <log-id> --to <state> [--dry-run]
+  setupscope rewind <log-id> --to <state> [--dry-run]
                                             Rewind one program to a recorded
                                             state; --dry-run prints the plan,
                                             including anything that cannot be
@@ -41,30 +41,30 @@ USAGE:
                                             backup of the current state first,
                                             and exits 2 when the state is only
                                             partly restorable
-  setupsweep export <log-id> <html|json|reg|ps1|xml> <output-file>
-  setupsweep repackage <log-id> <folder> [--no-setup]
+  setupscope export <log-id> <html|json|reg|ps1|xml> <output-file>
+  setupscope repackage <log-id> <folder> [--no-setup]
                                             A silent installer for the recorded
                                             installation: one Setup.exe plus a
                                             folder with install.ps1, install.reg
                                             and uninstall.ps1
-  setupsweep merge <log-id> <log-id>... [--name NAME]
+  setupscope merge <log-id> <log-id>... [--name NAME]
                                             Combine logs into a new one (e.g. a
                                             program and its update)
-  setupsweep learn-noise [--seconds N] [--apply] [--json]
+  setupscope learn-noise [--seconds N] [--apply] [--json]
                                             Take two snapshots N seconds apart
                                             (default 60) and list what changed
                                             on its own; --apply adds it to the
                                             exclusions
-  setupsweep transfer export <out.setupsweep> <program>...
+  setupscope transfer export <out.setupsweep> <program>...
                                             Pack programs (by name) with their files
                                             and settings to move to another PC
-  setupsweep transfer check <package>          Check a package against this PC
-  setupsweep transfer import <package> [--overwrite] [--yes]
+  setupscope transfer check <package>          Check a package against this PC
+  setupscope transfer import <package> [--overwrite] [--yes]
                                             Restore a package (undo from backups)
-  setupsweep export <log-id> portable <launcher.ini>
+  setupscope export <log-id> portable <launcher.ini>
                                             PortableApps.com Launcher settings
                                             for what the log recorded
-  setupsweep portable-build <installer> --name NAME [--version V] [--publisher P]
+  setupscope portable-build <installer> --name NAME [--version V] [--publisher P]
                  [--category C] [--silent] [--out DIR] [--here] [--defaults]
                  [--no-prompt] [--no-compile]
                                             Capture an installation in Windows
@@ -72,60 +72,60 @@ USAGE:
                                             and build a PortableApps.com package
                                             with its launcher and .paf.exe
                                             installer
-  setupsweep add-program <folder|program.exe> [--name NAME]
+  setupscope add-program <folder|program.exe> [--name NAME]
                                             List a program Windows doesn't know
                                             (e.g. portable) so it can be analyzed
                                             and uninstalled
-  setupsweep components <log-id> [--json] [--ask-model] [--strike]
+  setupscope components <log-id> [--json] [--ask-model] [--strike]
                                             Installer Decrapifier: the services,
                                             tasks and autoruns an installation
                                             added, judged; --strike removes the
                                             bloat (backed up)
-  setupsweep orphans [--json]                  List registrations left by removed
+  setupscope orphans [--json]                  List registrations left by removed
                                             programs (pointing to missing files)
-  setupsweep uninstall <name>... [--silent] [--leftovers safe|none] [--dry-run] [--yes]
+  setupscope uninstall <name>... [--silent] [--leftovers safe|none] [--dry-run] [--yes]
                                             Uninstall programs one after another,
                                             then remove safe leftovers (backed up)
-  setupsweep clean [--categories a,b] [--list] [--dry-run] [--yes]
+  setupscope clean [--categories a,b] [--list] [--dry-run] [--yes]
                                             Clean junk (default: the safe kinds)
-  setupsweep schedule-clean daily|weekly|monthly|off [--categories a,b]
+  setupscope schedule-clean daily|weekly|monthly|off [--categories a,b]
                                             Clean junk automatically
-  setupsweep startup [--json]                  List startup programs
-  setupsweep startup enable|disable <name>     Turn a startup program on or off
-  setupsweep history [--since YYYY-MM-DD] [--json]
+  setupscope startup [--json]                  List startup programs
+  setupscope startup enable|disable <name>     Turn a startup program on or off
+  setupscope history [--since YYYY-MM-DD] [--json]
                                             Record new changes, then list the
                                             recorded ones (program, startup,
                                             service, task changes)
-  setupsweep slowdown [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--json]
+  setupscope slowdown [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--json]
                                             What changed in the period, ranked
                                             by measured startup impact where
                                             Windows has it
-  setupsweep gatekeeper [--json]               Review new autostart entries
-  setupsweep gatekeeper scan                   Run one detection pass
-  setupsweep gatekeeper allow <id>             Keep an entry, mark it reviewed
-  setupsweep gatekeeper remove <id> [--yes]   Back up and remove an entry
-  setupsweep gatekeeper enable|disable         Turn the Gatekeeper on or off
-  setupsweep watch                             Background auto-monitoring (started
+  setupscope gatekeeper [--json]               Review new autostart entries
+  setupscope gatekeeper scan                   Run one detection pass
+  setupscope gatekeeper allow <id>             Keep an entry, mark it reviewed
+  setupscope gatekeeper remove <id> [--yes]   Back up and remove an entry
+  setupscope gatekeeper enable|disable         Turn the Gatekeeper on or off
+  setupscope watch                             Background auto-monitoring (started
                                             at sign-in when turned on in Settings)
-  setupsweep check-clean <log-id>              Check that nothing recorded in a log
+  setupscope check-clean <log-id>              Check that nothing recorded in a log
                                             is still on the PC (exit 2 if so)
-  setupsweep restore-point [list]              List System Restore points
-  setupsweep restore-point create [DESCRIPTION]
-  setupsweep restore-point delete <number> [--yes]
-  setupsweep restore-point rollback <number> --yes
+  setupscope restore-point [list]              List System Restore points
+  setupscope restore-point create [DESCRIPTION]
+  setupscope restore-point delete <number> [--yes]
+  setupscope restore-point rollback <number> --yes
                                             Restart Windows into a restore point
-  setupsweep backups                           List backups
-  setupsweep restore <backup-id> [--yes]       Undo a removal from its backup
-  setupsweep pa-capture <job.json>             Run a PortableApps Forge job file
+  setupscope backups                           List backups
+  setupscope restore <backup-id> [--yes]       Undo a removal from its backup
+  setupscope pa-capture <job.json>             Run a PortableApps Forge job file
                                             (the Sandbox capture runs this itself;
                                             advanced, driven entirely by the file)
-  setupsweep --version | --help
+  setupscope --version | --help
 
   Any command that takes snapshots accepts --profile NAME to use a saved
   monitoring profile (Settings > Monitoring scope).
   monitor and diff also accept --json to print the saved log's summary.
 
-  Run `setupsweep <command> --help` for one command's flags, what it
+  Run `setupscope <command> --help` for one command's flags, what it
   changes, and how it asks before destructive actions.
 
 CONFIRMATION:
@@ -142,20 +142,20 @@ Exit codes: 0 success, 1 error (including \"not confirmed\"), 2 finished
 with failures / findings.
 
 Typical CI use (installer QA):
-  setupsweep monitor --name MyApp --no-prompt --json -- dist\\MyApp-Setup.exe /S
-  setupsweep revert <log-id> --keep-log --yes
-  setupsweep check-clean <log-id>";
+  setupscope monitor --name MyApp --no-prompt --json -- dist\\MyApp-Setup.exe /S
+  setupscope revert <log-id> --keep-log --yes
+  setupscope check-clean <log-id>";
 
 /// One command's own help: usage, what it changes, its flags, and how it
-/// confirms. Printed for `setupsweep <command> --help`, which exits 0
+/// confirms. Printed for `setupscope <command> --help`, which exits 0
 /// without doing anything.
 pub(super) const COMMAND_HELP: &[(&str, &str)] = &[
     (
         "monitor",
         "\
-setupsweep monitor — record an installation as an install log
+setupscope monitor — record an installation as an install log
 
-Usage: setupsweep monitor [--name NAME] [--no-prompt] [--json] -- <installer> [args...]
+Usage: setupscope monitor [--name NAME] [--no-prompt] [--json] -- <installer> [args...]
 
 Takes a snapshot, runs the installer you name, waits for it to finish,
 snapshots again and saves the difference as an install log. Running the
@@ -168,9 +168,9 @@ Confirmation: none — the installer is run exactly as you invoked it.",
     (
         "snapshot",
         "\
-setupsweep snapshot — save a snapshot of the system
+setupscope snapshot — save a snapshot of the system
 
-Usage: setupsweep snapshot <file.snap> [--profile NAME]
+Usage: setupscope snapshot <file.snap> [--profile NAME]
 
 Records the monitored registry keys and folders into <file.snap>, to
 compare later with `diff`. Changes nothing on the PC.
@@ -179,9 +179,9 @@ Confirmation: none (writes only the file you named).",
     (
         "diff",
         "\
-setupsweep diff — compare two snapshots and save an install log
+setupscope diff — compare two snapshots and save an install log
 
-Usage: setupsweep diff <before.snap> <after.snap> [--name NAME] [--json]
+Usage: setupscope diff <before.snap> <after.snap> [--name NAME] [--json]
 
 Saves the difference as an install log. (--auto is used by background
 monitoring and tags the log as recorded automatically.)
@@ -190,9 +190,9 @@ Confirmation: none (writes only the log).",
     (
         "logs",
         "\
-setupsweep logs — list saved install logs
+setupscope logs — list saved install logs
 
-Usage: setupsweep logs [--group G] [--tag T] [--json]
+Usage: setupscope logs [--group G] [--tag T] [--json]
 
 Read-only. --json prints the list as JSON.
 Confirmation: none.",
@@ -200,9 +200,9 @@ Confirmation: none.",
     (
         "tag",
         "\
-setupsweep tag — set an install log's group and tags
+setupscope tag — set an install log's group and tags
 
-Usage: setupsweep tag <log-id> [--group G] [--tags a,b]
+Usage: setupscope tag <log-id> [--group G] [--tags a,b]
 
 Edits only the log's own metadata; removes nothing.
 Confirmation: none.",
@@ -210,9 +210,9 @@ Confirmation: none.",
     (
         "programs",
         "\
-setupsweep programs — list installed programs
+setupscope programs — list installed programs
 
-Usage: setupsweep programs [--all] [--trust] [--json]
+Usage: setupscope programs [--all] [--trust] [--json]
 
 Read-only. --all includes programs Windows lists only per-user or
 hidden; --trust adds each program's digital-signature state; --json
@@ -222,9 +222,9 @@ Confirmation: none.",
     (
         "verify",
         "\
-setupsweep verify — check a file's digital signature
+setupscope verify — check a file's digital signature
 
-Usage: setupsweep verify <file>
+Usage: setupscope verify <file>
 
 Read-only. Exits 0 when the signature is valid, 2 when the file is
 unsigned or its signature is invalid.
@@ -233,16 +233,16 @@ Confirmation: none.",
     (
         "revert",
         "\
-setupsweep revert — undo an installation precisely
+setupscope revert — undo an installation precisely
 
-Usage: setupsweep revert <log-id> [--dry-run] [--remove-unlogged] [--no-backup]
+Usage: setupscope revert <log-id> [--dry-run] [--remove-unlogged] [--no-backup]
        [--recycle] [--close-programs] [--restart-explorer] [--keep-log] [--yes]
 
 Removes what the recorded installation added: files, folders, registry
 keys and values, services, tasks and shortcuts. Items other programs
 also use are never selected automatically (printed as [refs]).
 A backup is taken first, so the removal can be undone with
-`setupsweep restore <backup-id>` — unless --no-backup is given, and
+`setupscope restore <backup-id>` — unless --no-backup is given, and
 then the removal cannot be undone. The log is deleted afterwards
 unless --keep-log. --dry-run prints the plan and changes nothing.
 Confirmation: destructive. Asks before removing; scripts must pass
@@ -251,11 +251,11 @@ Confirmation: destructive. Asks before removing; scripts must pass
     (
         "rewind",
         "\
-setupsweep rewind — App Rewind (early prototype): rewind one program
+setupscope rewind — App Rewind (early prototype): rewind one program
 
-Usage: setupsweep rewind <log-id> --list
-       setupsweep rewind <log-id> --capture [--before]
-       setupsweep rewind <log-id> --to <state> [--dry-run] [--yes]
+Usage: setupscope rewind <log-id> --list
+       setupscope rewind <log-id> --capture [--before]
+       setupscope rewind <log-id> --to <state> [--dry-run] [--yes]
 
 --list shows the program's recorded states (read-only). --capture
 records the program's current file contents as a new state in the
@@ -269,10 +269,10 @@ running, and scripts must pass --yes.",
     (
         "export",
         "\
-setupsweep export — export an install log
+setupscope export — export an install log
 
-Usage: setupsweep export <log-id> <html|json|reg|ps1|xml> <output-file>
-       setupsweep export <log-id> portable <launcher.ini>
+Usage: setupscope export <log-id> <html|json|reg|ps1|xml> <output-file>
+       setupscope export <log-id> portable <launcher.ini>
 
 Writes the log in the chosen format. Note the reg and ps1 forms are
 undo scripts: running them changes the PC the way running any script
@@ -282,9 +282,9 @@ Confirmation: none.",
     (
         "repackage",
         "\
-setupsweep repackage — build a silent installer from an install log
+setupscope repackage — build a silent installer from an install log
 
-Usage: setupsweep repackage <log-id> <folder> [--no-setup]
+Usage: setupscope repackage <log-id> <folder> [--no-setup]
 
 Writes a folder holding the recorded installation's files plus
 install.ps1, install.reg and uninstall.ps1, and (unless --no-setup)
@@ -294,9 +294,9 @@ Confirmation: none.",
     (
         "merge",
         "\
-setupsweep merge — combine install logs into a new one
+setupscope merge — combine install logs into a new one
 
-Usage: setupsweep merge <log-id> <log-id>... [--name NAME]
+Usage: setupscope merge <log-id> <log-id>... [--name NAME]
 
 The originals are kept. The merged log is printed (its id) on stdout.
 Confirmation: none.",
@@ -304,9 +304,9 @@ Confirmation: none.",
     (
         "learn-noise",
         "\
-setupsweep learn-noise — learn what changes on its own
+setupscope learn-noise — learn what changes on its own
 
-Usage: setupsweep learn-noise [--seconds N] [--apply] [--json]
+Usage: setupscope learn-noise [--seconds N] [--apply] [--json]
 
 Takes two snapshots N seconds apart (default 60) and lists what
 changed by itself. --apply adds those places to the monitoring
@@ -316,27 +316,27 @@ Confirmation: none.",
     (
         "transfer",
         "\
-setupsweep transfer — move programs to another PC
+setupscope transfer — move programs to another PC
 
-Usage: setupsweep transfer export <out.setupsweep> <program>...
-       setupsweep transfer check <package>
-       setupsweep transfer import <package> [--overwrite] [--yes]
+Usage: setupscope transfer export <out.setupsweep> <program>...
+       setupscope transfer check <package>
+       setupscope transfer import <package> [--overwrite] [--yes]
 
 export packs the named programs with their files and settings.
 check compares a package against this PC without changing anything.
 import writes the package onto this PC: files and registry settings
 are restored, replacing what is there only with --overwrite; a backup
 is taken first, so the import can be undone with
-`setupsweep restore <backup-id>`.
+`setupscope restore <backup-id>`.
 Confirmation: import is destructive. It asks first; scripts must pass
 --yes.",
     ),
     (
         "portable-build",
         "\
-setupsweep portable-build — build a PortableApps.com package
+setupscope portable-build — build a PortableApps.com package
 
-Usage: setupsweep portable-build <installer> --name NAME [--version V]
+Usage: setupscope portable-build <installer> --name NAME [--version V]
        [--publisher P] [--category C] [--silent] [--out DIR] [--here]
        [--defaults] [--no-prompt] [--no-compile]
 
@@ -351,26 +351,26 @@ you named, exactly as invoked.",
     (
         "add-program",
         "\
-setupsweep add-program — list a program Windows doesn't know
+setupscope add-program — list a program Windows doesn't know
 
-Usage: setupsweep add-program <folder|program.exe> [--name NAME]
+Usage: setupscope add-program <folder|program.exe> [--name NAME]
 
-Adds a hand-made entry (e.g. a portable program) to SetupSweep's
+Adds a hand-made entry (e.g. a portable program) to SetupScope's
 data so it can be analyzed and uninstalled. Changes no system state.
 Confirmation: none.",
     ),
     (
         "components",
         "\
-setupsweep components — Installer Decrapifier for one install log
+setupscope components — Installer Decrapifier for one install log
 
-Usage: setupsweep components <log-id> [--json] [--ask-model] [--strike] [--yes]
+Usage: setupscope components <log-id> [--json] [--ask-model] [--strike] [--yes]
 
 Lists the services, tasks and autoruns the installation added, each
 judged with its reasons. --ask-model asks the local model configured
 in Settings about the ones the rules can't judge (this PC only).
 --strike removes the components judged bloat: a backup is taken
-first, so they can be restored with `setupsweep restore <backup-id>`,
+first, so they can be restored with `setupscope restore <backup-id>`,
 and the log is updated.
 Confirmation: --strike is destructive. It asks first; scripts must
 pass --yes. Without --strike the command is read-only.",
@@ -378,9 +378,9 @@ pass --yes. Without --strike the command is read-only.",
     (
         "orphans",
         "\
-setupsweep orphans — registrations left by removed programs
+setupscope orphans — registrations left by removed programs
 
-Usage: setupsweep orphans [--json]
+Usage: setupscope orphans [--json]
 
 Read-only: lists registrations pointing at files that no longer
 exist. Exits 2 when any are found. Remove them in the app, where they
@@ -390,14 +390,14 @@ Confirmation: none.",
     (
         "uninstall",
         "\
-setupsweep uninstall — uninstall programs, then remove safe leftovers
+setupscope uninstall — uninstall programs, then remove safe leftovers
 
-Usage: setupsweep uninstall <name>... [--silent] [--leftovers safe|none]
+Usage: setupscope uninstall <name>... [--silent] [--leftovers safe|none]
        [--dry-run] [--yes]
 
 Runs each program's own uninstaller one after another (--silent uses
 its silent mode). What a program's own uninstaller changes is NOT
-backed up and SetupSweep cannot undo it. Afterwards, safe leftovers
+backed up and SetupScope cannot undo it. Afterwards, safe leftovers
 are removed with a backup (skip with --leftovers none). --dry-run
 prints the commands and changes nothing.
 Confirmation: destructive. Asks before starting; scripts must pass
@@ -407,14 +407,14 @@ confirmed.",
     (
         "clean",
         "\
-setupsweep clean — clean junk files
+setupscope clean — clean junk files
 
-Usage: setupsweep clean [--categories a,b] [--list] [--dry-run] [--yes]
-       setupsweep clean --scheduled [--categories a,b]
+Usage: setupscope clean [--categories a,b] [--list] [--dry-run] [--yes]
+       setupscope clean --scheduled [--categories a,b]
 
 Deletes junk in the chosen categories (default: the safe kinds);
 --list shows each category's size and changes nothing. Cleaned files
-are deleted permanently: they are NOT backed up and SetupSweep
+are deleted permanently: they are NOT backed up and SetupScope
 cannot restore them. Paths on the Cleaner page's Protected list are
 always kept. --dry-run reports sizes and deletes nothing.
 --scheduled is the Task Scheduler entry point (see schedule-clean):
@@ -426,12 +426,12 @@ Asks before deleting; scripts must pass --yes.",
     (
         "schedule-clean",
         "\
-setupsweep schedule-clean — clean junk automatically
+setupscope schedule-clean — clean junk automatically
 
-Usage: setupsweep schedule-clean daily|weekly|monthly|off [--categories a,b]
+Usage: setupscope schedule-clean daily|weekly|monthly|off [--categories a,b]
 
 Creates (or, with off, removes) the Windows Task Scheduler task that
-runs `setupsweep clean --scheduled`. What each run freed is recorded
+runs `setupscope clean --scheduled`. What each run freed is recorded
 in cleaning.log in the data folder.
 Confirmation: none — the schedule is set or removed exactly as asked;
 each scheduled run is the standing instruction.",
@@ -439,23 +439,23 @@ each scheduled run is the standing instruction.",
     (
         "startup",
         "\
-setupsweep startup — list and toggle startup programs
+setupscope startup — list and toggle startup programs
 
-Usage: setupsweep startup [--json]
-       setupsweep startup enable|disable <name>
+Usage: setupscope startup [--json]
+       setupscope startup enable|disable <name>
 
 Lists the programs that start with Windows. enable/disable turns one
 on or off: the change is backed up first and can be undone with
-`setupsweep restore <backup-id>` or the inverse command. Entries
+`setupscope restore <backup-id>` or the inverse command. Entries
 Windows, security software or hardware need cannot be disabled.
 Confirmation: none (backed up and reversible); listing is read-only.",
     ),
     (
         "history",
         "\
-setupsweep history — the recorded change history
+setupscope history — the recorded change history
 
-Usage: setupsweep history [--since YYYY-MM-DD] [--json]
+Usage: setupscope history [--since YYYY-MM-DD] [--json]
 
 First records observed program, startup, service and scheduled-task changes
 into history.json, then lists them, newest first. Inventory omissions can
@@ -465,9 +465,9 @@ Confirmation: none.",
     (
         "slowdown",
         "\
-setupsweep slowdown — Slowdown Detective report
+setupscope slowdown — Slowdown Detective report
 
-Usage: setupsweep slowdown [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--json]
+Usage: setupscope slowdown [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--json]
 
 What changed in the period (default: the last 90 days), ranked by
 measured startup impact where Windows has a measurement; unmeasured
@@ -477,17 +477,17 @@ Confirmation: none.",
     (
         "gatekeeper",
         "\
-setupsweep gatekeeper — Autostart Gatekeeper review queue
+setupscope gatekeeper — Autostart Gatekeeper review queue
 
-Usage: setupsweep gatekeeper [--json]
-       setupsweep gatekeeper scan
-       setupsweep gatekeeper allow <id>
-       setupsweep gatekeeper remove <id> [--yes]
-       setupsweep gatekeeper enable|disable
+Usage: setupscope gatekeeper [--json]
+       setupscope gatekeeper scan
+       setupscope gatekeeper allow <id>
+       setupscope gatekeeper remove <id> [--yes]
+       setupscope gatekeeper enable|disable
 
 New autostart entries wait in a review queue; nothing is ever blocked
 live or removed without your decision. allow keeps an entry; remove
-deletes it, backed up first (undo with `setupsweep restore
+deletes it, backed up first (undo with `setupscope restore
 <backup-id>`). scan runs one detection pass (when the Gatekeeper is
 off, it scans nothing). enable/disable turn the Gatekeeper on or off.
 Confirmation: remove is destructive. It asks first; scripts must
@@ -496,9 +496,9 @@ pass --yes. The rest never ask.",
     (
         "watch",
         "\
-setupsweep watch — background auto-monitoring
+setupscope watch — background auto-monitoring
 
-Usage: setupsweep watch
+Usage: setupscope watch
 
 Keeps a snapshot and, when a new program registers itself, records an
 install log tagged \"auto\" once the installation settles. Runs until
@@ -509,9 +509,9 @@ Confirmation: none.",
     (
         "check-clean",
         "\
-setupsweep check-clean — was an installation fully removed?
+setupscope check-clean — was an installation fully removed?
 
-Usage: setupsweep check-clean <log-id>
+Usage: setupscope check-clean <log-id>
 
 Read-only. Exits 0 when nothing the log recorded is still on the PC,
 2 when something was left behind (the leftovers are printed).
@@ -520,12 +520,12 @@ Confirmation: none.",
     (
         "restore-point",
         "\
-setupsweep restore-point — System Restore points
+setupscope restore-point — System Restore points
 
-Usage: setupsweep restore-point [list]
-       setupsweep restore-point create [DESCRIPTION]
-       setupsweep restore-point delete <number> [--yes]
-       setupsweep restore-point rollback <number> [--yes]
+Usage: setupscope restore-point [list]
+       setupscope restore-point create [DESCRIPTION]
+       setupscope restore-point delete <number> [--yes]
+       setupscope restore-point rollback <number> [--yes]
 
 list is read-only. create makes a restore point. delete removes one
 permanently — that rollback point is gone for good. rollback restarts
@@ -538,9 +538,9 @@ scripts must pass --yes.",
     (
         "backups",
         "\
-setupsweep backups — list backups
+setupscope backups — list backups
 
-Usage: setupsweep backups
+Usage: setupscope backups
 
 Read-only. Backups left by interrupted operations are marked, with
 the command that undoes them.
@@ -549,12 +549,12 @@ Confirmation: none.",
     (
         "restore",
         "\
-setupsweep restore — undo a removal from its backup
+setupscope restore — undo a removal from its backup
 
-Usage: setupsweep restore <backup-id> [--yes]
+Usage: setupscope restore <backup-id> [--yes]
 
 Puts back the files and registry settings the backup holds,
-replacing what is on the PC now. (Find ids with `setupsweep
+replacing what is on the PC now. (Find ids with `setupscope
 backups`.) The restore itself takes no new backup.
 Confirmation: destructive. Asks before restoring; scripts must pass
 --yes. Exit codes: 0 done, 2 some items failed, 1 error / not
@@ -563,9 +563,9 @@ confirmed.",
     (
         "pa-capture",
         "\
-setupsweep pa-capture — run a PortableApps Forge job file
+setupscope pa-capture — run a PortableApps Forge job file
 
-Usage: setupsweep pa-capture <job.json>
+Usage: setupscope pa-capture <job.json>
 
 Runs the capture job described by a job file written by PortableApps
 Forge (the Windows Sandbox capture runs this itself). Advanced:

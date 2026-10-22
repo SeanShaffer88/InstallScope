@@ -5,12 +5,12 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use setupsweep_core::decrap::{self, Component, Verdict};
-use setupsweep_core::i18n::{t, tf};
-use setupsweep_core::model::{human_size, InstallLog};
-use setupsweep_core::platform::{self, ChildProcess};
-use setupsweep_core::snapshot::{detect_program, diff, filter_changes, take_snapshot};
-use setupsweep_core::store::{PendingSession, Store};
+use setupscope_core::decrap::{self, Component, Verdict};
+use setupscope_core::i18n::{t, tf};
+use setupscope_core::model::{human_size, InstallLog};
+use setupscope_core::platform::{self, ChildProcess};
+use setupscope_core::snapshot::{detect_program, diff, filter_changes, take_snapshot};
+use setupscope_core::store::{PendingSession, Store};
 
 #[derive(PartialEq, Eq, Default, Clone, Copy, Debug)]
 pub enum Phase {
@@ -101,7 +101,7 @@ fn strike_note(backup_on: bool) -> String {
 fn discard_prompt(name: &str) -> (String, Confirm) {
     (
         tf(
-            "The only record of everything {name} installed will be deleted, including the saved \"before\" snapshot. {name} stays installed, but without this log SetupSweep cannot remove exactly what the install added, and the install cannot be undone from it.",
+            "The only record of everything {name} installed will be deleted, including the saved \"before\" snapshot. {name} stays installed, but without this log SetupScope cannot remove exactly what the install added, and the install cannot be undone from it.",
             &[("name", name.to_string())],
         ),
         Confirm::DiscardReview,
@@ -137,7 +137,7 @@ impl App {
         let root = self.store.root.clone();
         let session = PendingSession {
             name: name.clone(),
-            started: setupsweep_core::util::now_string(),
+            started: setupscope_core::util::now_string(),
             installer: installer.clone(),
             trial,
         };
@@ -155,12 +155,12 @@ impl App {
             if settings.gatekeeper_enabled && settings.gatekeeper_scan_after_install {
                 let prepared = (|| -> anyhow::Result<()> {
                     let store = Store::at(&root)?;
-                    let mut queue = setupsweep_core::gatekeeper::Queue::load(&store)?;
-                    let current: Vec<_> = setupsweep_core::startup::list_startup(reg.as_ref())
+                    let mut queue = setupscope_core::gatekeeper::Queue::load(&store)?;
+                    let current: Vec<_> = setupscope_core::startup::list_startup(reg.as_ref())
                         .iter()
-                        .map(setupsweep_core::gatekeeper::WatchedEntry::from)
+                        .map(setupscope_core::gatekeeper::WatchedEntry::from)
                         .collect();
-                    if setupsweep_core::gatekeeper::seed_baseline_if_empty(&mut queue, &current) {
+                    if setupscope_core::gatekeeper::seed_baseline_if_empty(&mut queue, &current) {
                         queue.save(&store)?;
                     }
                     Ok(())
@@ -173,7 +173,7 @@ impl App {
                 // A second safety net besides the log and the backup. Best
                 // effort: System Protection may be off, or one was made today.
                 pr.set_phase(t("Creating a restore point…"));
-                let _ = setupsweep_core::restore::create_restore_point(&point);
+                let _ = setupscope_core::restore::create_restore_point(&point);
             }
             let snap = take_snapshot(reg.as_ref(), &settings, pr).map_err(|e| e.to_string())?;
             let store = Store::at(&root).map_err(|e| e.to_string())?;
@@ -204,9 +204,9 @@ impl App {
                 &settings.effective_file_exclusions(),
             );
             let mut log = InstallLog {
-                id: setupsweep_core::util::new_id(),
+                id: setupscope_core::util::new_id(),
                 name,
-                created: setupsweep_core::util::now_string(),
+                created: setupscope_core::util::now_string(),
                 installer,
                 ..Default::default()
             };
@@ -399,7 +399,7 @@ impl App {
                             });
                         }
                         ui.label(t("Install the program now, and run it once if you like, so first-run settings are captured too."));
-                        ui.label(t("When everything is finished, click Finish. You can close SetupSweep or restart Windows in between; monitoring resumes."));
+                        ui.label(t("When everything is finished, click Finish. You can close SetupScope or restart Windows in between; monitoring resumes."));
                         ui.add_space(14.0);
                         ui.horizontal(|ui| {
                             ui.add_space((ui.available_width() - 260.0).max(0.0) / 2.0);
@@ -430,7 +430,7 @@ impl App {
     }
 
     fn ui_live(&mut self, ui: &mut egui::Ui) {
-        use setupsweep_core::live::{LiveKind, LiveWatcher};
+        use setupscope_core::live::{LiveKind, LiveWatcher};
         if self.live.is_none() {
             let folders: Vec<(std::path::PathBuf, bool)> = self
                 .settings
@@ -438,14 +438,14 @@ impl App {
                 .iter()
                 .map(|r| {
                     (
-                        std::path::PathBuf::from(setupsweep_core::platform::expand_env(&r.path)),
+                        std::path::PathBuf::from(setupscope_core::platform::expand_env(&r.path)),
                         r.recursive,
                     )
                 })
                 .filter(|(p, _)| p.is_dir())
                 .collect();
             let excl =
-                setupsweep_core::util::Exclusions::new(&self.settings.effective_file_exclusions());
+                setupscope_core::util::Exclusions::new(&self.settings.effective_file_exclusions());
             self.live = Some(LiveWatcher::start(
                 &folders,
                 &self.settings.registry_roots,
@@ -495,7 +495,7 @@ impl App {
         ui.vertical_centered(|ui| {
             ui.heading(RichText::new(t("Install with monitoring")).strong());
             ui.add_space(4.0);
-            muted(ui, t("SetupSweep records every file, folder, registry key, service and scheduled task an installation adds or changes."));
+            muted(ui, t("SetupScope records every file, folder, registry key, service and scheduled task an installation adds or changes."));
             muted(ui, t("Later it can remove exactly those changes, and nothing else."));
         });
         ui.add_space(20.0);
@@ -503,9 +503,9 @@ impl App {
             egui::Frame::group(cols[0].style()).inner_margin(16).show(&mut cols[0], |ui| {
                 ui.set_min_height(150.0);
                 ui.label(RichText::new(format!("📦 {}", t("Install and monitor"))).strong().size(16.0));
-                small_muted(ui, t("Choose an installer. SetupSweep takes a snapshot, runs it, and waits for you to finish."));
+                small_muted(ui, t("Choose an installer. SetupScope takes a snapshot, runs it, and waits for you to finish."));
                 ui.add_space(10.0);
-                if super::a11y::explain(theme::primary_button(ui, t("Choose installer…")), &t("Choose an installer file. SetupSweep snapshots your PC, runs the installer, and records everything it changes, so the program can be removed exactly later.")).clicked() {
+                if super::a11y::explain(theme::primary_button(ui, t("Choose installer…")), &t("Choose an installer file. SetupScope snapshots your PC, runs the installer, and records everything it changes, so the program can be removed exactly later.")).clicked() {
                     self.start_install_and_monitor(ctx);
                 }
             });
@@ -712,7 +712,7 @@ impl App {
                             let why = if busy {
                                 t("The local model is judging the unknown components now.")
                             } else {
-                                t("Ask the language model running on this PC, set up in Settings, to judge the components marked Unknown. It is only contacted when you click, and SetupSweep refuses any address that is not on this PC, so nothing leaves this PC.")
+                                t("Ask the language model running on this PC, set up in Settings, to judge the components marked Unknown. It is only contacted when you click, and SetupScope refuses any address that is not on this PC, so nothing leaves this PC.")
                             };
                             if super::a11y::explain(
                                 ui.add_enabled(!busy, egui::Button::new(t("Ask the local model about the unknown ones"))),
@@ -750,7 +750,7 @@ impl App {
             let (app, publisher) = (log.name.clone(), log.publisher.clone());
             self.monitor.decrap_job = Some(Job::spawn(&self.ctx, move |_| {
                 let mut comps = comps;
-                setupsweep_core::llm::judge_unknowns(
+                setupscope_core::llm::judge_unknowns(
                     &model_url,
                     &model_name,
                     &app,
@@ -832,7 +832,7 @@ impl App {
             self.monitor.save_job = Some(Job::spawn(&self.ctx, move |_| {
                 if !chosen.is_empty() {
                     let mut writer = if backup_on {
-                        match setupsweep_core::backup::BackupWriter::new(
+                        match setupscope_core::backup::BackupWriter::new(
                             &store.backups_dir(),
                             &format!("Strike background items of {}", log.name),
                         ) {
@@ -894,15 +894,15 @@ impl App {
 }
 
 fn gatekeeper_scan_after_install(
-    reg: &dyn setupsweep_core::platform::Registry,
+    reg: &dyn setupscope_core::platform::Registry,
     store: &Store,
 ) -> anyhow::Result<usize> {
-    let mut queue = setupsweep_core::gatekeeper::Queue::load(store)?;
-    let current: Vec<_> = setupsweep_core::startup::list_startup(reg)
+    let mut queue = setupscope_core::gatekeeper::Queue::load(store)?;
+    let current: Vec<_> = setupscope_core::startup::list_startup(reg)
         .iter()
-        .map(setupsweep_core::gatekeeper::WatchedEntry::from)
+        .map(setupscope_core::gatekeeper::WatchedEntry::from)
         .collect();
-    let summary = setupsweep_core::gatekeeper::run_scan(&mut queue, &current, &store.list_logs());
+    let summary = setupscope_core::gatekeeper::run_scan(&mut queue, &current, &store.list_logs());
     let count = summary.added.len() + summary.changed.len();
     queue.save(store)?;
     Ok(count)
@@ -914,7 +914,7 @@ impl App {
     /// made minutes ago by this installer). Protected locations are still
     /// refused, and everything is backed up as usual.
     pub(super) fn undo_trial(&mut self, log: &InstallLog) {
-        let plan = setupsweep_core::revert::build_plan(&log.changes, self.reg.as_ref());
+        let plan = setupscope_core::revert::build_plan(&log.changes, self.reg.as_ref());
         let mut flow = super::plan::RemovalFlow::new(
             tf("Undo the trial of {name}", &[("name", log.name.clone())]),
             plan,

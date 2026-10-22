@@ -160,7 +160,7 @@ pub fn silent_command(p: &InstalledProgram, engine: Engine) -> Option<String> {
         }
         Engine::Nsis => {
             // `_?=` runs the uninstaller in place (instead of a copy in %TEMP%)
-            // so SetupSweep can wait for it; it must come last. The uninstaller
+            // so SetupScope can wait for it; it must come last. The uninstaller
             // file itself is then left behind and removed by the leftover scan.
             let dir = exe
                 .trim_matches('"')

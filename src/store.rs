@@ -1,7 +1,7 @@
-//! Where SetupSweep keeps its data: install logs, backups, pending monitoring
+//! Where SetupScope keeps its data: install logs, backups, pending monitoring
 //! sessions and settings.
 //!
-//! Installed mode: `%LOCALAPPDATA%\SetupSweep`.
+//! Installed mode: `%LOCALAPPDATA%\SetupSweep` (legacy data path retained).
 //! Portable mode (a file named `portable` next to the exe): `SetupSweepData\`
 //! next to the exe.
 
@@ -196,7 +196,7 @@ impl Store {
     /// Import a log exported from another machine or an older install.
     pub fn import_log(&self, path: &Path) -> Result<InstallLog> {
         let mut log: InstallLog = crate::json::compat::from_str(&std::fs::read_to_string(path)?)
-            .context("not an SetupSweep install log")?;
+            .context("not an SetupScope install log")?;
         if log.id.is_empty() || self.log_path(&log.id).exists() {
             log.id = crate::util::new_id();
         }

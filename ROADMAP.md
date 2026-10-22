@@ -6,7 +6,7 @@ listed in the [README](README.md#features).
 
 ## Product direction
 
-SetupSweep is a cohesive local Windows toolkit for reclaiming disk space,
+SetupScope is a cohesive local Windows toolkit for reclaiming disk space,
 reviewing bloat and telemetry, thorough program removal, install monitoring,
 program migration, developer containment, temporary scratch storage, conservative
 registry repair, and read-only VSS browsing. Existing tools and planned tools must
@@ -99,7 +99,7 @@ reference counting → Canary → Slowdown Detective → Autostart Gatekeeper �
 App Rewind. The first four are now implemented at least in part; each bullet
 states what has shipped and what is still open.
 - **Shared-component reference counting** — shipped in the removal review
-  (and `setupsweep revert`): every item is cross-checked against all install
+  (and `setupscope revert`): every item is cross-checked against all install
   logs and labeled from real data — *Used only by this program* (safe),
   *Shared with N others — removing may break them* (Careful), or *No install
   log mentions this* (unknown; never rendered as "unused"). Shared and unknown
@@ -125,7 +125,7 @@ states what has shipped and what is still open.
   must never be presented as proof of causation.
 - **Autostart Gatekeeper** — opt-in (Advanced) review of the programs that
   start with Windows. Detection, attribution and the Decrapifier verdicts are
-  wired to both the command line (`setupsweep gatekeeper`) and an
+  wired to both the command line (`setupscope gatekeeper`) and an
   **Autostart Gatekeeper** page, where each new or changed Run/RunOnce entry or
   Startup-folder shortcut waits for an explicit *Keep* or *Remove* (backed up
   first). The weekly, non-modal dashboard digest and optional scan after a
@@ -210,7 +210,7 @@ states what has shipped and what is still open.
 - **Diagnostic-tool handoff** — when useful, offer to open an already
   installed Microsoft Sysinternals diagnostic such as Process Explorer or
   Process Monitor at the relevant file/process, but do not bundle or download
-  third-party executables automatically. SetupSweep's own process, lock, and
+  third-party executables automatically. SetupScope's own process, lock, and
   install-monitoring views remain the primary experience. See the
   [Sysinternals tools](https://learn.microsoft.com/en-us/sysinternals/).
 
@@ -218,12 +218,12 @@ states what has shipped and what is still open.
 
 - **Already covered; avoid duplication:** installed-program analysis, monitored
   installs, leftovers, forced removal, and batch uninstall are workflows
-  SetupSweep already has. Keep investment on reliability, review, and the
+  SetupScope already has. Keep investment on reliability, review, and the
   native UI migration rather than parallel tools.
 - **Window-targeted identification** is prototyped above.
   Browser-extension inventory is a separate, reversible follow-on, not a
   browser-cleaning bundle.
-- **Reviewed junk and update cleanup:** extend SetupSweep's existing
+- **Reviewed junk and update cleanup:** extend SetupScope's existing
   review/restore patterns for the relevant cleanup; defer Compact OS and
   secure deletion, which broaden scope and carry substantially higher
   system/data risk.
@@ -254,7 +254,7 @@ states what has shipped and what is still open.
 - **An isolated sandbox for Windows 11 Home** — Home PCs now have *Try it, then undo*, which installs, records and removes again; a virtual machine option (Home has no Hyper-V, so VirtualBox or QEMU) would keep them entirely untouched.
 
 **Release readiness**
-- **Code signing certificate** — the release workflow already signs `SetupSweep.exe` (x64 and Arm64) and the installer, with a timestamp, as soon as the `CODESIGN_PFX` and `CODESIGN_PASSWORD` repository secrets are set. What's left is getting a certificate: a free open-source one (SignPath Foundation), Azure Artifact Signing, or an OV certificate.
+- **Code signing certificate** — the release workflow already signs `SetupScope.exe` (x64 and Arm64) and the installer, with a timestamp, as soon as the `CODESIGN_PFX` and `CODESIGN_PASSWORD` repository secrets are set. What's left is getting a certificate: a free open-source one (SignPath Foundation), Azure Artifact Signing, or an OV certificate.
 - **Antivirus false-positive reports** — the release workflow already uploads every download to VirusTotal when the `VIRUSTOTAL_API_KEY` secret is set, warns about any detection and links each report in the release notes. What's left is a free VirusTotal account for the key, and submitting any false positives to Microsoft Defender, Malwarebytes and other vendors before publishing.
 - **Windows 11 client validation** — the integration matrix (Windows Installer, NSIS, Inno Setup, Squirrel, WiX Burn, and InstallShield and Wise once the `INSTALLSHIELD_URL` and `WISE_URL` repository variables point to test installers) runs on Windows Server runners; run it on a freshly provisioned, snapshot-isolated Windows 11 virtual machine as well, and add a large MSI suite.
 - **Multi-day soak run** — `scripts/soak.ps1` is ready and runs for five hours every week in CI; run it for several days on a test VM before the first release.
@@ -266,11 +266,11 @@ states what has shipped and what is still open.
 ## Considered and not planned
 - **Kernel minifilter driver for monitoring** — a driver must be signed by Microsoft, which open-source projects can't easily get, and a driver bug can crash Windows. Snapshots plus Windows' change notifications capture the same changes safely.
 - **Rewrite in C#/.NET with WinUI 3** — it would add a runtime dependency and give up the single self-contained exe. The Rust engine is already native and fast.
-- **Always require administrator rights in the manifest** — SetupSweep starts as the current user and offers a one-click relaunch as administrator, because much of it (browsing programs, junk cleaning in your profile, the Ask, Snapshots and Right-click menu pages for your account) needs no elevation, and the command line must run in unelevated scripts. Actions that need administrator rights say so and relaunch elevated.
-- **Self-contained .NET deployment, trimming and ReadyToRun** — not applicable: SetupSweep is a native Rust program with no runtime to bundle, already built as separate x64 and Arm64 executables with link-time optimization.
+- **Always require administrator rights in the manifest** — SetupScope starts as the current user and offers a one-click relaunch as administrator, because much of it (browsing programs, junk cleaning in your profile, the Ask, Snapshots and Right-click menu pages for your account) needs no elevation, and the command line must run in unelevated scripts. Actions that need administrator rights say so and relaunch elevated.
+- **Self-contained .NET deployment, trimming and ReadyToRun** — not applicable: SetupScope is a native Rust program with no runtime to bundle, already built as separate x64 and Arm64 executables with link-time optimization.
 - **SQLite index** — the program list is already filtered instantly in memory; the on-disk cache planned above covers the slow parts (sizes, icons, signatures) without a database.
 
 ## Known limitations
-- Contents of files the installer *modified* or *deleted* can't be restored (only their existence is recorded); SetupSweep lists them so you know.
+- Contents of files the installer *modified* or *deleted* can't be restored (only their existence is recorded); SetupScope lists them so you know.
 - A restored scheduled task file is not re-registered with Task Scheduler until it is re-imported.
 - Snapshots cover the current user's profile; changes to other users' profiles aren't captured.

@@ -5,7 +5,7 @@ use super::{
     app::{App, Tab},
     theme, Job,
 };
-use setupsweep_core::{
+use setupscope_core::{
     history::{self, HistoryStore, SlowdownReport},
     i18n::t,
     time::Date,
@@ -97,15 +97,15 @@ impl App {
         let reg = self.reg.clone();
         self.slowdown.job = Some(Job::spawn(ctx, move |_| {
             let store = match std::fs::read(HistoryStore::path(&root)) {
-                Ok(bytes) => setupsweep_core::json::compat::from_slice::<HistoryStore>(&bytes)
+                Ok(bytes) => setupscope_core::json::compat::from_slice::<HistoryStore>(&bytes)
                     .map_err(|e| format!("Could not read history.json: {e}. Restore a known-good copy from your data backup."))?,
                 Err(e) if e.kind() == std::io::ErrorKind::NotFound => HistoryStore::default(),
                 Err(e) => return Err(format!("Could not open history.json: {e}. Check access to the data folder and try Refresh.")),
             };
             let mut report = history::report(&store, from, to);
-            let boot = setupsweep_core::boot::read();
-            let usage = setupsweep_core::usage::UsageData::gather(reg.as_ref(), &root);
-            let programs = setupsweep_core::programs::list_programs(reg.as_ref(), false);
+            let boot = setupscope_core::boot::read();
+            let usage = setupscope_core::usage::UsageData::gather(reg.as_ref(), &root);
+            let programs = setupscope_core::programs::list_programs(reg.as_ref(), false);
             report.events.reverse();
             let impact: Vec<Option<u64>> = report
                 .events
@@ -116,8 +116,8 @@ impl App {
                             return None;
                         }
                         let mut matches = programs.iter().filter(|p| {
-                            setupsweep_core::model::fold(&p.name)
-                                == setupsweep_core::model::fold(&event.subject)
+                            setupscope_core::model::fold(&p.name)
+                                == setupscope_core::model::fold(&event.subject)
                         });
                         let p = matches.next()?;
                         if matches.next().is_some() {
@@ -164,7 +164,7 @@ impl App {
                 ui.label(format!("{} – {} · {} {} · {} {}", r.from, r.to, r.events.len(), t("changes in range"), r.total_events, t("recorded in total")));
                 if let Some(started) = &r.history_started { ui.label(format!("{} {started}", t("Recording began:"))); }
                 if r.is_empty() {
-                    ui.label(if r.total_events == 0 { t("Not enough history yet. Run setupsweep history or setupsweep slowdown to capture a baseline, then run it again after changes. Refresh reads that saved history.") } else { t("No recorded changes in this range. Widen the dates and Refresh.") });
+                    ui.label(if r.total_events == 0 { t("Not enough history yet. Run setupscope history or setupscope slowdown to capture a baseline, then run it again after changes. Refresh reads that saved history.") } else { t("No recorded changes in this range. Widen the dates and Refresh.") });
                 }
                 ui.label(t("Measured entries appear first, highest startup cost first; unmeasured entries follow by recency. No measurement means unknown impact, not zero. Service and scheduled-task changes are included when the local inventory can read them; a change near an install is a clue, not proof of cause."));
                 egui::ScrollArea::vertical().max_height((ui.available_height() - 48.0).max(80.0)).id_salt("slowdown_events").show(ui, |ui| {

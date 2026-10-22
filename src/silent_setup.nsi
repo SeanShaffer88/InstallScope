@@ -1,11 +1,11 @@
-; SetupSweep silent setup
+; SetupScope silent setup
 ; Copyright (C) 2026 Sean Shaffer. MIT License: free software, no warranty.
 ;
 ; One file that redeploys a repackaged installation without any questions:
 ; it unpacks the package (files, install.reg, install.ps1, uninstall.ps1),
 ; runs install.ps1 and keeps uninstall.ps1 for later.
 ;
-; Defines passed by SetupSweep: PACKAGE, NAME, SAFENAME, VERSION, OUTFILE.
+; Defines passed by SetupScope: PACKAGE, NAME, SAFENAME, VERSION, OUTFILE.
 
 Unicode true
 ManifestDPIAware true
@@ -20,7 +20,7 @@ OutFile "${OUTFILE}"
 
 VIProductVersion "${VERSION}"
 VIAddVersionKey "ProductName" "${NAME}"
-VIAddVersionKey "FileDescription" "${NAME} (silent setup made by SetupSweep)"
+VIAddVersionKey "FileDescription" "${NAME} (silent setup made by SetupScope)"
 VIAddVersionKey "FileVersion" "${VERSION}"
 VIAddVersionKey "LegalCopyright" "See the program's own license"
 
@@ -32,8 +32,8 @@ Section
 	nsExec::ExecToLog 'powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\package\install.ps1"'
 	Pop $0
 	; Keep the removal script where an administrator can find it.
-	CreateDirectory "$APPDATA\SetupSweep\Packages\${SAFENAME}"
-	CopyFiles /SILENT "$PLUGINSDIR\package\uninstall.ps1" "$APPDATA\SetupSweep\Packages\${SAFENAME}"
+	CreateDirectory "$APPDATA\SetupScope\Packages\${SAFENAME}"
+	CopyFiles /SILENT "$PLUGINSDIR\package\uninstall.ps1" "$APPDATA\SetupScope\Packages\${SAFENAME}"
 	SetOutPath "$TEMP"
 	${If} $0 != 0
 		SetErrorLevel 1

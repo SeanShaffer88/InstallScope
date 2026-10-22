@@ -4,10 +4,10 @@ use super::theme;
 use super::widgets::*;
 use super::*;
 use egui::RichText;
-use setupsweep_core::i18n::{self, t, tf};
-use setupsweep_core::platform::{self, Registry};
-use setupsweep_core::settings::Settings;
-use setupsweep_core::store::Store;
+use setupscope_core::i18n::{self, t, tf};
+use setupscope_core::platform::{self, Registry};
+use setupscope_core::settings::Settings;
+use setupscope_core::store::Store;
 use std::sync::Arc;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -46,7 +46,7 @@ pub enum Confirm {
     DeleteTask(usize),
     /// Disable a browser extension (reversibly, nothing is deleted).
     DisableExtension(String),
-    /// Restore a browser extension disabled through SetupSweep.
+    /// Restore a browser extension disabled through SetupScope.
     RestoreExtension(String),
     /// Remove an autostart entry from the Gatekeeper's review queue.
     GatekeeperRemove(String),
@@ -57,15 +57,15 @@ pub enum Confirm {
     DiscardReview,
     /// Turn an optional Windows feature on (true) or off.
     /// Run one deep (Windows) cleanup.
-    DeepClean(setupsweep_core::slimmer::DeepItem),
+    DeepClean(setupscope_core::slimmer::DeepItem),
     /// Remove the ticked pre-installed apps, deprovisioning the named
     /// Store apps for new user accounts at the same time.
     DeprovisionBloat(
         Vec<String>,
-        Vec<setupsweep_core::programs::InstalledProgram>,
+        Vec<setupscope_core::programs::InstalledProgram>,
     ),
     /// Apply or clear one documented Windows privacy registry value.
-    PrivacyChange(setupsweep_core::privacy::Control, bool),
+    PrivacyChange(setupscope_core::privacy::Control, bool),
     SetProtection(bool),
     RestoreTo(u32),
     DeleteRestorePoint(u32),
@@ -154,10 +154,10 @@ pub struct App {
     pub slowdown: super::slowdown_ui::SlowdownState,
     pub storage: super::storage_ui::StorageState,
     pub alt: super::alt_ui::AltState,
-    /// "Ask SetupSweep" plain-language search (Ctrl+K).
+    /// "Ask SetupScope" plain-language search (Ctrl+K).
     pub ask_ui: super::ask::AskState,
     /// Live activity while monitoring an installation.
-    pub live: Option<setupsweep_core::live::LiveWatcher>,
+    pub live: Option<setupscope_core::live::LiveWatcher>,
     /// Whether background monitoring is on (read from Task Scheduler once).
     pub auto_watch: Option<bool>,
     pub auto_watch_job: Option<super::Job<bool>>,
@@ -169,7 +169,7 @@ pub struct App {
     /// A file operation (deleting a backup) running in the background.
     pub file_job: Option<Job<Result<(), String>>>,
     /// System-wide scan for registrations left by removed programs.
-    pub orphan_job: Option<Job<setupsweep_core::revert::Plan>>,
+    pub orphan_job: Option<Job<setupscope_core::revert::Plan>>,
     pub startup: startup_tab::StartupState,
     pub cleaner: cleaner::CleanerState,
     pub settings_ui: settings_tab::SettingsState,
@@ -182,7 +182,7 @@ pub struct App {
     pub ctrl_tab: Option<bool>,
     pub welcome_open: bool,
     pub focus_search: bool,
-    /// Installer passed from Explorer's "Install with SetupSweep".
+    /// Installer passed from Explorer's "Install with SetupScope".
     pub pending_install: Option<String>,
     /// Arguments to pass on when relaunching as Administrator.
     pub launch_args: Vec<String>,
@@ -197,7 +197,7 @@ impl App {
         launch_args: Vec<String>,
     ) -> Self {
         let store = Store::open().unwrap_or_else(|_| {
-            Store::at(&std::env::temp_dir().join("SetupSweep")).expect("data folder")
+            Store::at(&std::env::temp_dir().join("SetupScope")).expect("data folder")
         });
         let settings = store.load_settings();
         let first_run_done = settings.first_run_done;
@@ -269,7 +269,7 @@ impl App {
             removal: None,
         };
         app.programs.cache = std::sync::Arc::new(std::sync::Mutex::new(
-            setupsweep_core::cache::Cache::load(&app.store.cache_path()),
+            setupscope_core::cache::Cache::load(&app.store.cache_path()),
         ));
         app.reload_logs();
         app.reload_backups();
@@ -304,7 +304,7 @@ impl App {
     pub fn reload_backups(&mut self) {
         let dir = self.store.backups_dir();
         self.backups.loader.request(&self.ctx, move || {
-            setupsweep_core::backup::list_backups(&dir)
+            setupscope_core::backup::list_backups(&dir)
         });
     }
 
@@ -316,7 +316,7 @@ impl App {
         let reg = self.reg.clone();
         self.set_status(t("Looking for leftovers of removed programs…"));
         self.orphan_job = Some(Job::spawn(&self.ctx, move |_| {
-            setupsweep_core::orphans::scan_system(reg.as_ref())
+            setupscope_core::orphans::scan_system(reg.as_ref())
         }));
     }
 
@@ -466,7 +466,7 @@ impl App {
                     if std::mem::take(&mut self.focus_menu) {
                         file.response.request_focus();
                         ui.ctx().data_mut(|d| {
-                            d.insert_temp(egui::Id::new("setupsweep_keyboard_mode"), true)
+                            d.insert_temp(egui::Id::new("setupscope_keyboard_mode"), true)
                         });
                     }
                     ui.menu_button(t("Utilities"), |ui| {
@@ -506,8 +506,8 @@ impl App {
                         if ui.button(t("Create restore point")).clicked() {
                             ui.close();
                             self.programs.restore_job = Some(Job::spawn(ctx, |_| {
-                                setupsweep_core::restore::create_restore_point(
-                                    "SetupSweep manual restore point",
+                                setupscope_core::restore::create_restore_point(
+                                    "SetupScope manual restore point",
                                 )
                                 .map_err(|e| e.to_string())
                             }));
@@ -566,7 +566,7 @@ impl App {
                             ));
                         }
                         ui.separator();
-                        if ui.button(t("About SetupSweep")).clicked() {
+                        if ui.button(t("About SetupScope")).clicked() {
                             ui.close();
                             self.about_open = true;
                         }
@@ -640,7 +640,7 @@ impl App {
                                 egui::Image::new(&tex).fit_to_exact_size(egui::vec2(28.0, 28.0)),
                             );
                             ui.label(
-                                RichText::new("SetupSweep")
+                                RichText::new("SetupScope")
                                     .size(19.0)
                                     .strong()
                                     .color(egui::Color32::WHITE),
@@ -973,7 +973,7 @@ impl App {
                         }
                         ui.add_space(4.0);
                         if ui
-                            .button(format!("🔎 {}", t("Ask SetupSweep")))
+                            .button(format!("🔎 {}", t("Ask SetupScope")))
                             .on_hover_text(t(
                                 "Search programs and install logs in plain words (Ctrl+K)",
                             ))
@@ -1000,7 +1000,7 @@ impl App {
             Tab::Backups => self.reload_backups(),
             Tab::Startup if !self.startup.loaded => self.refresh_startup(ctx),
             // Re-read the stored queue each time the page opens, so a scan run
-            // from the command line shows up without restarting SetupSweep.
+            // from the command line shows up without restarting SetupScope.
             Tab::Gatekeeper => self.refresh_gatekeeper(),
             Tab::Slowdown => self.refresh_slowdown(ctx),
             Tab::Settings => self.settings_ui.load(&self.settings),
@@ -1023,9 +1023,9 @@ impl App {
                         small_muted(
                             ui,
                             format!(
-                                "SetupSweep {} · © {}",
-                                setupsweep_core::APP_VERSION,
-                                setupsweep_core::APP_AUTHOR
+                                "SetupScope {} · © {}",
+                                setupscope_core::APP_VERSION,
+                                setupscope_core::APP_AUTHOR
                             ),
                         );
                         if self.store.portable {
@@ -1046,7 +1046,7 @@ impl App {
                 });
                 ui.add_space(6.0);
                 ui.label(t(
-                    "SetupSweep is not running as Administrator. It needs admin rights to work effectively: \
+                    "SetupScope is not running as Administrator. It needs admin rights to work effectively: \
                      to monitor and undo installations system-wide, remove programs installed for all users, \
                      manage services, and clean protected folders.",
                 ));
@@ -1125,7 +1125,7 @@ impl App {
         }
         if self.about_open {
             let logo = self.logo.clone();
-            egui::Window::new(t("About SetupSweep"))
+            egui::Window::new(t("About SetupScope"))
                 .collapsible(false)
                 .resizable(false)
                 .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -1135,17 +1135,17 @@ impl App {
                         let tex = logo.clone();
                         ui.add(egui::Image::new(&tex).fit_to_exact_size(egui::vec2(96.0, 96.0)));
                         ui.heading(
-                            RichText::new("SetupSweep")
+                            RichText::new("SetupScope")
                                 .color(theme::ACCENT_TEXT)
                                 .strong(),
                         );
                         ui.label(tf(
                             "Version {n}",
-                            &[("n", setupsweep_core::APP_VERSION.to_string())],
+                            &[("n", setupscope_core::APP_VERSION.to_string())],
                         ));
                         ui.add_space(6.0);
                         ui.label(t("Windows Install, Uninstall & Developer Tools"));
-                        ui.label(format!("© 2026 {}", setupsweep_core::APP_AUTHOR));
+                        ui.label(format!("© 2026 {}", setupscope_core::APP_AUTHOR));
                         ui.add_space(6.0);
                         small_muted(
                             ui,
@@ -1187,19 +1187,19 @@ impl App {
         self.poll_silent_package();
         self.poll_precheck(ctx);
         // Resource-use history: a quick sample of running programs every
-        // five minutes while SetupSweep is open (background monitoring does the
+        // five minutes while SetupScope is open (background monitoring does the
         // same when it is on).
         {
             use std::sync::atomic::{AtomicI64, Ordering};
             static LAST: AtomicI64 = AtomicI64::new(0);
-            let now = setupsweep_core::time::unix_now();
+            let now = setupscope_core::time::unix_now();
             if now - LAST.load(Ordering::Relaxed) >= 300 {
                 LAST.store(now, Ordering::Relaxed);
                 let root = self.store.root.clone();
                 std::thread::spawn(move || {
                     #[cfg(windows)]
-                    setupsweep_core::platform::windows::lower_thread_priority();
-                    setupsweep_core::usage::sample_and_save(&root, 290);
+                    setupscope_core::platform::windows::lower_thread_priority();
+                    setupscope_core::usage::sample_and_save(&root, 290);
                 });
             }
         }
@@ -1215,7 +1215,7 @@ impl App {
     }
 
     fn import_log(&mut self) {
-        let Some(path) = pick_file(&t("Import install log"), "SetupSweep log", &["json"]) else {
+        let Some(path) = pick_file(&t("Import install log"), "SetupScope log", &["json"]) else {
             return;
         };
         match self.store.import_log(&path) {
@@ -1234,7 +1234,7 @@ impl App {
         };
         let mut all = self.programs.list.clone();
         all.extend(self.programs.store_apps.clone());
-        match std::fs::write(&path, setupsweep_core::programs::to_csv(&all)) {
+        match std::fs::write(&path, setupscope_core::programs::to_csv(&all)) {
             Ok(()) => self.set_status(tf("Saved {path}", &[("path", path.display().to_string())])),
             Err(e) => self.set_status(e.to_string()),
         }
@@ -1246,13 +1246,13 @@ pub fn logo_image() -> egui::ColorImage {
     decode_png(include_bytes!("../../assets/icon-256.png"))
 }
 
-/// Small logo (red card, black E), legible at sidebar/taskbar size.
+/// Scoped Precision S logo, resized for small UI surfaces.
 pub fn logo_small_image() -> egui::ColorImage {
     decode_png(include_bytes!("../../assets/icon-taskbar.png"))
 }
 
 fn decode_png(bytes: &[u8]) -> egui::ColorImage {
-    match setupsweep_core::png::decode(bytes) {
+    match setupscope_core::png::decode(bytes) {
         Ok(img) => {
             let size = [img.width as usize, img.height as usize];
             egui::ColorImage::from_rgba_unmultiplied(size, &img.pixels)
@@ -1265,19 +1265,19 @@ fn decode_png(bytes: &[u8]) -> egui::ColorImage {
 fn page_help(tab: Tab) -> &'static [&'static str] {
     match tab {
         Tab::Dashboard => &[
-            "The dashboard shows how many programs are installed, which ones SetupSweep recorded, and anything that needs attention.",
+            "The dashboard shows how many programs are installed, which ones SetupScope recorded, and anything that needs attention.",
             "Click a tile or a quick action to jump straight to it.",
         ],
         Tab::Programs => &[
             "This is the list of programs installed on this PC. Select one to see its details, or double-click it to uninstall.",
-            "Uninstall first runs the program's own uninstaller, then SetupSweep looks for anything left behind (leftovers) and shows you before removing it.",
+            "Uninstall first runs the program's own uninstaller, then SetupScope looks for anything left behind (leftovers) and shows you before removing it.",
             "Tick several programs to uninstall them one after another. \"Broken\" lists entries whose files are already gone.",
-            "Everything SetupSweep removes is backed up first, so you can undo it on the Backups page, unless you have turned backups off in Settings.",
+            "Everything SetupScope removes is backed up first, so you can undo it on the Backups page, unless you have turned backups off in Settings.",
         ],
         Tab::Monitor => &[
-            "Monitoring means SetupSweep takes a \"before\" picture of your system, you install a program, and SetupSweep takes an \"after\" picture.",
-            "The difference is exactly what the installation added or changed. SetupSweep saves it as an install log.",
-            "Later, SetupSweep can use that log to remove the program completely and precisely — even things its own uninstaller would forget.",
+            "Monitoring means SetupScope takes a \"before\" picture of your system, you install a program, and SetupScope takes an \"after\" picture.",
+            "The difference is exactly what the installation added or changed. SetupScope saves it as an install log.",
+            "Later, SetupScope can use that log to remove the program completely and precisely — even things its own uninstaller would forget.",
         ],
         Tab::Logs => &[
             "Each install log lists everything one monitored installation added or changed: files, folders, registry entries, services and tasks.",
@@ -1285,7 +1285,7 @@ fn page_help(tab: Tab) -> &'static [&'static str] {
             "You can export a log as a readable report, or as scripts that undo the installation on another PC.",
         ],
         Tab::Backups => &[
-            "When backups are on (the default), SetupSweep copies what a removal is about to delete or change here first. If you turn backups off in Settings, removals are not backed up — and the Junk Cleaner never backs up what it deletes.",
+            "When backups are on (the default), SetupScope copies what a removal is about to delete or change here first. If you turn backups off in Settings, removals are not backed up — and the Junk Cleaner never backs up what it deletes.",
             "If something stops working after a removal, click Restore to put everything back exactly as it was.",
         ],
         Tab::Startup => &[
@@ -1304,7 +1304,7 @@ fn page_help(tab: Tab) -> &'static [&'static str] {
         ],
         Tab::Lab => &[
             "A snapshot records the registry and files at one moment. Take one, make changes (install something, change settings), take another and compare the two to see exactly what changed.",
-            "The differences can be saved as an install log, so they can be undone like a monitored installation. Everything is also available from the command line (setupsweep --help).",
+            "The differences can be saved as an install log, so they can be undone like a monitored installation. Everything is also available from the command line (setupscope --help).",
         ],
         Tab::Shell => &[
             "Programs add commands and shell extensions to the right-click menu of files, folders, drives and the desktop. Many stay behind after the program is gone, which clutters the menu and can slow down File Explorer.",
@@ -1322,7 +1322,7 @@ fn page_help(tab: Tab) -> &'static [&'static str] {
         ],
         Tab::ExtInv => &[
             "This page lists every extension installed in the supported Chromium-based and Firefox-based browsers, grouped by browser and profile.",
-            "Disable moves an extension's files into SetupSweep's own data folder: nothing is deleted, and the rest of the profile (bookmarks, history, settings) is never touched. Restore puts the files back exactly where they were.",
+            "Disable moves an extension's files into SetupScope's own data folder: nothing is deleted, and the rest of the profile (bookmarks, history, settings) is never touched. Restore puts the files back exactly where they were.",
             "Close the browser before disabling or restoring, and restart it afterwards for the change to take effect.",
         ],
         Tab::Storage => &[
@@ -1339,12 +1339,12 @@ fn page_help(tab: Tab) -> &'static [&'static str] {
             "The Gatekeeper compares the programs that start with Windows — Run and RunOnce entries and Startup-folder shortcuts — with a saved baseline, so anything new or changed can be reviewed.",
             "It is off until you turn it on, and it never blocks an installer or removes anything by itself. A scan only fills this list; each entry waits until you click Keep or Remove.",
             "When an install log explains an entry, the Gatekeeper says which program added it and why it thinks so. Otherwise it says the origin is unknown instead of guessing. Removing is backed up first unless backups are off in Settings.",
-            "To check automatically after installing something, click Scan now (or run \\\"setupsweep gatekeeper scan\\\"). Services and scheduled tasks are managed on the Startup page.",
+            "To check automatically after installing something, click Scan now (or run \\\"setupscope gatekeeper scan\\\"). Services and scheduled tasks are managed on the Startup page.",
         ],
         Tab::Builder => &[
-            "Choose a program's installer and describe the program. SetupSweep snapshots Windows, runs the installer, lets you start the program once, snapshots again and builds a PortableApps.com Format package from the difference.",
+            "Choose a program's installer and describe the program. SetupScope snapshots Windows, runs the installer, lets you start the program once, snapshots again and builds a PortableApps.com Format package from the difference.",
             "In Windows Sandbox nothing touches this PC. On this PC, the installation is recorded so you can remove it precisely afterwards.",
-            "With the PortableApps.com Launcher and Installer installed, SetupSweep also makes the launcher and the .paf.exe installer. Review the Launcher settings it wrote before publishing.",
+            "With the PortableApps.com Launcher and Installer installed, SetupScope also makes the launcher and the .paf.exe installer. Review the Launcher settings it wrote before publishing.",
         ],
         Tab::Settings => &[
             "Simple mode keeps the interface focused and plain. Advanced mode shows technical details, services and scheduled tasks.",
@@ -1354,7 +1354,7 @@ fn page_help(tab: Tab) -> &'static [&'static str] {
 }
 
 impl App {
-    /// First-run welcome: language, mode, and what SetupSweep does.
+    /// First-run welcome: language, mode, and what SetupScope does.
     fn welcome(&mut self, ctx: &egui::Context) {
         if !self.welcome_open {
             return;
@@ -1365,7 +1365,7 @@ impl App {
             ui.horizontal(|ui| {
                 ui.add(egui::Image::new(&self.logo).fit_to_exact_size(egui::vec2(48.0, 48.0)));
                 ui.vertical(|ui| {
-                    ui.heading(RichText::new(t("Welcome to SetupSweep")).strong());
+                    ui.heading(RichText::new(t("Welcome to SetupScope")).strong());
                     small_muted(
                         ui,
                         t("Remove programs completely — and only what belongs to them."),
@@ -1429,7 +1429,7 @@ impl App {
                 ui.add_space(4.0);
             }
             ui.add_space(8.0);
-            ui.label(RichText::new(t("How do you want SetupSweep to look?")).strong());
+            ui.label(RichText::new(t("How do you want SetupScope to look?")).strong());
             ui.columns(2, |cols| {
                 for (i, (adv, title, body)) in [
                     (
@@ -1506,7 +1506,7 @@ impl App {
             ));
             return;
         }
-        // "Install with SetupSweep": check the setup file first.
+        // "Install with SetupScope": check the setup file first.
         self.precheck_installer(ctx, path);
     }
 
@@ -1689,8 +1689,8 @@ impl eframe::App for App {
 
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.frame += 1;
-        // Benchmarks: record why each frame was drawn (SETUPSWEEP_REPAINT_LOG=file).
-        if let Some(path) = std::env::var_os("SETUPSWEEP_REPAINT_LOG") {
+        // Benchmarks: record why each frame was drawn (SETUPSCOPE_REPAINT_LOG=file).
+        if let Some(path) = std::env::var_os("SETUPSCOPE_REPAINT_LOG") {
             use std::io::Write;
             if let Ok(mut f) = std::fs::OpenOptions::new()
                 .create(true)
@@ -1765,7 +1765,7 @@ impl eframe::App for App {
 #[cfg(test)]
 mod confirm_tests {
     use super::Confirm;
-    use setupsweep_core::slimmer::DeepItem;
+    use setupscope_core::slimmer::DeepItem;
 
     #[test]
     fn consequential_actions_always_confirm() {
@@ -1776,7 +1776,7 @@ mod confirm_tests {
         assert!(Confirm::DeepClean(DeepItem::ComponentStore).always_confirm());
         assert!(Confirm::DeprovisionBloat(vec!["a".into()], vec![]).always_confirm());
         assert!(
-            Confirm::PrivacyChange(setupsweep_core::privacy::Control::AdvertisingId, true)
+            Confirm::PrivacyChange(setupscope_core::privacy::Control::AdvertisingId, true)
                 .always_confirm()
         );
         // Everything else follows the user's confirmation setting.
@@ -1813,7 +1813,7 @@ mod confirm_tests {
             Confirm::DeleteRestorePoint(1),
             Confirm::DeprovisionBloat(vec!["a".into()], vec![]),
             Confirm::PrivacyChange(
-                setupsweep_core::privacy::Control::TypingPersonalization,
+                setupscope_core::privacy::Control::TypingPersonalization,
                 false,
             ),
             // Turning protection off deletes every restore point.

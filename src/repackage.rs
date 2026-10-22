@@ -6,7 +6,7 @@
 //!   install.reg           registry entries the installation created or changed
 //!   install.ps1           silent install: copies files, registers services,
 //!                         imports install.reg, adds PATH entries
-//!   uninstall.ps1         precise removal (the same script SetupSweep exports)
+//!   uninstall.ps1         precise removal (the same script SetupScope exports)
 //!   README.txt
 //! ```
 //!
@@ -56,7 +56,7 @@ pub fn split_placeholder(p: &str) -> Option<(String, String)> {
 /// A forward .reg file: creates the keys and sets the values.
 pub fn to_reg_install(keys: &[KeyData], values: &[(String, RegValue)], title: &str) -> String {
     let mut s = format!(
-        "Windows Registry Editor Version 5.00\r\n\r\n; {title}\r\n; Registry entries created or changed by the installation (SetupSweep repackage).\r\n\r\n"
+        "Windows Registry Editor Version 5.00\r\n\r\n; {title}\r\n; Registry entries created or changed by the installation (SetupScope repackage).\r\n\r\n"
     );
     for k in keys {
         s.push_str(&format!("[{}]\r\n", long_path(&k.path)));
@@ -88,7 +88,7 @@ pub fn install_script(
     folders: &[String],
 ) -> String {
     let mut s = format!(
-        "# Silent installer for {name} {ver}, made by SetupSweep (repackage).\r\n\
+        "# Silent installer for {name} {ver}, made by SetupScope (repackage).\r\n\
 # Run in an elevated PowerShell:  powershell -ExecutionPolicy Bypass -File install.ps1\r\n\
 #Requires -RunAsAdministrator\r\n\
 $ErrorActionPreference = 'Stop'\r\n\
@@ -288,7 +288,7 @@ pub fn repackage_with(
     std::fs::write(
         dir.join("README.txt"),
         format!(
-            "{title}\r\n\r\nRepackaged by SetupSweep from a monitored installation on {}.\r\n\r\n\
+            "{title}\r\n\r\nRepackaged by SetupScope from a monitored installation on {}.\r\n\r\n\
 install.ps1    installs silently: copies the files, registers services, imports install.reg\r\n\
                and adds PATH entries. Run it in an elevated PowerShell:\r\n\
                powershell -ExecutionPolicy Bypass -File install.ps1\r\n\

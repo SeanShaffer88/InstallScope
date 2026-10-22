@@ -6,10 +6,10 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use setupsweep_core::i18n::{t, tf};
-use setupsweep_core::model::InstallLog;
-use setupsweep_core::platform;
-use setupsweep_core::snapshot::{
+use setupscope_core::i18n::{t, tf};
+use setupscope_core::model::InstallLog;
+use setupscope_core::platform;
+use setupscope_core::snapshot::{
     detect_program, diff, filter_changes, load_snapshot, save_snapshot, take_snapshot,
 };
 
@@ -25,8 +25,8 @@ pub struct LabState {
     cmp_result: Option<InstallLog>,
     message: String,
     /// Quick compare: the "before" snapshot, kept in memory.
-    quick_before: Option<std::sync::Arc<setupsweep_core::model::Snapshot>>,
-    quick_job: Option<Job<Result<std::sync::Arc<setupsweep_core::model::Snapshot>, String>>>,
+    quick_before: Option<std::sync::Arc<setupscope_core::model::Snapshot>>,
+    quick_job: Option<Job<Result<std::sync::Arc<setupscope_core::model::Snapshot>, String>>>,
     tree: super::difftree_ui::TreeView,
     show_list: bool,
 }
@@ -137,9 +137,9 @@ impl App {
                                 &settings.effective_file_exclusions(),
                             );
                             let mut log = InstallLog {
-                                id: setupsweep_core::util::new_id(),
+                                id: setupscope_core::util::new_id(),
                                 name: format!("{} {}", t("Changes since"), before.created),
-                                created: setupsweep_core::util::now_string(),
+                                created: setupscope_core::util::now_string(),
                                 ..Default::default()
                             };
                             if let Some(d) = detect_program(&changes) {
@@ -211,10 +211,10 @@ impl App {
                         let name = if self.lab.snap_name.trim().is_empty() {
                             format!(
                                 "snapshot-{}",
-                                setupsweep_core::time::DateTime::now_local().compact()
+                                setupscope_core::time::DateTime::now_local().compact()
                             )
                         } else {
-                            setupsweep_core::util::safe_file_name(self.lab.snap_name.trim())
+                            setupscope_core::util::safe_file_name(self.lab.snap_name.trim())
                         };
                         let path = self.store.snapshots_dir().join(format!("{name}.snap"));
                         let reg = self.reg.clone();
@@ -313,9 +313,9 @@ impl App {
                                 &settings.effective_file_exclusions(),
                             );
                             let mut log = InstallLog {
-                                id: setupsweep_core::util::new_id(),
+                                id: setupscope_core::util::new_id(),
                                 name: format!("{} → {}", a.0, b.0),
-                                created: setupsweep_core::util::now_string(),
+                                created: setupscope_core::util::now_string(),
                                 ..Default::default()
                             };
                             if let Some(d) = detect_program(&changes) {
@@ -330,7 +330,7 @@ impl App {
                 });
                 if super::a11y::explain(
                     ui.button(t("Open snapshot folder")),
-                    &t("Opens the folder where SetupSweep saves snapshots, in File Explorer."),
+                    &t("Opens the folder where SetupScope saves snapshots, in File Explorer."),
                 )
                 .clicked()
                 {
@@ -378,12 +378,12 @@ impl App {
             });
             if export_ini {
                 let log = self.lab.cmp_result.as_ref().unwrap();
-                let r = setupsweep_core::portable::launcher_ini(
+                let r = setupscope_core::portable::launcher_ini(
                     &log.changes,
                     &log.name,
-                    &setupsweep_core::portable::Folders::current(),
+                    &setupscope_core::portable::Folders::current(),
                 );
-                let name = format!("{}.ini", setupsweep_core::util::safe_file_name(&log.name));
+                let name = format!("{}.ini", setupscope_core::util::safe_file_name(&log.name));
                 if let Some(p) = save_file(&t("Save Launcher settings"), &name, "INI", "ini") {
                     self.lab.message = match std::fs::write(&p, r.text) {
                         Ok(()) => tf(

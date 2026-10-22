@@ -1,6 +1,6 @@
 //! How programs are actually used: when each was last opened (from Windows'
 //! own records: UserAssist and Prefetch), how much memory and CPU it uses
-//! (sampled now and then while SetupSweep or background monitoring runs), and
+//! (sampled now and then while SetupScope or background monitoring runs), and
 //! how much it slows down startup. Everything stays on this PC.
 
 use crate::platform::Registry;
