@@ -45,12 +45,27 @@ Diagnostics do not execute project code. No implicit writes, uploads or repairs.
 Install/execute require an interactive terminal; no unattended confirmation bypass.
 Launch without arguments for the desktop Workflow Board.";
 
+/// Malformed invocation (exit code 2), as opposed to an operational failure.
+#[derive(Debug)]
+struct Usage(&'static str);
+impl std::fmt::Display for Usage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.0)
+    }
+}
+impl std::error::Error for Usage {}
+fn usage(ok: bool, message: &'static str) -> Result<()> {
+    if ok {
+        Ok(())
+    } else {
+        Err(Usage(message).into())
+    }
+}
 fn count(a: &[String], min: usize, max: usize) -> Result<()> {
-    ensure!(
+    usage(
         (min..=max).contains(&a.len()),
-        "Invalid argument count; use --help"
-    );
-    Ok(())
+        "Invalid argument count; use --help",
+    )
 }
 fn confirm(word: &str) -> Result<()> {
     ensure!(
@@ -251,10 +266,10 @@ fn report(a: &[String]) -> Result<String> {
             }
         }
         "diagnostics" => {
-            ensure!(
+            usage(
                 a.len() == 1 || a.len() == 3,
-                "Use diagnostics [PROFILE TARGET]"
-            );
+                "Use diagnostics [PROFILE TARGET]",
+            )?;
             let report = if a.len() == 3 {
                 Some(devcheck::inspect(
                     &devcheck::Request::current(profile(&a[1])?, target(&a[2])?, String::new())?,
@@ -273,7 +288,7 @@ fn report(a: &[String]) -> Result<String> {
             )
         }
         "dependencies" => {
-            ensure!(a.len() > 1, "Specify a dependencies subcommand");
+            usage(a.len() > 1, "Specify a dependencies subcommand")?;
             if a[1] == "catalog" {
                 count(a, 2, 2)?;
                 return Ok(json::to_json_string_pretty(&dependencies::catalog()?));
@@ -284,7 +299,7 @@ fn report(a: &[String]) -> Result<String> {
                     &PathBuf::from(&a[2]),
                 )?));
             }
-            ensure!(a.len() >= 4, "Specify ROOT and package IDs or bundle path");
+            usage(a.len() >= 4, "Specify ROOT and package IDs or bundle path")?;
             let root = PathBuf::from(&a[2]);
             match a[1].as_str() {
                 "verify" => dependencies::verify(&root, &a[3..], &p),
@@ -294,7 +309,7 @@ fn report(a: &[String]) -> Result<String> {
                     dependencies::import_bundle(&root, &PathBuf::from(&a[3]), &p)
                 }
                 "export" => {
-                    ensure!(a.len()>=6 && a.last().is_some_and(|s|s=="--accept-license"),"Export requires DEST, IDs and --accept-license after reviewing vendor redistribution terms");
+                    usage(a.len()>=6 && a.last().is_some_and(|s|s=="--accept-license"),"Export requires DEST, IDs and --accept-license after reviewing vendor redistribution terms")?;
                     dependencies::export_bundle(
                         &root,
                         &a[4..a.len() - 1],
@@ -314,14 +329,14 @@ fn report(a: &[String]) -> Result<String> {
                         dependencies::install(&root, review, true, &p)
                     }
                 }
-                _ => bail!("Unknown dependencies subcommand"),
+                _ => Err(Usage("Unknown dependencies subcommand").into()),
             }
         }
         "run" | "execute" => {
-            ensure!(
+            usage(
                 a.len() >= 6 && a[5] == "--",
-                "Expected PROJECT EXE LOGDIR TIMEOUT -- literal arguments"
-            );
+                "Expected PROJECT EXE LOGDIR TIMEOUT -- literal arguments",
+            )?;
             let review = build_run::review(build_run::Request {
                 project: PathBuf::from(&a[1]),
                 executable: PathBuf::from(&a[2]),
@@ -339,7 +354,7 @@ fn report(a: &[String]) -> Result<String> {
                 Ok(outcome.summary)
             }
         }
-        _ => bail!("Unknown command; use --help. No action performed"),
+        _ => Err(Usage("Unknown command; use --help. No action performed").into()),
     }
 }
 pub fn dispatch(args: &[String]) -> i32 {
@@ -391,9 +406,7 @@ pub fn dispatch(args: &[String]) -> i32 {
                     ]))
                 );
             }
-            if e.to_string().contains("Invalid argument count")
-                || e.to_string().starts_with("Unknown")
-            {
+            if e.is::<Usage>() {
                 2
             } else {
                 1

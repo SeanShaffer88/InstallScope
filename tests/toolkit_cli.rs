@@ -72,3 +72,27 @@ fn piped_execution_cannot_bypass_exact_review() {
     assert!(String::from_utf8_lossy(&output.stderr).contains("Interactive terminal required"));
     assert_eq!(std::fs::read_dir(&temp.0).unwrap().count(), 0);
 }
+#[test]
+fn malformed_invocations_exit_2_and_operational_failures_exit_1() {
+    for args in [
+        &["programs"][..],
+        &["system", "extra"],
+        &["dependencies"],
+        &["dependencies", "verify", "/tmp"],
+        &["dependencies", "nonsense", "/tmp", "x"],
+        &["dependencies", "export", "/tmp/a", "/tmp/b", "--accept-license"],
+        &["run", "a", "b", "c", "d"],
+        &["diagnostics", "rust"],
+    ] {
+        let output = cli(args);
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+    }
+    // A well-formed request rejected by validation is an operational failure.
+    let temp = Scratch::new();
+    let root = temp.0.to_str().unwrap();
+    assert_eq!(
+        cli(&["dependencies", "verify", root, "unknown-package"]).status.code(),
+        Some(1)
+    );
+    assert_eq!(cli(&["readiness", "relative"]).status.code(), Some(1));
+}
