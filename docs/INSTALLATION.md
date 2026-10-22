@@ -37,7 +37,9 @@ does not undo environment edits or uninstall separately selected developer tools
 the final installer argument. Existing portable folders and unrelated nonempty
 folders are refused even in silent mode. Exit 0 means completion; exit 2 means a
 platform, ownership or running-app guard refused the operation; other nonzero
-codes indicate failure. Installer standard pages use NSIS language resources;
+codes indicate failure. The normal uninstaller relaunches a temporary copy;
+automation must also wait for application files and registration to disappear,
+because the launcher process can exit before that child finishes. Installer standard pages use NSIS language resources;
 additional safety messages are currently English.
 
 ## Build and verification
