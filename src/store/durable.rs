@@ -61,13 +61,19 @@ pub(crate) fn write_with(path: &Path, replace: bool, generate: impl FnOnce(&mut 
         .truncate(false)
         .open(lock_path)?;
     let mut acquired = false;
-    for _ in 0..40 {
+    // Durable flushes on busy/virtual disks can exceed 200 ms. Give competing
+    // publishers a bounded ten-second window instead of failing normal saves.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
         match lock.try_lock() {
             Ok(()) => {
                 acquired = true;
                 break;
             }
             Err(fs::TryLockError::WouldBlock) => {
+                if std::time::Instant::now() >= deadline {
+                    break;
+                }
                 std::thread::sleep(std::time::Duration::from_millis(5))
             }
             Err(fs::TryLockError::Error(e)) => return Err(e),
