@@ -40,19 +40,49 @@ The regular interface contains the working developer pages. The native Win32 int
 
 ## Screenshots
 
-Captured from the current local Windows x64 development build (0.1.0), using the regular interface without elevation. These are actual app captures, not mockups; they show local milestones that may be newer than hosted source or releases.
+Captured from the local Windows x64 SetupScope build on 2026-10-22, without elevation. These show the focused local development interface; hosted source and historical releases can lag behind it. The captures show default states, not successful diagnostic results or certification of every action. Older captures remain archival.
 
-### Developer workspace
+<details>
+<summary>Workflow Board</summary>
 
-<img src="docs/screenshots/developer-diagnostics-current.png" alt="SetupScope Developer diagnostics showing the current developer tool sections and read-only readiness controls" width="1000">
+![SetupScope — Workflow Board](docs/screenshots/focused-workflow-board.png)
 
-### Passive WSL/container observations
+</details>
 
-<img src="docs/screenshots/wsl-container-readiness-current.png" alt="Actual WSL and container host scan showing observation dates, partial status and CLI candidate evidence" width="1000">
+<details>
+<summary>Project Readiness</summary>
 
-### Review before diagnostic export
+![SetupScope — Project Readiness](docs/screenshots/focused-project-readiness.png)
 
-<img src="docs/screenshots/diagnostic-bundle-current.png" alt="Redacted runtime JSON preview with save disabled until its review checkbox is acknowledged" width="1000">
+</details>
+
+<details>
+<summary>Build Troubleshooting</summary>
+
+![SetupScope — Build Troubleshooting](docs/screenshots/focused-build-troubleshooting.png)
+
+</details>
+
+<details>
+<summary>Environment Profiles And Recovery</summary>
+
+![SetupScope — Environment Profiles And Recovery](docs/screenshots/focused-environment-profiles.png)
+
+</details>
+
+<details>
+<summary>Ports And Processes</summary>
+
+![SetupScope — Ports And Processes](docs/screenshots/focused-ports-processes.png)
+
+</details>
+
+<details>
+<summary>WSL And Containers</summary>
+
+![SetupScope — WSL And Containers](docs/screenshots/focused-wsl-containers.png)
+
+</details>
 
 ## Build and test locally
 
