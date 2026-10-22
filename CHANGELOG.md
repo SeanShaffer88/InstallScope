@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- CLI: every malformed invocation now exits `2` as documented; previously some
+  (missing `dependencies` subcommand/arguments, missing `--` delimiter, wrong
+  `diagnostics` arity, malformed `export`) exited `1`, and operational errors
+  whose text began with "Unknown" (such as a tampered bundle manifest) exited `2`.
+- Development: source tree formatted with rustfmt; CI now enforces formatting.
+
 ## 1.0.0.0 — local release package
 
 - Six-card 3×2 board with passive System And OS information and top-right tool return buttons.

@@ -105,7 +105,9 @@ sharing; arbitrary CLI output is not a redacted bundle.
   incompatible; successful inspection does not certify a build or installation.
 - `1`: operational failure, declined/noninteractive review, failed/timed-out
   execution or log-save failure. Child exit details are in the error/log.
-- `2`: unknown command or invalid argument count.
+- `2`: malformed invocation: unknown command or subcommand, invalid argument
+  count, or a missing `--` delimiter/`--accept-license` flag. Well-formed requests
+  that fail validation (for example an unknown package ID) return `1`.
 
 CLI identifiers, diagnostic evidence and help currently remain English for stable
 scripting and fidelity. `languages` lists desktop language catalogs. Complete
