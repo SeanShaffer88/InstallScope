@@ -216,7 +216,7 @@ mod tests {
     fn options() -> Options {
         Options {
             bootstrapper: PathBuf::from("C:/Tools/vs_buildtools.exe"),
-            layout: PathBuf::from("C:/VSLayout"),
+            layout: std::env::temp_dir().join("SetupScope-VSLayout-test"),
             action: Action::Install,
             arm64: false,
             recommended: false,
