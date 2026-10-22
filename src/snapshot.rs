@@ -513,69 +513,75 @@ fn save_snapshot_with(path: &Path, snap: &Snapshot, replace: bool) -> Result<()>
     let snap = sorted(snap);
     let s = snap.as_ref();
     crate::store::durable::write_with(path, replace, |file| {
-      let encode = || -> Result<()> {
-        let mut gz = crate::deflate::GzWriter::fast(file)?;
-        let mut head = Vec::with_capacity(4096);
-        head.extend_from_slice(MAGIC);
-        put_str(&mut head, &s.created);
-        put_str(&mut head, &s.computer);
-        put_str(&mut head, &s.user);
-        put_u64(&mut head, s.warnings.len() as u64);
-        for w in &s.warnings {
-            put_str(&mut head, w);
-        }
-        put_u64(&mut head, s.text.len() as u64);
-        gz.write_all(&head)?;
-        gz.write_all(s.text.as_bytes())?;
-        let mut buf = Vec::with_capacity(64 * 1024);
-        put_u64(&mut buf, s.bytes.len() as u64);
-        gz.write_all(&buf)?;
-        gz.write_all(&s.bytes)?;
-        // Records go out through one reused buffer.
-        let flush = |gz: &mut crate::deflate::GzWriter<_>, buf: &mut Vec<u8>| -> Result<()> {
-            gz.write_all(buf)?;
+        let encode = || -> Result<()> {
+            let mut gz = crate::deflate::GzWriter::fast(file)?;
+            let mut head = Vec::with_capacity(4096);
+            head.extend_from_slice(MAGIC);
+            put_str(&mut head, &s.created);
+            put_str(&mut head, &s.computer);
+            put_str(&mut head, &s.user);
+            put_u64(&mut head, s.warnings.len() as u64);
+            for w in &s.warnings {
+                put_str(&mut head, w);
+            }
+            put_u64(&mut head, s.text.len() as u64);
+            gz.write_all(&head)?;
+            gz.write_all(s.text.as_bytes())?;
+            let mut buf = Vec::with_capacity(64 * 1024);
+            put_u64(&mut buf, s.bytes.len() as u64);
+            gz.write_all(&buf)?;
+            gz.write_all(&s.bytes)?;
+            // Records go out through one reused buffer.
+            let flush = |gz: &mut crate::deflate::GzWriter<_>, buf: &mut Vec<u8>| -> Result<()> {
+                gz.write_all(buf)?;
+                buf.clear();
+                Ok(())
+            };
             buf.clear();
+            put_u64(&mut buf, s.files.len() as u64);
+            for f in &s.files {
+                put_u32(&mut buf, f.path.off);
+                put_u32(&mut buf, f.path.len);
+                put_u64(&mut buf, f.size);
+                put_u64(&mut buf, f.mtime as u64);
+                buf.push(f.is_dir as u8);
+                if buf.len() > 60 * 1024 {
+                    flush(&mut gz, &mut buf)?;
+                }
+            }
+            put_u64(&mut buf, s.keys.len() as u64);
+            for k in &s.keys {
+                put_u32(&mut buf, k.path.off);
+                put_u32(&mut buf, k.path.len);
+                put_u32(&mut buf, k.first);
+                put_u32(&mut buf, k.count);
+                if buf.len() > 60 * 1024 {
+                    flush(&mut gz, &mut buf)?;
+                }
+            }
+            put_u64(&mut buf, s.vals.len() as u64);
+            for v in &s.vals {
+                put_u32(&mut buf, v.name.off);
+                put_u32(&mut buf, v.name.len);
+                put_u32(&mut buf, v.kind);
+                put_u32(&mut buf, v.data.off);
+                put_u32(&mut buf, v.data.len);
+                if buf.len() > 60 * 1024 {
+                    flush(&mut gz, &mut buf)?;
+                }
+            }
+            flush(&mut gz, &mut buf)?;
+            gz.finish()?;
             Ok(())
         };
-        buf.clear();
-        put_u64(&mut buf, s.files.len() as u64);
-        for f in &s.files {
-            put_u32(&mut buf, f.path.off);
-            put_u32(&mut buf, f.path.len);
-            put_u64(&mut buf, f.size);
-            put_u64(&mut buf, f.mtime as u64);
-            buf.push(f.is_dir as u8);
-            if buf.len() > 60 * 1024 {
-                flush(&mut gz, &mut buf)?;
-            }
-        }
-        put_u64(&mut buf, s.keys.len() as u64);
-        for k in &s.keys {
-            put_u32(&mut buf, k.path.off);
-            put_u32(&mut buf, k.path.len);
-            put_u32(&mut buf, k.first);
-            put_u32(&mut buf, k.count);
-            if buf.len() > 60 * 1024 {
-                flush(&mut gz, &mut buf)?;
-            }
-        }
-        put_u64(&mut buf, s.vals.len() as u64);
-        for v in &s.vals {
-            put_u32(&mut buf, v.name.off);
-            put_u32(&mut buf, v.name.len);
-            put_u32(&mut buf, v.kind);
-            put_u32(&mut buf, v.data.off);
-            put_u32(&mut buf, v.data.len);
-            if buf.len() > 60 * 1024 {
-                flush(&mut gz, &mut buf)?;
-            }
-        }
-        flush(&mut gz, &mut buf)?;
-        gz.finish()?;
-        Ok(())
-      };
-      encode().map_err(|e| std::io::Error::other(format!("{e:#}")))
-    }).with_context(|| format!("save {} (existing evidence is never removed)", path.display()))?;
+        encode().map_err(|e| std::io::Error::other(format!("{e:#}")))
+    })
+    .with_context(|| {
+        format!(
+            "save {} (existing evidence is never removed)",
+            path.display()
+        )
+    })?;
     Ok(())
 }
 
@@ -774,9 +780,19 @@ mod tests {
         std::fs::write(&legacy, b"preserve interrupted evidence").unwrap();
         save_new_snapshot(&path, &Snapshot::default()).unwrap();
         let original = std::fs::read(&path).unwrap();
-        assert!(save_new_snapshot(&path, &Snapshot {created:"replacement".into(), ..Default::default()}).is_err());
+        assert!(save_new_snapshot(
+            &path,
+            &Snapshot {
+                created: "replacement".into(),
+                ..Default::default()
+            }
+        )
+        .is_err());
         assert_eq!(std::fs::read(&path).unwrap(), original);
-        assert_eq!(std::fs::read(&legacy).unwrap(), b"preserve interrupted evidence");
+        assert_eq!(
+            std::fs::read(&legacy).unwrap(),
+            b"preserve interrupted evidence"
+        );
         load_snapshot(&path).unwrap();
     }
 

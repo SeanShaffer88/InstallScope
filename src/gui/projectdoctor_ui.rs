@@ -46,10 +46,14 @@ fn controls(ui: &mut egui::Ui, state: &mut ProjectDoctorState) -> Actions {
     action
 }
 impl ProjectDoctorState {
-    pub(super) fn busy(&self) -> bool { self.job.is_some() }
+    pub(super) fn busy(&self) -> bool {
+        self.job.is_some()
+    }
     pub(super) fn accept_evidence(&mut self, report: Report) {
-        self.root=report.root.display().to_string(); self.target=report.target;
-        self.report=Some(report); self.error=None;
+        self.root = report.root.display().to_string();
+        self.target = report.target;
+        self.report = Some(report);
+        self.error = None;
     }
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         if let Some(result) = self.job.as_ref().and_then(Job::poll) {
@@ -63,7 +67,7 @@ impl ProjectDoctorState {
             }
         }
         super::widgets::scope_note(ui, "Inspect project declarations and local metadata. Actual build success remains unverified.", "Project declarations and local evidence—not a build-success guarantee. Select a folder, then Inspect project. Results stay in memory until replaced or the app closes. Limits: 256 KiB per UTF-8 manifest, 2 MiB total, 32 parent folders, 16 SDK roots and 256 entries per SDK/Rust store. Unsupported constraints, overrides, inaccessible locations and unverified dependencies stay explicit.");
-        
+
         let action = controls(ui, self);
         if action.browse {
             if let Some(path) = pick_folder(&t("Choose a project folder for read-only inspection"))
@@ -96,7 +100,8 @@ impl ProjectDoctorState {
             ui.label(t("Previous successful report is retained below. Correct the folder/permissions/format and inspect again."));
         }
         if let Some(report) = &self.report {
-            if std::path::Path::new(self.root.trim()) != report.root || self.target != report.target {
+            if std::path::Path::new(self.root.trim()) != report.root || self.target != report.target
+            {
                 theme::warning_banner(ui, t("Inputs differ from the retained report. Inspect again; this evidence belongs to the folder and target shown below."));
             }
             if self.job.is_some() {
@@ -124,12 +129,10 @@ impl ProjectDoctorState {
             }
             if a11y::explain(ui.button(t("Copy project report")),&t("Copy this report, including local paths and tool locations, to the clipboard. It is not a redacted diagnostic bundle; review sensitive details before sharing. No file is saved or uploaded.")).clicked(){ui.ctx().copy_text(report.text());}
             for (i, row) in report.findings.iter().enumerate() {
-                super::widgets::collapsing_header(ui,format!(
-                    "{} — {}: {}",
-                    row.tool,
-                    t(row.state.label()),
-                    row.declared
-                ))
+                super::widgets::collapsing_header(
+                    ui,
+                    format!("{} — {}: {}", row.tool, t(row.state.label()), row.declared),
+                )
                 .id_salt(("doctor_finding", i))
                 .default_open(row.state != State::Candidate)
                 .show(ui, |ui| {

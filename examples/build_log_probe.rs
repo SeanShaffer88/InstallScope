@@ -6,9 +6,15 @@ fn main() -> Result<()> {
     let metadata = std::fs::metadata(&path)?;
     let report = build_log::inspect(&path, &Progress::default())?;
     ensure!(report.findings.len() >= 2, "expected fixture findings");
-    ensure!(!report.text().contains("PRIVATE_FIXTURE_TOKEN"), "raw source leaked");
+    ensure!(
+        !report.text().contains("PRIVATE_FIXTURE_TOKEN"),
+        "raw source leaked"
+    );
     ensure!(std::fs::read(&path)? == before, "log bytes changed");
-    ensure!(std::fs::metadata(&path)?.modified()? == metadata.modified()?, "log modified time changed");
+    ensure!(
+        std::fs::metadata(&path)?.modified()? == metadata.modified()?,
+        "log modified time changed"
+    );
     println!("PASS: bounded live file triage; {} grouped findings, source bytes/mtime unchanged, raw secret omitted.", report.findings.len());
     Ok(())
 }

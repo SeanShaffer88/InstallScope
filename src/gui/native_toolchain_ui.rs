@@ -52,7 +52,8 @@ impl NativeState {
     fn invalidate(&mut self) {
         self.review = None;
         self.acknowledged = false;
-        self.status = "Inputs changed or review discarded; prepare a fresh native setup review.".into();
+        self.status =
+            "Inputs changed or review discarded; prepare a fresh native setup review.".into();
     }
     fn start(
         &mut self,

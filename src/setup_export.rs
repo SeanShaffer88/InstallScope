@@ -39,8 +39,12 @@ fn text<'a>(value: &'a Value, key: &str) -> &'a str {
 
 pub fn load(path: &Path) -> Result<Inventory> {
     let metadata = std::fs::symlink_metadata(path).context("Inspect selected inventory file")?;
-    if !metadata.is_file() { bail!("Choose a regular inventory JSON file, not a directory, link or device."); }
-    if metadata.len() > MAX_BYTES as u64 { bail!("Inventory exceeds the 2 MiB limit. Export a smaller inventory."); }
+    if !metadata.is_file() {
+        bail!("Choose a regular inventory JSON file, not a directory, link or device.");
+    }
+    if metadata.len() > MAX_BYTES as u64 {
+        bail!("Inventory exceeds the 2 MiB limit. Export a smaller inventory.");
+    }
     let file = std::fs::File::open(path).context("Open WinGet inventory JSON")?;
     let mut bytes = Vec::new();
     file.take(MAX_BYTES as u64 + 1).read_to_end(&mut bytes)?;

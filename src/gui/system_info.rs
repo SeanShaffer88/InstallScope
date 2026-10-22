@@ -14,7 +14,10 @@ impl Default for SystemInfo {
 }
 impl SystemInfo {
     pub fn localized_parts(&mut self) -> Vec<String> {
-        self.summary().split("  ·  ").map(setupscope_core::i18n::t).collect()
+        self.summary()
+            .split("  ·  ")
+            .map(setupscope_core::i18n::t)
+            .collect()
     }
     pub fn localized_summary(&mut self) -> String {
         self.localized_parts().join("  ·  ")

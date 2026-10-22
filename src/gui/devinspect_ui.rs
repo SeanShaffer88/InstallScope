@@ -71,7 +71,7 @@ impl InspectorState {
             }
         }
         super::widgets::scope_note(ui, "Explicit read-only queries. No process control or unlocking; ownership can be incomplete.", "Read-only local ports and selected-file owners. Scans start only when requested. No process control, unlocking, firewall edits, network service probes or automatic saving. Kernel/permission limits and PID reuse remain explicit. TCP/UDP tables and process metadata are read at different times. Current PID image metadata is not proof that the same process owned an endpoint earlier. Restart Manager covers only supported resource-owner cases.");
-        
+
         let action = controls(ui, self);
         if action.browse {
             if let Some(path) = pick_file(

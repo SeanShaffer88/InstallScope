@@ -54,7 +54,8 @@ impl RunState {
     fn invalidate(&mut self) {
         self.review = None;
         self.acknowledged = false;
-        self.status = "Inputs changed or review discarded; prepare a fresh execution review.".into();
+        self.status =
+            "Inputs changed or review discarded; prepare a fresh execution review.".into();
     }
     fn request(&self) -> Request {
         Request {

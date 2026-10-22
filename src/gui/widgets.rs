@@ -173,24 +173,44 @@ pub fn spinner(ui: &mut egui::Ui) -> egui::Response {
 /// Keep full scope guidance accessible without crowding compact tool controls.
 pub fn scope_note(ui: &mut egui::Ui, summary: &str, details: &str) {
     ui.label(t(summary));
-    collapsing_header(ui,t("Scope And Limits")).id_salt(summary).show(ui, |ui| {
-        ui.add(egui::Label::new(t(details)).wrap());
-    });
+    collapsing_header(ui, t("Scope And Limits"))
+        .id_salt(summary)
+        .show(ui, |ui| {
+            ui.add(egui::Label::new(t(details)).wrap());
+        });
 }
 
 /// A section heading that wraps inside compact translated tool windows.
-pub fn collapsing_header(ui: &egui::Ui, label: impl Into<egui::WidgetText>) -> egui::CollapsingHeader {
+pub fn collapsing_header(
+    ui: &egui::Ui,
+    label: impl Into<egui::WidgetText>,
+) -> egui::CollapsingHeader {
     // egui's stock header forces Extend even when the shared style wraps.
-    let width=(ui.available_width()-ui.spacing().indent-ui.spacing().button_padding.x*2.).max(32.);
-    let galley=label.into().into_galley(ui,Some(egui::TextWrapMode::Wrap),width,egui::TextStyle::Button);
-    let header=egui::CollapsingHeader::new(galley);
+    let width =
+        (ui.available_width() - ui.spacing().indent - ui.spacing().button_padding.x * 2.).max(32.);
+    let galley = label.into().into_galley(
+        ui,
+        Some(egui::TextWrapMode::Wrap),
+        width,
+        egui::TextStyle::Button,
+    );
+    let header = egui::CollapsingHeader::new(galley);
     // Exercise every configuration section in the isolated layout subprocess.
     #[cfg(test)]
-    let header=header.default_open(std::env::var_os("SETUPSCOPE_LAYOUT_LOCALE").is_some());
+    let header = header.default_open(std::env::var_os("SETUPSCOPE_LAYOUT_LOCALE").is_some());
     header
 }
 
 /// Deliberate primary action with the shared red terminal accent.
 pub fn action_button(ui: &mut egui::Ui, enabled: bool, label: &str) -> egui::Response {
-    ui.add_enabled(enabled,egui::Button::new(egui::RichText::new(t(label)).strong().color(egui::Color32::WHITE)).fill(theme::ACCENT).stroke(egui::Stroke::NONE))
+    ui.add_enabled(
+        enabled,
+        egui::Button::new(
+            egui::RichText::new(t(label))
+                .strong()
+                .color(egui::Color32::WHITE),
+        )
+        .fill(theme::ACCENT)
+        .stroke(egui::Stroke::NONE),
+    )
 }

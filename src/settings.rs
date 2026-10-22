@@ -401,14 +401,23 @@ mod confirm_tests {
 
     #[test]
     fn legacy_mode_upgrade_preserves_effective_safety() {
-        let mut old = Settings { advanced_mode: false, backup_before_removal: false, confirm_actions: false,
-            remove_unlogged_files: true, show_system_components: true, ..Settings::default() };
+        let mut old = Settings {
+            advanced_mode: false,
+            backup_before_removal: false,
+            confirm_actions: false,
+            remove_unlogged_files: true,
+            show_system_components: true,
+            ..Settings::default()
+        };
         old.retire_interface_modes();
         assert!(old.backup_enabled() && old.confirm_enabled());
         assert!(!old.remove_unlogged_enabled() && !old.system_components_shown());
         old.backup_before_removal = false;
         old.retire_interface_modes();
-        assert!(!old.backup_enabled(), "migration must preserve explicit later choices");
+        assert!(
+            !old.backup_enabled(),
+            "migration must preserve explicit later choices"
+        );
     }
     #[test]
     fn always_confirm_actions_ask_in_every_mode() {

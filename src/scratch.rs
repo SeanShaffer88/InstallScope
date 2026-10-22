@@ -11,8 +11,10 @@ pub fn create(parent: &Path) -> anyhow::Result<PathBuf> {
         "Choose an absolute existing local parent folder"
     );
     match crate::devcheck::probe(parent) {
-        crate::devcheck::Probe::Dir => {},
-        other => anyhow::bail!("Choose an existing local directory without links or reparse points: {other:?}"),
+        crate::devcheck::Probe::Dir => {}
+        other => anyhow::bail!(
+            "Choose an existing local directory without links or reparse points: {other:?}"
+        ),
     }
     let parent = parent.canonicalize()?;
     anyhow::ensure!(parent.is_dir(), "Scratch parent must be a directory");

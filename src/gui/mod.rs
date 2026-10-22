@@ -2,24 +2,24 @@
 
 mod a11y;
 mod app;
-mod dashboard;
-mod devcheck_ui;
-mod dependency_ui;
-mod native_toolchain_ui;
-mod devinspect_ui;
-mod container_readiness_ui;
 mod build_log_ui;
 mod build_run_ui;
-pub(crate) mod system_info;
+mod container_readiness_ui;
+mod dashboard;
+mod dependency_ui;
+mod devcheck_ui;
+mod devinspect_ui;
 mod diagnostic_bundle_ui;
 mod envprofile_ui;
 #[cfg(windows)]
 mod filedialog;
-mod projectdoctor_ui;
+mod native_toolchain_ui;
 mod project_readiness_ui;
+mod projectdoctor_ui;
+pub(crate) mod system_info;
 mod theme;
-mod widgets;
 mod tool_window;
+mod widgets;
 
 use setupscope_core::snapshot::Progress;
 use std::sync::mpsc;
@@ -154,6 +154,9 @@ mod branding_tests {
         assert_eq!((icon.width, icon.height), (32, 32));
         assert_eq!(icon.rgba.len(), 32 * 32 * 4);
         assert!(icon.rgba.chunks_exact(4).any(|p| p[3] == 0));
-        assert!(icon.rgba.chunks_exact(4).any(|p| p[0] > 150 && p[0] > p[1] * 2 && p[3] > 200));
+        assert!(icon
+            .rgba
+            .chunks_exact(4)
+            .any(|p| p[0] > 150 && p[0] > p[1] * 2 && p[3] > 200));
     }
 }

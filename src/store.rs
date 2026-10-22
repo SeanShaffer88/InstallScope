@@ -332,8 +332,8 @@ impl Store {
     pub fn clear_pending_checked(&self) -> Result<()> {
         for name in ["session.json", "before.snap"] {
             match std::fs::remove_file(self.pending_dir().join(name)) {
-                Ok(()) => {},
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {},
+                Ok(()) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
                 Err(e) => return Err(e.into()),
             }
         }

@@ -349,9 +349,19 @@ pub(super) fn launch(p: &Package, path: &Path, elevated: bool) -> Result<Process
     } else {
         "/install /norestart".into()
     };
-    launch_command(&exe, &args, elevated, path.parent().context("Installer parent missing")?)
+    launch_command(
+        &exe,
+        &args,
+        elevated,
+        path.parent().context("Installer parent missing")?,
+    )
 }
-pub(super) fn launch_command(exe: &Path, arguments: &str, elevated: bool, parent: &Path) -> Result<Process> {
+pub(super) fn launch_command(
+    exe: &Path,
+    arguments: &str,
+    elevated: bool,
+    parent: &Path,
+) -> Result<Process> {
     let exe = wide(&exe.to_string_lossy());
     let args = wide(arguments);
     let verb = wide(if elevated { "runas" } else { "open" });

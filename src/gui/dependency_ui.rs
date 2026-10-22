@@ -118,7 +118,9 @@ impl DependencyState {
         let catalog = match dependencies::catalog() {
             Ok(c) => c,
             Err(e) => {
-                ui.label(setupscope_core::i18n::t(&format!("Catalog unavailable: {e:#}")));
+                ui.label(setupscope_core::i18n::t(&format!(
+                    "Catalog unavailable: {e:#}"
+                )));
                 return;
             }
         };
@@ -128,7 +130,7 @@ impl DependencyState {
             catalog.verified
         )));
         let busy = self.job.is_some();
-        ui.add_enabled_ui(!busy,|ui|self.native.ui(ui, &PathBuf::from(&self.root)));
+        ui.add_enabled_ui(!busy, |ui| self.native.ui(ui, &PathBuf::from(&self.root)));
         ui.add_enabled_ui(!busy,|ui|{
             let mut changed=false;
             ui.horizontal_wrapped(|ui|{
@@ -200,13 +202,20 @@ impl DependencyState {
             )));
             if self.installing {
                 ui.colored_label(super::theme::WARN,"Vendor installation may be active. Finish/cancel its UI; closing SetupScope cannot cancel or undo it. A pending receipt remains if tracking is interrupted.");
-            } else if ui.button(setupscope_core::i18n::t("Cancel At Next Checkpoint")).clicked() {
+            } else if ui
+                .button(setupscope_core::i18n::t("Cancel At Next Checkpoint"))
+                .clicked()
+            {
                 job.cancel();
             }
         }
         if !self.status.is_empty() {
             ui.separator();
-            ui.add(egui::Label::new(setupscope_core::i18n::t(&self.status)).wrap().selectable(true));
+            ui.add(
+                egui::Label::new(setupscope_core::i18n::t(&self.status))
+                    .wrap()
+                    .selectable(true),
+            );
         }
     }
 }

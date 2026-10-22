@@ -155,10 +155,14 @@ pub fn wide_button(ui: &mut egui::Ui, text: impl Into<String>, enabled: bool) ->
     } else {
         (WIDGET, MUTED)
     };
-    let button = egui::Button::new(egui::RichText::new(setupscope_core::i18n::t(&text.into())).color(color).strong())
-        .fill(fill)
-        .stroke(Stroke::NONE)
-        .corner_radius(CornerRadius::same(18));
+    let button = egui::Button::new(
+        egui::RichText::new(setupscope_core::i18n::t(&text.into()))
+            .color(color)
+            .strong(),
+    )
+    .fill(fill)
+    .stroke(Stroke::NONE)
+    .corner_radius(CornerRadius::same(18));
     // add_sized centres the label inside the full-width pill.
     ui.add_enabled_ui(enabled, |ui| ui.add_sized([w, 36.0], button))
         .inner
@@ -226,7 +230,10 @@ pub fn warning_banner(ui: &mut egui::Ui, text: impl Into<String>) {
 /// Page title at the top of the content area.
 pub fn page_title(ui: &mut egui::Ui, title: &str, subtitle: &str) {
     ui.add_space(6.0);
-    ui.label(egui::RichText::new(setupscope_core::i18n::t(title)).text_style(egui::TextStyle::Name("Title".into())));
+    ui.label(
+        egui::RichText::new(setupscope_core::i18n::t(title))
+            .text_style(egui::TextStyle::Name("Title".into())),
+    );
     if !subtitle.is_empty() {
         ui.label(egui::RichText::new(setupscope_core::i18n::t(subtitle)).color(MUTED));
     }

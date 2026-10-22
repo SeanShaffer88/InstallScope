@@ -1,8 +1,8 @@
 //! Read-only, bounded project declarations and local toolchain evidence.
 mod constraints;
+mod desktop;
 mod dotnet;
 mod manifests;
-mod desktop;
 use crate::{devcheck, snapshot::Progress};
 use anyhow::{bail, Context, Result};
 use std::{
@@ -300,7 +300,10 @@ pub fn inspect(request: &Request, progress: &Progress) -> Result<Report> {
         devcheck::Profile::RustMsvc
     } else if findings.iter().any(|r| r.tool == ".NET SDK") {
         devcheck::Profile::DotNet
-    } else if findings.iter().any(|r| r.tool.starts_with("CMake") || r.tool=="MSVC toolset") {
+    } else if findings
+        .iter()
+        .any(|r| r.tool.starts_with("CMake") || r.tool == "MSVC toolset")
+    {
         devcheck::Profile::Cmake
     } else if findings.iter().any(|r| r.tool.starts_with(".NET")) {
         devcheck::Profile::DotNet

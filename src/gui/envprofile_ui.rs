@@ -147,7 +147,8 @@ impl EnvironmentState {
                 Err(error) => self.error = Some(error),
                 Ok(Update::Imported(profile)) => {
                     self.load_profile(profile);
-                    self.message = "Profile imported for review; nothing applied or launched.".into();
+                    self.message =
+                        "Profile imported for review; nothing applied or launched.".into();
                 }
                 Ok(Update::Process(plan)) => {
                     self.process = Some(plan);
@@ -165,7 +166,9 @@ impl EnvironmentState {
                     self.open_advanced = Some(true);
                 }
                 Ok(Update::Listed(ids)) => self.ids = ids,
-                Ok(Update::Saved) => self.message = "Profile saved to a new file. Only explicitly entered overrides were exported.".into(),
+                Ok(Update::Saved) => self.message =
+                    "Profile saved to a new file. Only explicitly entered overrides were exported."
+                        .into(),
                 Ok(Update::Launched(child)) => {
                     self.child_status=format!("Started process {}. Close it normally when finished; this is not a sandbox.",child.id());
                     self.child = Some(child);
@@ -190,7 +193,7 @@ impl EnvironmentState {
             }
         }
         super::widgets::scope_note(ui, "Preview project environments first. Launch is not a sandbox; persistent edits require separate review.", "Project environment profiles — process-local by default. Author explicit developer paths; imported files never apply or launch automatically. Profiles do not export the inherited environment or read .env files. Do not enter credentials. Changing PATH, PYTHONPATH or SDK directories can cause the selected program to load code from those locations. Launch uses SetupScope's privileges, is not a security sandbox, and has no elevation fallback.");
-        
+
         let action = controls(ui, self);
         if action.browse {
             if let Some(path) = pick_folder(&t("Choose project working directory")) {

@@ -14,14 +14,36 @@ mod tests {
     use super::*;
     #[test]
     fn long_reports_expand_a_compact_window_instead_of_collapsing_the_preview() {
-        for height in [220.,360.] {
-            let ctx=egui::Context::default();super::super::theme::apply(&ctx,false);
-            let mut state=BuildLogState::default();state.report=Some("Read-only diagnostic evidence\n".repeat(40));state.report_path=Some(String::new());
-            let output=ctx.run(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(720.,height))),..Default::default()},|ctx| {
-                egui::CentralPanel::default().show(ctx,|ui|super::super::tool_window::scroll_body(ui,"report-growth",|ui|state.ui(ui)));
-                super::super::tool_window::fit_content(ctx,super::super::app::Tab::BuildLog);
-            });
-            assert!(output.viewport_output[&egui::ViewportId::ROOT].commands.iter().any(|c|matches!(c,egui::ViewportCommand::InnerSize(size) if size.y>=450.)),"Long evidence was constrained by the old compact height");
+        for height in [220., 360.] {
+            let ctx = egui::Context::default();
+            super::super::theme::apply(&ctx, false);
+            let mut state = BuildLogState::default();
+            state.report = Some("Read-only diagnostic evidence\n".repeat(40));
+            state.report_path = Some(String::new());
+            let output = ctx.run(
+                egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(
+                        egui::Pos2::ZERO,
+                        egui::vec2(720., height),
+                    )),
+                    ..Default::default()
+                },
+                |ctx| {
+                    egui::CentralPanel::default().show(ctx, |ui| {
+                        super::super::tool_window::scroll_body(ui, "report-growth", |ui| {
+                            state.ui(ui)
+                        })
+                    });
+                    super::super::tool_window::fit_content(ctx, super::super::app::Tab::BuildLog);
+                },
+            );
+            assert!(
+                output.viewport_output[&egui::ViewportId::ROOT]
+                    .commands
+                    .iter()
+                    .any(|c| matches!(c,egui::ViewportCommand::InnerSize(size) if size.y>=450.)),
+                "Long evidence was constrained by the old compact height"
+            );
         }
     }
 }
@@ -33,10 +55,20 @@ impl Drop for BuildLogState {
     }
 }
 impl BuildLogState {
-    pub(super) fn select_path(&mut self,path:std::path::PathBuf) { if self.job.is_none(){self.path=path.display().to_string();} }
+    pub(super) fn select_path(&mut self, path: std::path::PathBuf) {
+        if self.job.is_none() {
+            self.path = path.display().to_string();
+        }
+    }
     pub(super) fn accept_evidence(&mut self, report: &build_log::Report) -> bool {
-        if self.job.is_some() {return false;}
-        self.path=report.path.display().to_string(); self.report=Some(report.text()); self.report_path=Some(self.path.clone()); self.error=None; true
+        if self.job.is_some() {
+            return false;
+        }
+        self.path = report.path.display().to_string();
+        self.report = Some(report.text());
+        self.report_path = Some(self.path.clone());
+        self.error = None;
+        true
     }
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         if let Some(result) = self.job.as_ref().and_then(Job::poll) {
@@ -51,7 +83,7 @@ impl BuildLogState {
             }
         }
         super::widgets::scope_note(ui, "Inspect one saved log. Matches are hints; nothing runs or changes.", "Select one saved local build log. Up to 2 MiB, 20,000 lines and 8 KiB per line; UTF-8 or BOM-marked UTF-16. Oversized files are rejected; long/excess lines are explicitly skipped. No build, script or suggested command runs. Nothing is modified or uploaded. Offline pattern hints for Rust, MSVC/MSBuild, .NET/NuGet, TypeScript/npm, Python, CMake and common storage/access failures. Quoted text can match; findings are not confirmed causes. Raw log lines are omitted; use the source line numbers in your editor. This report is not included in diagnostic bundles.");
-        
+
         ui.add_enabled_ui(self.job.is_none(), |ui| {
             let label = ui.label(setupscope_core::i18n::t("Saved build-log path"));
             a11y::explain(ui.add(egui::TextEdit::singleline(&mut self.path).char_limit(4096).desired_width(ui.available_width().min(600.0))).labelled_by(label.id), "Absolute local regular text file; network and reparse paths are skipped. Selecting a new path does not alter previous dated evidence.");
@@ -90,7 +122,9 @@ impl BuildLogState {
                 .request_repaint_after(std::time::Duration::from_millis(150));
         }
         if let Some(error) = &self.error {
-            ui.label(setupscope_core::i18n::t(&format!("{error} Previous report, if any, is retained.")));
+            ui.label(setupscope_core::i18n::t(&format!(
+                "{error} Previous report, if any, is retained."
+            )));
         }
         if let Some(report) = &self.report {
             if self.report_path.as_deref() != Some(self.path.as_str()) {

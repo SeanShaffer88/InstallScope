@@ -39,7 +39,10 @@ fn round_trip<T: ToJson + FromJson>(v: &T) {
 #[test]
 fn defaults_of_every_persisted_type() {
     check(
-        &crate::settings::Settings { advanced_mode: false, ..Default::default() },
+        &crate::settings::Settings {
+            advanced_mode: false,
+            ..Default::default()
+        },
         golden!("settings_default"),
     );
     check(
@@ -57,7 +60,16 @@ fn defaults_of_every_persisted_type() {
         &crate::store::PendingSession::default(),
         golden!("pending_default"),
     );
-    check(&crate::pafbuild::Job { settings: crate::settings::Settings { advanced_mode: false, ..Default::default() }, ..Default::default() }, golden!("job_default"));
+    check(
+        &crate::pafbuild::Job {
+            settings: crate::settings::Settings {
+                advanced_mode: false,
+                ..Default::default()
+            },
+            ..Default::default()
+        },
+        golden!("job_default"),
+    );
     round_trip(&crate::settings::ScanProfile::default());
     round_trip(&crate::model::ChangeSet::default());
     round_trip(&crate::pafbuild::AppDetails::default());

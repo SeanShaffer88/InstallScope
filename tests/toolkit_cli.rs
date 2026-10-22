@@ -80,7 +80,13 @@ fn malformed_invocations_exit_2_and_operational_failures_exit_1() {
         &["dependencies"],
         &["dependencies", "verify", "/tmp"],
         &["dependencies", "nonsense", "/tmp", "x"],
-        &["dependencies", "export", "/tmp/a", "/tmp/b", "--accept-license"],
+        &[
+            "dependencies",
+            "export",
+            "/tmp/a",
+            "/tmp/b",
+            "--accept-license",
+        ],
         &["run", "a", "b", "c", "d"],
         &["diagnostics", "rust"],
     ] {
@@ -91,7 +97,9 @@ fn malformed_invocations_exit_2_and_operational_failures_exit_1() {
     let temp = Scratch::new();
     let root = temp.0.to_str().unwrap();
     assert_eq!(
-        cli(&["dependencies", "verify", root, "unknown-package"]).status.code(),
+        cli(&["dependencies", "verify", root, "unknown-package"])
+            .status
+            .code(),
         Some(1)
     );
     assert_eq!(cli(&["readiness", "relative"]).status.code(), Some(1));

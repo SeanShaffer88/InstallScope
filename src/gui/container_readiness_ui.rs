@@ -35,7 +35,9 @@ impl ContainerState {
         }
         if let Some(job) = &self.job {
             ui.spinner();
-            ui.label(setupscope_core::i18n::t("Inspection running. Previous report below may be stale."));
+            ui.label(setupscope_core::i18n::t(
+                "Inspection running. Previous report below may be stale.",
+            ));
             if a11y::explain(
                 ui.button(setupscope_core::i18n::t("Cancel host readiness inspection")),
                 "Cancel at the next checkpoint; OS metadata calls must return first.",

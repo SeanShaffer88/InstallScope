@@ -60,7 +60,9 @@ impl App {
                                                     .wrap()
                                                     .frame(false),
                                                 )
-                                                .on_hover_text(setupscope_core::i18n::t(description))
+                                                .on_hover_text(setupscope_core::i18n::t(
+                                                    description,
+                                                ))
                                                 .clicked()
                                             {
                                                 open = Some(tab);
@@ -98,8 +100,7 @@ impl App {
                                                 .strong(),
                                             );
                                             ui.add_space(6.);
-                                            for detail in self.system_info.localized_parts()
-                                            {
+                                            for detail in self.system_info.localized_parts() {
                                                 ui.label(
                                                     egui::RichText::new(detail)
                                                         .size(12.)
@@ -107,10 +108,12 @@ impl App {
                                                 );
                                             }
                                             ui.label(
-                                                egui::RichText::new(setupscope_core::i18n::t(&format!(
-                                                    "SetupScope {}.0",
-                                                    env!("CARGO_PKG_VERSION")
-                                                )))
+                                                egui::RichText::new(setupscope_core::i18n::t(
+                                                    &format!(
+                                                        "SetupScope {}.0",
+                                                        env!("CARGO_PKG_VERSION")
+                                                    ),
+                                                ))
                                                 .small(),
                                             );
                                             ui.small(setupscope_core::i18n::t(

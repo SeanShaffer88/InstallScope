@@ -6,30 +6,27 @@
 //! Licensed under the MIT License. See LICENSE for details.
 
 pub mod alternatives;
-pub mod windowidentify;
 pub mod autoruns;
 pub mod autowatch;
 pub mod backup;
 pub mod boot;
+pub mod build_log;
+pub mod build_run;
 pub mod cache;
 pub mod canary;
 pub mod cleaner;
 pub mod cleanup_receipt;
+pub mod container_readiness;
 pub mod debloat;
 pub mod decrap;
 pub mod deflate;
-pub mod devcheck;
 pub mod dependencies;
-pub mod build_log;
-pub mod build_run;
-pub mod container_readiness;
-pub mod diagnostic_bundle;
-pub mod devversion;
+pub mod devcheck;
 pub mod devinspect;
-pub mod envprofile;
-pub mod projectdoctor;
-pub mod regression;
+pub mod devversion;
+pub mod diagnostic_bundle;
 pub mod difftree;
+pub mod envprofile;
 pub mod extinv;
 pub mod features;
 pub mod fswalk;
@@ -55,7 +52,9 @@ pub mod portable;
 pub mod prescreen;
 pub mod privacy;
 pub mod programs;
+pub mod projectdoctor;
 pub mod refcount;
+pub mod regression;
 pub mod repackage;
 pub mod report;
 pub mod restore;
@@ -79,6 +78,7 @@ pub mod transfer;
 pub mod trust;
 pub mod usage;
 pub mod util;
+pub mod windowidentify;
 pub mod zip;
 
 #[cfg(test)]
@@ -92,5 +92,5 @@ pub const APP_NAME: &str = "SetupScope";
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const APP_AUTHOR: &str = "Sean Shaffer";
 
-pub mod scratch;
 pub mod project_readiness;
+pub mod scratch;

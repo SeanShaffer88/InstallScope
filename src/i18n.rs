@@ -6,8 +6,8 @@
 //! `<code>.json`, without recompiling.
 
 use std::collections::HashMap;
-use std::sync::RwLock;
 use std::io::Read;
+use std::sync::RwLock;
 mod presentation;
 
 pub struct Language {
@@ -33,9 +33,16 @@ static CURRENT: RwLock<Option<HashMap<String, String>>> = RwLock::new(None);
 static CURRENT_CODE: RwLock<String> = RwLock::new(String::new());
 
 fn parse(code: &str, json: &str) -> Option<Language> {
-    if json.len()>1024*1024 || code.len()>32 || !code.bytes().all(|b|b.is_ascii_alphanumeric()||b==b'-') {return None;}
+    if json.len() > 1024 * 1024
+        || code.len() > 32
+        || !code.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-')
+    {
+        return None;
+    }
     let mut data: HashMap<String, String> = crate::json::compat::from_str(json).ok()?;
-    if data.len()>4096 || data.iter().any(|(k,v)|k.len()>8192||v.len()>16384){return None;}
+    if data.len() > 4096 || data.iter().any(|(k, v)| k.len() > 8192 || v.len() > 16384) {
+        return None;
+    }
     let name = data.remove("_language").unwrap_or_else(|| code.to_string());
     data.retain(|k, v| !k.starts_with('_') && !v.trim().is_empty());
     Some(Language {
@@ -62,18 +69,30 @@ pub fn languages() -> Vec<Language> {
         .ok()
         .and_then(|p| p.parent().map(|d| d.join("lang")));
     if let Some(dir) = dir {
-        for e in std::fs::read_dir(dir).into_iter().flatten().flatten().take(64) {
+        for e in std::fs::read_dir(dir)
+            .into_iter()
+            .flatten()
+            .flatten()
+            .take(64)
+        {
             let p = e.path();
-            if e.file_type().is_ok_and(|t|t.is_file()) && e.metadata().is_ok_and(|m|m.len()<=1024*1024) && p.extension().is_some_and(|x| x == "json") {
+            if e.file_type().is_ok_and(|t| t.is_file())
+                && e.metadata().is_ok_and(|m| m.len() <= 1024 * 1024)
+                && p.extension().is_some_and(|x| x == "json")
+            {
                 let code = p
                     .file_stem()
                     .unwrap_or_default()
                     .to_string_lossy()
                     .to_string();
-                let source=(||->std::io::Result<String>{let mut s=String::new();std::fs::File::open(&p)?.take(1024*1024+1).read_to_string(&mut s)?;Ok(s)})();
-                if let Some(l) = source.ok()
-                    .and_then(|s| parse(&code, &s))
-                {
+                let source = (|| -> std::io::Result<String> {
+                    let mut s = String::new();
+                    std::fs::File::open(&p)?
+                        .take(1024 * 1024 + 1)
+                        .read_to_string(&mut s)?;
+                    Ok(s)
+                })();
+                if let Some(l) = source.ok().and_then(|s| parse(&code, &s)) {
                     out.retain(|x| x.code != l.code);
                     out.push(l);
                 }
@@ -108,8 +127,11 @@ pub fn set_language(code: &str) {
     } else {
         code.to_string()
     };
-    let selected=langs.into_iter().find(|l| l.code == code);
-    let code=selected.as_ref().map(|l|l.code.clone()).unwrap_or_else(||"en".into());
+    let selected = langs.into_iter().find(|l| l.code == code);
+    let code = selected
+        .as_ref()
+        .map(|l| l.code.clone())
+        .unwrap_or_else(|| "en".into());
     let data = selected.map(|l| l.data);
     *CURRENT.write().unwrap() = data.filter(|d| !d.is_empty());
     *CURRENT_CODE.write().unwrap() = code;
@@ -121,9 +143,14 @@ pub fn current_code() -> String {
 
 /// Translate a string.
 pub fn t(s: &str) -> String {
-    let current=CURRENT.read().unwrap();
-    let Some(map)=current.as_ref()else{return s.to_owned()};
-    map.get(s).cloned().or_else(||presentation::translate(s,map)).unwrap_or_else(||s.to_owned())
+    let current = CURRENT.read().unwrap();
+    let Some(map) = current.as_ref() else {
+        return s.to_owned();
+    };
+    map.get(s)
+        .cloned()
+        .or_else(|| presentation::translate(s, map))
+        .unwrap_or_else(|| s.to_owned())
 }
 
 /// Translate and fill `{name}` placeholders.
@@ -155,37 +182,86 @@ pub fn system_locale() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    fn fields(text:&str)->std::collections::BTreeMap<String,usize>{
-        let mut result=std::collections::BTreeMap::new();let mut chars=text.chars().peekable();
-        while let Some(c)=chars.next(){if c!='{'{continue;}else if chars.peek()==Some(&'{'){chars.next();continue;}
-            let mut field=String::from("{");for c in chars.by_ref(){field.push(c);if c=='}'{break;}}
-            *result.entry(field).or_default()+=1;
-        }result
-    }
-    #[test] fn owned_desktop_catalogs_are_complete_and_preserve_exact_fields(){
-        let inventory:crate::json::Value=crate::json::from_json_str(include_str!("../lang/ui-strings.json")).unwrap();
-        let keys=inventory.get("keys").unwrap().as_array().unwrap();
-        let invariants=inventory.get("verbatim").unwrap().as_array().unwrap();
-        for (code,source) in BUILTIN {
-            let language=parse(code,source).unwrap();
-            for key in keys {let key=key.as_str().unwrap();let value=language.data.get(key).unwrap_or_else(||panic!("{code}: missing {key}"));
-                assert_eq!(fields(key),fields(value),"{code}: damaged fields: {key}");
+    fn fields(text: &str) -> std::collections::BTreeMap<String, usize> {
+        let mut result = std::collections::BTreeMap::new();
+        let mut chars = text.chars().peekable();
+        while let Some(c) = chars.next() {
+            if c != '{' {
+                continue;
+            } else if chars.peek() == Some(&'{') {
+                chars.next();
+                continue;
             }
-            for key in invariants {let key=key.as_str().unwrap();assert_eq!(language.data.get(key).map(String::as_str),Some(key),"{code}: technical identifier changed: {key}");}
+            let mut field = String::from("{");
+            for c in chars.by_ref() {
+                field.push(c);
+                if c == '}' {
+                    break;
+                }
+            }
+            *result.entry(field).or_default() += 1;
+        }
+        result
+    }
+    #[test]
+    fn owned_desktop_catalogs_are_complete_and_preserve_exact_fields() {
+        let inventory: crate::json::Value =
+            crate::json::from_json_str(include_str!("../lang/ui-strings.json")).unwrap();
+        let keys = inventory.get("keys").unwrap().as_array().unwrap();
+        let invariants = inventory.get("verbatim").unwrap().as_array().unwrap();
+        for (code, source) in BUILTIN {
+            let language = parse(code, source).unwrap();
+            for key in keys {
+                let key = key.as_str().unwrap();
+                let value = language
+                    .data
+                    .get(key)
+                    .unwrap_or_else(|| panic!("{code}: missing {key}"));
+                assert_eq!(fields(key), fields(value), "{code}: damaged fields: {key}");
+            }
+            for key in invariants {
+                let key = key.as_str().unwrap();
+                assert_eq!(
+                    language.data.get(key).map(String::as_str),
+                    Some(key),
+                    "{code}: technical identifier changed: {key}"
+                );
+            }
         }
     }
-    #[test] fn focused_shell_is_present_in_every_builtin_catalog(){
-        for (code,source) in BUILTIN {
-            let language=parse(code,source).unwrap();
-            for key in ["Workflow Board","Windows Software Development Toolkit","Project Readiness","Build Troubleshooting","Environment Profiles","Ports And Processes","WSL And Containers","System And OS","Language","Prepare Execution Review","Run Reviewed Command","Verify Cached Files"] {
-                assert!(language.data.get(key).is_some_and(|s|!s.is_empty()),"{code}: missing {key}");
+    #[test]
+    fn focused_shell_is_present_in_every_builtin_catalog() {
+        for (code, source) in BUILTIN {
+            let language = parse(code, source).unwrap();
+            for key in [
+                "Workflow Board",
+                "Windows Software Development Toolkit",
+                "Project Readiness",
+                "Build Troubleshooting",
+                "Environment Profiles",
+                "Ports And Processes",
+                "WSL And Containers",
+                "System And OS",
+                "Language",
+                "Prepare Execution Review",
+                "Run Reviewed Command",
+                "Verify Cached Files",
+            ] {
+                assert!(
+                    language.data.get(key).is_some_and(|s| !s.is_empty()),
+                    "{code}: missing {key}"
+                );
             }
         }
     }
-    #[test] fn language_input_is_bounded(){
-        assert!(parse("../bad","{}").is_none());
-        assert!(parse("es",&" ".repeat(1024*1024+1)).is_none());
-        assert!(parse("es",r#"{"_language":"Español","Empty":" "}"#).unwrap().data.is_empty());
+    #[test]
+    fn language_input_is_bounded() {
+        assert!(parse("../bad", "{}").is_none());
+        assert!(parse("es", &" ".repeat(1024 * 1024 + 1)).is_none());
+        assert!(parse("es", r#"{"_language":"Español","Empty":" "}"#)
+            .unwrap()
+            .data
+            .is_empty());
     }
 
     #[test]

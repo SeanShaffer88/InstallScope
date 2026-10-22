@@ -28,8 +28,11 @@ impl Drop for ReadinessState {
     }
 }
 impl ReadinessState {
-    pub(super) fn current_project_evidence(&self) -> Option<&setupscope_core::projectdoctor::Report> {
-        self.current().then(|| &self.report.as_ref().expect("current evidence").project)
+    pub(super) fn current_project_evidence(
+        &self,
+    ) -> Option<&setupscope_core::projectdoctor::Report> {
+        self.current()
+            .then(|| &self.report.as_ref().expect("current evidence").project)
     }
     pub(super) fn poll(&mut self) {
         if let Some(result) = self.job.as_ref().and_then(Job::poll) {
@@ -199,9 +202,14 @@ impl App {
                     self.devcheck.accept_project_evidence(&report.project)
                 }
                 Destination::BuildLog => {
-                    let accepted=self.devcheck.accept_build_project(&report.project.root);
-                    accepted && report.log.as_ref().map(|log|self.devcheck.accept_log_evidence(log)).unwrap_or(true)
-                },
+                    let accepted = self.devcheck.accept_build_project(&report.project.root);
+                    accepted
+                        && report
+                            .log
+                            .as_ref()
+                            .map(|log| self.devcheck.accept_log_evidence(log))
+                            .unwrap_or(true)
+                }
                 _ => true,
             };
             if accepted {

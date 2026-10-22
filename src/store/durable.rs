@@ -45,7 +45,11 @@ pub(crate) fn write(path: &Path, bytes: &[u8], replace: bool) -> io::Result<()> 
 }
 
 /// Stream to a unique staged file; failed generation never publishes partial data.
-pub(crate) fn write_with(path: &Path, replace: bool, generate: impl FnOnce(&mut fs::File) -> io::Result<()>) -> io::Result<()> {
+pub(crate) fn write_with(
+    path: &Path,
+    replace: bool,
+    generate: impl FnOnce(&mut fs::File) -> io::Result<()>,
+) -> io::Result<()> {
     check_path(path)?;
     let parent = path
         .parent()
@@ -162,6 +166,10 @@ mod audit_tests {
         });
         assert!(result.is_err());
         assert_eq!(fs::read(&path).unwrap(), b"original");
-        assert!(!fs::read_dir(temp.path()).unwrap().any(|e| e.unwrap().path().extension().is_some_and(|ext| ext == "tmp")));
+        assert!(!fs::read_dir(temp.path()).unwrap().any(|e| e
+            .unwrap()
+            .path()
+            .extension()
+            .is_some_and(|ext| ext == "tmp")));
     }
 }

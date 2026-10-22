@@ -45,7 +45,10 @@ fn main() {
     #[cfg(windows)]
     let _instance = match instance::Instance::acquire() {
         Ok(Some(guard)) => guard,
-        Ok(None) => {instance::focus_existing();return;},
+        Ok(None) => {
+            instance::focus_existing();
+            return;
+        }
         Err(e) => {
             let _ = setupscope_core::platform::windows::message_box("SetupScope", &format!("Cannot establish the single-instance guard: {e}. No additional window was opened."));
             std::process::exit(1);

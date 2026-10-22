@@ -60,7 +60,11 @@ impl BundleState {
                 .max_height(260.0)
                 .min_scrolled_height(260.0)
                 .show(ui, |ui| {
-                    ui.add(egui::Label::new(egui::RichText::new(text).monospace()).wrap().selectable(true));
+                    ui.add(
+                        egui::Label::new(egui::RichText::new(text).monospace())
+                            .wrap()
+                            .selectable(true),
+                    );
                 });
             a11y::explain(ui.checkbox(&mut self.reviewed, setupscope_core::i18n::t("I reviewed this exact preview for sharing")), "Review remains tied to this generated snapshot; changing sections or generating another preview clears it.");
             if a11y::explain(ui.add_enabled(self.reviewed, egui::Button::new(setupscope_core::i18n::t("Save new diagnostic bundle…"))), "Save exactly the preview as a new JSON file. Existing files are never overwritten; no upload occurs.").clicked() {

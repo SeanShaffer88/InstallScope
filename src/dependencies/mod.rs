@@ -7,11 +7,11 @@ use std::{
     io::{Read, Seek, SeekFrom, Write},
     path::{Component, Path, PathBuf},
 };
+pub mod native;
 #[cfg(test)]
 mod tests;
 #[cfg(windows)]
 mod windows;
-pub mod native;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Package {
@@ -545,9 +545,23 @@ trait Running {
 }
 static VENDOR_ACTIVE: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 struct VendorGuard;
-impl Drop for VendorGuard {fn drop(&mut self){VENDOR_ACTIVE.store(false,std::sync::atomic::Ordering::Release);}}
-fn vendor_operation()->Result<VendorGuard>{
-    ensure!(VENDOR_ACTIVE.compare_exchange(false,true,std::sync::atomic::Ordering::AcqRel,std::sync::atomic::Ordering::Acquire).is_ok(), "Another vendor operation is active; finish its UI before starting another");
+impl Drop for VendorGuard {
+    fn drop(&mut self) {
+        VENDOR_ACTIVE.store(false, std::sync::atomic::Ordering::Release);
+    }
+}
+fn vendor_operation() -> Result<VendorGuard> {
+    ensure!(
+        VENDOR_ACTIVE
+            .compare_exchange(
+                false,
+                true,
+                std::sync::atomic::Ordering::AcqRel,
+                std::sync::atomic::Ordering::Acquire
+            )
+            .is_ok(),
+        "Another vendor operation is active; finish its UI before starting another"
+    );
     Ok(VendorGuard)
 }
 pub fn install(
@@ -556,7 +570,7 @@ pub fn install(
     reviewed: bool,
     progress: &Progress,
 ) -> Result<String> {
-    let _operation=vendor_operation()?;
+    let _operation = vendor_operation()?;
     #[cfg(windows)]
     {
         let p = package(&review.id)?;
@@ -602,7 +616,10 @@ fn install_with<P: Running>(
         arch: p.arch.clone(),
         path: review.path.display().to_string(),
         digest: p.digest.clone(),
-        command: review.command.clone().unwrap_or(command_preview(&p, &review.path)?),
+        command: review
+            .command
+            .clone()
+            .unwrap_or(command_preview(&p, &review.path)?),
         elevated: review.elevated,
         started: util::now_string(),
         state: "prepared; launch not yet confirmed".into(),

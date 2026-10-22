@@ -30,19 +30,41 @@ pub struct DevCheckState {
 
 impl DevCheckState {
     fn inputs(&self) -> (Profile, Target, String, String, String) {
-        (self.profile, self.target, self.command.clone(), self.minimum_version.clone(), self.maximum_version.clone())
+        (
+            self.profile,
+            self.target,
+            self.command.clone(),
+            self.minimum_version.clone(),
+            self.maximum_version.clone(),
+        )
     }
-    pub(super) fn accept_project_evidence(&mut self, report: &setupscope_core::projectdoctor::Report) -> bool {
-        if self.job.is_some() || self.doctor.busy() {return false;}
-        self.profile=report.tooling.profile; self.target=report.target;
-        self.command=report.tooling.version_command.clone();
-        self.minimum_version.clear(); self.maximum_version.clear();
-        self.report_inputs=Some(self.inputs());
-        self.report=Some(report.tooling.clone()); self.error=None;
-        self.doctor.accept_evidence(report.clone()); true
+    pub(super) fn accept_project_evidence(
+        &mut self,
+        report: &setupscope_core::projectdoctor::Report,
+    ) -> bool {
+        if self.job.is_some() || self.doctor.busy() {
+            return false;
+        }
+        self.profile = report.tooling.profile;
+        self.target = report.target;
+        self.command = report.tooling.version_command.clone();
+        self.minimum_version.clear();
+        self.maximum_version.clear();
+        self.report_inputs = Some(self.inputs());
+        self.report = Some(report.tooling.clone());
+        self.error = None;
+        self.doctor.accept_evidence(report.clone());
+        true
     }
-    pub(super) fn accept_log_evidence(&mut self, report: &setupscope_core::build_log::Report) -> bool { self.build_log.accept_evidence(report) }
-    pub(super) fn accept_build_project(&mut self, path: &std::path::Path) -> bool { self.build_run.accept_project(path) }
+    pub(super) fn accept_log_evidence(
+        &mut self,
+        report: &setupscope_core::build_log::Report,
+    ) -> bool {
+        self.build_log.accept_evidence(report)
+    }
+    pub(super) fn accept_build_project(&mut self, path: &std::path::Path) -> bool {
+        self.build_run.accept_project(path)
+    }
 }
 
 impl Drop for DevCheckState {
@@ -120,25 +142,37 @@ impl App {
 
     pub fn ui_developer_tool(&mut self, ctx: &egui::Context, tool: super::app::Tab) {
         use super::app::Tab;
-        egui::CentralPanel::default().frame(theme::content_frame()).show(ctx, |ui| {
-            super::tool_window::scroll_body(ui,format!("developer_tool_body-{tool:?}"), |ui| {
-                match tool {
-                    Tab::BuildLog => {
-                        if let Some(path)=self.devcheck.build_run.ui(ui, &self.store.root) { self.devcheck.build_log.select_path(path); }
-                        self.devcheck.build_log.ui(ui);
-                        ui.separator();
-                        super::widgets::collapsing_header(ui,setupscope_core::i18n::t("Diagnostic Export — Preview And Save")).show(ui, |ui| self.devcheck.bundle.ui(ui, self.devcheck.report.as_ref()));
+        egui::CentralPanel::default()
+            .frame(theme::content_frame())
+            .show(ctx, |ui| {
+                super::tool_window::scroll_body(
+                    ui,
+                    format!("developer_tool_body-{tool:?}"),
+                    |ui| match tool {
+                        Tab::BuildLog => {
+                            if let Some(path) = self.devcheck.build_run.ui(ui, &self.store.root) {
+                                self.devcheck.build_log.select_path(path);
+                            }
+                            self.devcheck.build_log.ui(ui);
+                            ui.separator();
+                            super::widgets::collapsing_header(
+                                ui,
+                                setupscope_core::i18n::t("Diagnostic Export — Preview And Save"),
+                            )
+                            .show(ui, |ui| {
+                                self.devcheck.bundle.ui(ui, self.devcheck.report.as_ref())
+                            });
+                        }
+                        Tab::Containers => self.devcheck.container.ui(ui),
+                        Tab::Dependencies => self.devcheck.dependencies.ui(ui, &self.store.root),
+                        Tab::Bundle => self.devcheck.bundle.ui(ui, self.devcheck.report.as_ref()),
+                        Tab::Doctor => self.devcheck.doctor.ui(ui),
+                        Tab::Ports => self.devcheck.inspector.ui(ui),
+                        Tab::Environment => self.devcheck.environment.ui(ui, &self.store.root),
+                        _ => {}
                     },
-                    Tab::Containers => self.devcheck.container.ui(ui),
-                    Tab::Dependencies => self.devcheck.dependencies.ui(ui, &self.store.root),
-                    Tab::Bundle => self.devcheck.bundle.ui(ui, self.devcheck.report.as_ref()),
-                    Tab::Doctor => self.devcheck.doctor.ui(ui),
-                    Tab::Ports => self.devcheck.inspector.ui(ui),
-                    Tab::Environment => self.devcheck.environment.ui(ui, &self.store.root),
-                    _ => {},
-                }
+                );
             });
-        });
     }
 
     pub fn ui_devcheck(&mut self, ctx: &egui::Context) {
@@ -158,7 +192,7 @@ impl App {
             super::tool_window::scroll_body(ui,"developer_diagnostics", |ui| {
                 a11y::focus_hint(ui, theme::MUTED);
                 super::widgets::scope_note(ui, "Read-only prerequisite, PATH and version evidence. No commands or environment changes.", "The diagnostic scan below is read-only: it executes no commands, changes no environment values and saves no results automatically. Environment Profiles has separate reviews for launching and persistent edits. Found means a file or directory was observed, not that a project will build. Numeric version checks use embedded Windows product metadata only. Binary architectures, SDK selection, project requirements and actual tool behavior remain unverified.");
-                
+
                 start = theme::card(ui, |ui| controls(ui, &mut self.devcheck));
                 if let Some(job) = &self.devcheck.job {
                     ui.spinner(); ui.label(setupscope_core::i18n::t(&format!("{}: {}", t("Metadata checks"), job.progress.count())));
@@ -248,21 +282,41 @@ mod tests {
 
     #[test]
     fn evidence_handoff_reuses_report_and_refuses_busy_replacement() {
-        let ctx=egui::Context::default();
-        let tooling=devcheck::inspect(&devcheck::Request{profile:Profile::Node,target:Target::Arm64,..Default::default()},&Default::default()).unwrap();
-        let incoming=setupscope_core::projectdoctor::Report{
-            root:"C:/Dev/Observed".into(),observed_at:"original observation".into(),target:Target::Arm64,
-            findings:vec![],notes:vec![],files:vec![],tooling,partial:true,cancelled:false,
+        let ctx = egui::Context::default();
+        let tooling = devcheck::inspect(
+            &devcheck::Request {
+                profile: Profile::Node,
+                target: Target::Arm64,
+                ..Default::default()
+            },
+            &Default::default(),
+        )
+        .unwrap();
+        let incoming = setupscope_core::projectdoctor::Report {
+            root: "C:/Dev/Observed".into(),
+            observed_at: "original observation".into(),
+            target: Target::Arm64,
+            findings: vec![],
+            notes: vec![],
+            files: vec![],
+            tooling,
+            partial: true,
+            cancelled: false,
         };
-        let mut state=DevCheckState::default();
-        state.job=Some(Job::spawn(&ctx,|_|Err("test worker".into())));
+        let mut state = DevCheckState::default();
+        state.job = Some(Job::spawn(&ctx, |_| Err("test worker".into())));
         assert!(!state.accept_project_evidence(&incoming));
-        assert!(state.report.is_none());assert_eq!(state.profile,Profile::RustMsvc);
-        state.job=None;
+        assert!(state.report.is_none());
+        assert_eq!(state.profile, Profile::RustMsvc);
+        state.job = None;
         assert!(state.accept_project_evidence(&incoming));
-        assert_eq!(state.profile,Profile::Node);assert_eq!(state.target,Target::Arm64);
-        assert_eq!(state.report.as_ref().unwrap().checks.len(),incoming.tooling.checks.len());
-        assert!(state.job.is_none(),"handoff must not start another scan");
+        assert_eq!(state.profile, Profile::Node);
+        assert_eq!(state.target, Target::Arm64);
+        assert_eq!(
+            state.report.as_ref().unwrap().checks.len(),
+            incoming.tooling.checks.len()
+        );
+        assert!(state.job.is_none(), "handoff must not start another scan");
     }
     #[test]
     fn controls_expose_accessible_guidance_without_starting_automatically() {
