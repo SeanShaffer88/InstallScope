@@ -24,7 +24,10 @@ pub struct StorageRow {
 }
 #[derive(Clone, Debug, Default)]
 pub struct StorageReport {
+    pub allocation: Option<crate::storage_allocation::Summary>,
     pub root: PathBuf,
+    /// UTC seconds at the start of this live metadata survey, not a snapshot time.
+    pub scanned_at: i64,
     pub totals: Totals,
     pub rows: Vec<StorageRow>,
     pub root_entries: u64,
@@ -33,6 +36,15 @@ pub struct StorageReport {
     pub cancelled: bool,
 }
 impl StorageReport {
+    /// Only measured directory rows can be selected for drill-down. The scan
+    /// rechecks their metadata because entries may change after this report.
+    pub fn folder_at(&self, index: usize) -> Option<&Path> {
+        self.rows
+            .get(index)
+            .filter(|row| row.folder)
+            .map(|row| row.path.as_path())
+    }
+
     pub fn incomplete(&self) -> bool {
         self.cancelled || self.errors != 0 || self.totals.skipped_links != 0
     }
@@ -70,7 +82,12 @@ fn link_or_reparse(meta: &Metadata) -> bool {
     false
 }
 
-fn inspect(path: &Path, totals: &mut Totals, report: &mut StorageReport) -> Option<bool> {
+fn inspect(
+    path: &Path,
+    totals: &mut Totals,
+    report: &mut StorageReport,
+    accounting: &mut Option<crate::storage_allocation::Accounting>,
+) -> Option<bool> {
     match fs::symlink_metadata(path) {
         Err(error) => {
             report.issue(path, error);
@@ -81,6 +98,9 @@ fn inspect(path: &Path, totals: &mut Totals, report: &mut StorageReport) -> Opti
             None
         }
         Ok(meta) if meta.is_file() => {
+            if let Some(accounting) = accounting {
+                accounting.observe(path, meta.len());
+            }
             totals.files += 1;
             match totals.bytes.checked_add(meta.len()) {
                 Some(bytes) => totals.bytes = bytes,
@@ -102,7 +122,13 @@ fn inspect(path: &Path, totals: &mut Totals, report: &mut StorageReport) -> Opti
     }
 }
 
-fn subtree(path: &Path, totals: &mut Totals, report: &mut StorageReport, progress: &Progress) {
+fn subtree(
+    path: &Path,
+    totals: &mut Totals,
+    report: &mut StorageReport,
+    progress: &Progress,
+    accounting: &mut Option<crate::storage_allocation::Accounting>,
+) {
     let first = match fs::read_dir(path) {
         Ok(rd) => rd,
         Err(error) => {
@@ -130,7 +156,7 @@ fn subtree(path: &Path, totals: &mut Totals, report: &mut StorageReport, progres
         };
         progress.tick();
         let path = entry.path();
-        if inspect(&path, totals, report) == Some(true) {
+        if inspect(&path, totals, report, accounting) == Some(true) {
             if stack.len() >= DEPTH_LIMIT {
                 report.issue(
                     &path,
@@ -150,6 +176,16 @@ fn subtree(path: &Path, totals: &mut Totals, report: &mut StorageReport, progres
 /// during metadata checks are skipped. Filesystem changes can race these checks;
 /// this read-only survey is neither a snapshot nor a security boundary.
 pub fn scan(root: &Path, progress: &Progress) -> Result<StorageReport> {
+    scan_with_allocation(root, progress, false)
+}
+
+pub fn scan_with_allocation(
+    root: &Path,
+    progress: &Progress,
+    allocation: bool,
+) -> Result<StorageReport> {
+    let mut accounting = allocation.then(crate::storage_allocation::Accounting::default);
+    let scanned_at = crate::time::unix_now();
     let meta = fs::symlink_metadata(root).context("Inspect selected storage folder")?;
     if link_or_reparse(&meta) {
         bail!("Choose a real folder instead of a link or reparse point.");
@@ -162,6 +198,7 @@ pub fn scan(root: &Path, progress: &Progress) -> Result<StorageReport> {
         .context("Read selected storage folder; check access or choose another folder")?;
     let mut report = StorageReport {
         root: root.clone(),
+        scanned_at,
         ..Default::default()
     };
     for entry in entries {
@@ -181,9 +218,9 @@ pub fn scan(root: &Path, progress: &Progress) -> Result<StorageReport> {
         let path = entry.path();
         let errors_before = report.errors;
         let mut totals = Totals::default();
-        let folder = inspect(&path, &mut totals, &mut report).unwrap_or(false);
+        let folder = inspect(&path, &mut totals, &mut report, &mut accounting).unwrap_or(false);
         if folder {
-            subtree(&path, &mut totals, &mut report, progress);
+            subtree(&path, &mut totals, &mut report, progress, &mut accounting);
         }
         report.totals.files += totals.files;
         report.totals.folders += totals.folders;
@@ -207,12 +244,72 @@ pub fn scan(root: &Path, progress: &Progress) -> Result<StorageReport> {
             break;
         }
     }
+    report.allocation = accounting.map(|a| a.summary);
     Ok(report)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    #[test]
+    fn optional_accounting_deduplicates_across_rows_without_changing_logical_baselines() {
+        let tmp = crate::util::tempdir().unwrap();
+        fs::create_dir(tmp.path().join("first")).unwrap();
+        fs::create_dir(tmp.path().join("second")).unwrap();
+        let original = tmp.path().join("first/a");
+        fs::write(&original, vec![1u8; 8192]).unwrap();
+        fs::hard_link(&original, tmp.path().join("second/b")).unwrap();
+        let logical = scan(tmp.path(), &Progress::default()).unwrap();
+        assert!(logical.allocation.is_none());
+        let measured = scan_with_allocation(tmp.path(), &Progress::default(), true).unwrap();
+        assert_eq!(measured.totals, logical.totals);
+        assert_eq!(measured.totals.bytes, 16384);
+        let accounting = measured.allocation.as_ref().unwrap();
+        assert_eq!(
+            (
+                accounting.unique_logical_bytes,
+                accounting.unique_files,
+                accounting.repeated_links,
+                accounting.unknown_files
+            ),
+            (8192, 1, 1, 0)
+        );
+        let baseline = crate::storage_baseline::Baseline::from_report(&logical).unwrap();
+        assert_eq!(baseline.compare(&measured).unwrap().total_change, 0);
+        let progress = Progress::default();
+        progress
+            .cancel
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        let partial = scan_with_allocation(tmp.path(), &progress, true).unwrap();
+        assert!(partial.cancelled && partial.incomplete());
+        assert_eq!(partial.allocation.unwrap().unique_files, 0);
+    }
+    #[test]
+    fn drill_down_measures_only_the_selected_folder_and_rechecks_it() {
+        let tmp = crate::util::tempdir().unwrap();
+        let nested = tmp.path().join("nested");
+        fs::create_dir(&nested).unwrap();
+        fs::write(nested.join("inside"), b"123456").unwrap();
+        fs::write(tmp.path().join("outside"), b"789").unwrap();
+        let report = scan(tmp.path(), &Progress::default()).unwrap();
+        let index = report.rows.iter().position(|row| row.folder).unwrap();
+        let selected = report.folder_at(index).unwrap();
+        let detail = scan(selected, &Progress::default()).unwrap();
+        assert_eq!(detail.totals.bytes, 6);
+        assert_eq!(detail.totals.files, 1);
+        assert_eq!(detail.rows.len(), 1);
+        assert_eq!(detail.rows[0].path.file_name().unwrap(), "inside");
+        let file_index = report.rows.iter().position(|row| !row.folder).unwrap();
+        assert!(report.folder_at(file_index).is_none());
+        assert!(report.folder_at(usize::MAX).is_none());
+        fs::remove_file(nested.join("inside")).unwrap();
+        fs::remove_dir(&nested).unwrap();
+        fs::write(&nested, b"now a file").unwrap();
+        assert!(scan(selected, &Progress::default()).is_err());
+        assert_eq!(fs::read(tmp.path().join("outside")).unwrap(), b"789");
+    }
+
     #[test]
     fn nested_sizes_sort_and_scanning_changes_nothing() {
         let tmp = crate::util::tempdir().unwrap();

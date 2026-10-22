@@ -9,6 +9,7 @@ use std::io::{Read, Write};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
+#[cfg(not(windows))]
 use std::time::UNIX_EPOCH;
 
 /// Shared progress/cancel state for long-running work on a background thread.
@@ -17,6 +18,11 @@ pub struct Progress {
     pub phase: Mutex<String>,
     pub items: AtomicU64,
     pub cancel: AtomicBool,
+    item_limit: AtomicU64,
+    limit_reached: AtomicBool,
+    byte_limit: AtomicU64,
+    captured_bytes: AtomicU64,
+    byte_limit_reached: AtomicBool,
 }
 
 impl Progress {
@@ -27,7 +33,53 @@ impl Progress {
         self.phase.lock().unwrap().clone()
     }
     pub fn tick(&self) {
-        self.items.fetch_add(1, Ordering::Relaxed);
+        let previous = self.items.fetch_add(1, Ordering::Relaxed);
+        let limit = self.item_limit.load(Ordering::Relaxed);
+        if limit != 0 && previous >= limit.saturating_sub(1) {
+            self.limit_reached.store(true, Ordering::Relaxed);
+            self.cancel.store(true, Ordering::Relaxed);
+        }
+    }
+    /// Set before capture starts; zero keeps the existing unlimited behavior.
+    /// Workers stop cooperatively, so this is not a hard memory allocation cap.
+    pub fn set_item_limit(&self, limit: u64) {
+        self.item_limit.store(limit, Ordering::Relaxed);
+    }
+    pub fn limit_reached(&self) -> bool {
+        self.limit_reached.load(Ordering::Relaxed)
+    }
+    /// Accounting budget for snapshot payloads, not total process memory.
+    pub fn set_byte_limit(&self, limit: u64) {
+        self.byte_limit.store(limit, Ordering::Relaxed);
+    }
+    pub fn reserve_capture_bytes(&self, amount: u64) -> bool {
+        let limit = self.byte_limit.load(Ordering::Relaxed);
+        if limit == 0 {
+            return true;
+        }
+        let mut used = self.captured_bytes.load(Ordering::Relaxed);
+        loop {
+            let Some(next) = used.checked_add(amount).filter(|next| *next <= limit) else {
+                self.exceed_byte_limit();
+                return false;
+            };
+            match self.captured_bytes.compare_exchange_weak(
+                used,
+                next,
+                Ordering::Relaxed,
+                Ordering::Relaxed,
+            ) {
+                Ok(_) => return true,
+                Err(current) => used = current,
+            }
+        }
+    }
+    pub fn bounded_capture(&self) -> bool {
+        self.byte_limit.load(Ordering::Relaxed) != 0
+    }
+    pub fn exceed_byte_limit(&self) {
+        self.byte_limit_reached.store(true, Ordering::Relaxed);
+        self.cancel.store(true, Ordering::Relaxed);
     }
     pub fn count(&self) -> u64 {
         self.items.load(Ordering::Relaxed)
@@ -64,7 +116,7 @@ pub fn take_snapshot(
         .unwrap_or(4)
         .clamp(2, 6);
     let next = std::sync::atomic::AtomicUsize::new(0);
-    let parts: Vec<Snapshot> = std::thread::scope(|scope| {
+    let parts = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..workers.min(roots.len()))
             .map(|_| {
                 scope.spawn(|| {
@@ -92,9 +144,25 @@ pub fn take_snapshot(
             }
         }
         progress.set_phase("Files");
-        handles.into_iter().filter_map(|h| h.join().ok()).collect()
-    });
+        // Join every worker before returning an error: never silently drop a
+        // failed worker's evidence and present the remainder as a full capture.
+        let joined: Vec<_> = handles.into_iter().map(|h| h.join()).collect();
+        joined
+            .into_iter()
+            .map(|part| {
+                part.map_err(|_| {
+                    anyhow::anyhow!("snapshot file worker failed; evidence was not saved")
+                })
+            })
+            .collect::<Result<Vec<_>>>()
+    })?;
     if progress.cancelled() {
+        if progress.byte_limit_reached.load(Ordering::Relaxed) {
+            anyhow::bail!("snapshot payload byte budget exceeded; evidence was not saved");
+        }
+        if progress.limit_reached() {
+            anyhow::bail!("snapshot item limit reached; evidence was not saved");
+        }
         anyhow::bail!("cancelled");
     }
     for part in parts {
@@ -149,15 +217,28 @@ pub fn capture_files(
                 if progress.cancelled() {
                     return platform::windows::Walk::Stop;
                 }
+                if progress.bounded_capture() {
+                    progress.tick();
+                    if progress.cancelled() {
+                        return platform::windows::Walk::Stop;
+                    }
+                }
                 crate::util::fold_into(path, &mut folded);
                 if excl.matches_folded(&folded, &mut chars) {
                     return platform::windows::Walk::Skip;
+                }
+                if !progress.reserve_capture_bytes(path.len() as u64 + 32) {
+                    return platform::windows::Walk::Stop;
                 }
                 snap.push_file(path, is_dir, size, mtime);
                 progress.tick();
                 platform::windows::Walk::Continue
             },
-            &mut |path| warnings.push(format!("Could not read {path}")),
+            &mut |path| {
+                if progress.reserve_capture_bytes(path.len() as u64 + 64) {
+                    warnings.push(format!("Could not read {path}"));
+                }
+            },
         );
         snap.warnings.extend(warnings);
     }
@@ -190,6 +271,9 @@ pub fn capture_files(
                 }
                 let Ok(meta) = e.metadata() else { continue };
                 let is_dir = meta.is_dir();
+                if !progress.reserve_capture_bytes(ps.len() as u64 + 32) {
+                    return;
+                }
                 snap.push_file(
                     &ps,
                     is_dir,
@@ -414,15 +498,23 @@ fn put_str(out: &mut Vec<u8>, s: &str) {
 /// gzip-compressed. Written to a temporary file and renamed into place, so
 /// an interrupted save never leaves a damaged snapshot behind.
 pub fn save_snapshot(path: &Path, snap: &Snapshot) -> Result<()> {
+    save_snapshot_with(path, snap, true)
+}
+
+/// Save new evidence without replacing a prior named snapshot, even in a race.
+pub fn save_new_snapshot(path: &Path, snap: &Snapshot) -> Result<()> {
+    save_snapshot_with(path, snap, false)
+}
+
+fn save_snapshot_with(path: &Path, snap: &Snapshot, replace: bool) -> Result<()> {
     if let Some(p) = path.parent() {
         std::fs::create_dir_all(p)?;
     }
     let snap = sorted(snap);
     let s = snap.as_ref();
-    let tmp = path.with_extension("snap.tmp");
-    {
-        let f = std::fs::File::create(&tmp).with_context(|| format!("create {}", tmp.display()))?;
-        let mut gz = crate::deflate::GzWriter::fast(f)?;
+    crate::store::durable::write_with(path, replace, |file| {
+      let encode = || -> Result<()> {
+        let mut gz = crate::deflate::GzWriter::fast(file)?;
         let mut head = Vec::with_capacity(4096);
         head.extend_from_slice(MAGIC);
         put_str(&mut head, &s.created);
@@ -479,9 +571,11 @@ pub fn save_snapshot(path: &Path, snap: &Snapshot) -> Result<()> {
             }
         }
         flush(&mut gz, &mut buf)?;
-        gz.finish()?.sync_all()?;
-    }
-    std::fs::rename(&tmp, path).with_context(|| format!("save {}", path.display()))?;
+        gz.finish()?;
+        Ok(())
+      };
+      encode().map_err(|e| std::io::Error::other(format!("{e:#}")))
+    }).with_context(|| format!("save {} (existing evidence is never removed)", path.display()))?;
     Ok(())
 }
 
@@ -623,12 +717,27 @@ struct LegacySnapshot {
 crate::json_struct!(LegacySnapshot, { created [default], computer [default], user [default], registry [default], files [default], warnings [default] });
 
 pub fn load_snapshot(path: &Path) -> Result<Snapshot> {
+    load_snapshot_bounded(path, 512 * 1024 * 1024)
+}
+
+/// Reject oversized expanded evidence before parsing it. The limit covers
+/// decompressed input bytes, not the additional memory used by parsed records.
+pub fn load_snapshot_bounded(path: &Path, max_expanded_bytes: u64) -> Result<Snapshot> {
+    let read_limit = max_expanded_bytes
+        .checked_add(1)
+        .context("snapshot byte limit is too large")?;
     let f = std::fs::File::open(path).with_context(|| format!("open {}", path.display()))?;
     let mut raw = Vec::new();
     crate::deflate::GzReader::new(f)
         .with_context(|| format!("read {}", path.display()))?
+        .take(read_limit)
         .read_to_end(&mut raw)
         .with_context(|| format!("read {}", path.display()))?;
+    anyhow::ensure!(
+        raw.len() as u64 <= max_expanded_bytes,
+        "snapshot exceeds expanded byte limit ({max_expanded_bytes} bytes): {}",
+        path.display()
+    );
     if raw.starts_with(MAGIC) {
         return parse_binary(&raw).with_context(|| format!("read {}", path.display()));
     }
@@ -656,6 +765,76 @@ pub fn load_snapshot(path: &Path) -> Result<Snapshot> {
 mod tests {
     use super::*;
     use crate::platform::MemRegistry;
+
+    #[test]
+    fn new_snapshot_preserves_prior_evidence_and_legacy_staging_files() {
+        let tmp = crate::util::tempdir().unwrap();
+        let path = tmp.path().join("named.snap");
+        let legacy = path.with_extension("snap.tmp");
+        std::fs::write(&legacy, b"preserve interrupted evidence").unwrap();
+        save_new_snapshot(&path, &Snapshot::default()).unwrap();
+        let original = std::fs::read(&path).unwrap();
+        assert!(save_new_snapshot(&path, &Snapshot {created:"replacement".into(), ..Default::default()}).is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), original);
+        assert_eq!(std::fs::read(&legacy).unwrap(), b"preserve interrupted evidence");
+        load_snapshot(&path).unwrap();
+    }
+
+    #[test]
+    fn bounded_snapshot_rejects_expansion_and_accepts_exact_boundary() {
+        let tmp = crate::util::tempdir().unwrap();
+        let path = tmp.path().join("bounded.snap");
+        save_snapshot(&path, &Snapshot::default()).unwrap();
+        let mut bytes = Vec::new();
+        crate::deflate::GzReader::new(std::fs::File::open(&path).unwrap())
+            .unwrap()
+            .read_to_end(&mut bytes)
+            .unwrap();
+        load_snapshot_bounded(&path, bytes.len() as u64).unwrap();
+        let error = load_snapshot_bounded(&path, bytes.len() as u64 - 1).unwrap_err();
+        assert!(error.to_string().contains("expanded byte limit"));
+        assert!(load_snapshot_bounded(&path, u64::MAX).is_err());
+    }
+
+    #[test]
+    fn bounded_snapshot_still_checks_gzip_integrity() {
+        let tmp = crate::util::tempdir().unwrap();
+        let path = tmp.path().join("corrupt.snap");
+        save_snapshot(&path, &Snapshot::default()).unwrap();
+        let mut bytes = std::fs::read(&path).unwrap();
+        let trailer = bytes.len() - 8;
+        bytes[trailer] ^= 1;
+        std::fs::write(&path, bytes).unwrap();
+        assert!(load_snapshot_bounded(&path, 1024 * 1024).is_err());
+    }
+
+    #[test]
+    fn highly_compressed_snapshot_is_stopped_before_parsing() {
+        let tmp = crate::util::tempdir().unwrap();
+        let path = tmp.path().join("expanded.snap");
+        let mut gz = crate::deflate::GzWriter::fast(std::fs::File::create(&path).unwrap()).unwrap();
+        gz.write_all(&vec![b' '; 1024 * 1024]).unwrap();
+        gz.finish().unwrap();
+        assert!(std::fs::metadata(&path).unwrap().len() < 64 * 1024);
+        let error = load_snapshot_bounded(&path, 64 * 1024).unwrap_err();
+        assert!(error.to_string().contains("expanded byte limit"));
+    }
+
+    #[test]
+    fn capture_limit_cannot_produce_successful_evidence() {
+        let tmp = crate::util::tempdir().unwrap();
+        std::fs::write(tmp.path().join("fixture"), "x").unwrap();
+        let progress = Progress::default();
+        progress.set_item_limit(1);
+        let mut settings = settings_for(&tmp.path().to_string_lossy());
+        settings.registry_roots.clear();
+        let error = take_snapshot(&MemRegistry::new(), &settings, &progress).unwrap_err();
+        assert!(progress.limit_reached());
+        assert!(error.to_string().contains("item limit"));
+        let normal = Progress::default();
+        normal.tick();
+        assert!(!normal.cancelled());
+    }
 
     fn settings_for(root: &str) -> Settings {
         Settings {

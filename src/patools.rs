@@ -141,11 +141,19 @@ fn skip_entry(rel: &str) -> bool {
 pub fn extract(zip_path: &Path, dest: &Path) -> Result<()> {
     let f = std::fs::File::open(zip_path)?;
     let mut z = crate::zip::ZipArchive::new(f).context("the download isn't a valid archive")?;
+    // Reject unsafe names before creating any output, rather than silently
+    // delivering an incomplete toolchain. Never reinterpret Windows devices.
+    for entry in z.entries() {
+        if entry.enclosed_name().is_none() {
+            anyhow::bail!(
+                "The toolchain archive contains an unsafe or unsupported Windows path: {}",
+                entry.name
+            );
+        }
+    }
     for i in 0..z.len() {
         let mut e = z.by_index(i)?;
-        let Some(name) = e.enclosed_name() else {
-            continue;
-        };
+        let name = e.enclosed_name().context("unsafe toolchain archive path")?;
         let rel: PathBuf = name.components().skip(1).collect();
         if rel.as_os_str().is_empty() || skip_entry(&rel.to_string_lossy()) {
             continue;
@@ -473,6 +481,25 @@ mod tests {
         // The compiler's fingerprint doesn't match, so it isn't trusted.
         assert!(!Toolchain { root: out }.is_valid());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn unsafe_archive_names_fail_before_creating_output() {
+        for bad in ["../escape", "root/NUL.txt", "root/file.", "root/a:b"] {
+            let dir = crate::util::tempdir().unwrap();
+            let path = dir.path().join("input.zip");
+            let mut writer =
+                crate::zip::ZipWriter::new(std::fs::File::create(&path).unwrap()).unwrap();
+            writer.start_file("root/otherwise-valid.txt").unwrap();
+            writer.write_all(b"fixture").unwrap();
+            writer.start_file(bad).unwrap();
+            writer.write_all(b"fixture").unwrap();
+            writer.finish().unwrap();
+            let output = dir.path().join("output");
+            assert!(extract(&path, &output).is_err(), "{bad}");
+            assert!(!output.exists());
+            assert!(!dir.path().join("escape").exists());
+        }
     }
 
     #[test]

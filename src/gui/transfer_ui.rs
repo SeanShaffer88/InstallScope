@@ -52,6 +52,7 @@ fn warnings(ui: &mut egui::Ui, list: &[String], color: egui::Color32) {
 impl App {
     /// Start collecting what belongs to these programs.
     pub fn start_transfer_export(&mut self, programs: Vec<InstalledProgram>) {
+        if self.transfer.is_some() { self.set_status("Finish or close the existing transfer review first."); return; }
         if programs.is_empty() {
             return;
         }
@@ -75,6 +76,7 @@ impl App {
 
     /// Ask for a package and check it against this PC.
     pub fn start_transfer_import(&mut self) {
+        if self.transfer.is_some() { self.set_status("Finish or close the existing transfer review first."); return; }
         let Some(path) = pick_file(
             &t("Restore programs from a transfer package"),
             "SetupScope transfer package",
@@ -297,7 +299,7 @@ impl App {
                                 });
                                 if backup.is_some() {
                                     ui.add_space(6.0);
-                                    small_muted(ui, t("Changed your mind? The whole transfer can be undone from the Backups page."));
+                                    small_muted(ui, t("Review recorded transfer recovery in Backups. External changes and unrecorded application state are outside this recovery."));
                                 }
                             }
                             Err(e) => theme::warning_banner(ui, e.clone()),
@@ -375,14 +377,14 @@ impl App {
                     } else if c.needs_admin && !elevated {
                         t("Unavailable: run SetupScope as Administrator to restore these programs.")
                     } else {
-                        t("Writes the programs' files, settings and registry entries onto this PC. Everything written is recorded, so the transfer can be undone from the Backups page.")
+                        t("Writes the programs' files, settings and registry entries onto this PC. Recorded changes have recovery data in Backups; review partial failures and coverage before relying on undo.")
                     };
                     if c.needs_admin && !elevated {
                         ui.add_space(6.0);
                         theme::warning_banner(ui, t("Run SetupScope as Administrator to restore these programs (they go into Program Files and the machine-wide registry)."));
                     }
                     ui.add_space(6.0);
-                    small_muted(ui, t("Everything SetupScope writes is recorded, so the transfer can be undone from the Backups page."));
+                    small_muted(ui, t("Recorded transfer changes are backed up before replacement. Review failures and recovery coverage in Backups; external application state is outside this transfer."));
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         if super::a11y::explain(

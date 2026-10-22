@@ -1426,6 +1426,49 @@ mod tests {
     }
 
     #[test]
+    fn installer_commands_are_conservative_for_unknown_engines() {
+        let dir = crate::util::tempdir().unwrap();
+        for (name, data, kind, switches) in [
+            (
+                "package.MSI",
+                &b"fixture"[..],
+                InstallerKind::Msi,
+                "/qn /norestart",
+            ),
+            (
+                "inno.exe",
+                &b"Inno Setup fixture"[..],
+                InstallerKind::Inno,
+                "/VERYSILENT /SUPPRESSMSGBOXES /NORESTART /SP-",
+            ),
+            (
+                "nsis.exe",
+                &b"NullsoftInst fixture"[..],
+                InstallerKind::Nsis,
+                "/S",
+            ),
+            (
+                "unknown.exe",
+                &b"unknown fixture"[..],
+                InstallerKind::Other,
+                "",
+            ),
+        ] {
+            let path = dir.path().join(name);
+            std::fs::write(&path, data).unwrap();
+            assert_eq!(detect_installer(&path), kind);
+            let command = installer_command(&path, true);
+            assert!(command.contains(&format!("\"{}\"", path.display())));
+            if switches.is_empty() {
+                assert_eq!(command, format!("\"{}\"", path.display()));
+            } else {
+                assert!(command.ends_with(switches), "{command}");
+            }
+            assert_eq!(std::fs::read(&path).unwrap(), data);
+        }
+    }
+
+    #[test]
     fn appinfo_has_required_fields() {
         let d = AppDetails {
             name: "Foo".into(),

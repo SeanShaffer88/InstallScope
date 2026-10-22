@@ -32,15 +32,14 @@ pub struct MonitorState {
     pub name: String,
     pub installer: String,
     pub started: String,
-    pub before_job: Option<Job<Result<Option<String>, String>>>,
+    pub before_job: Option<Job<Result<(), String>>>,
     pub after_job: Option<Job<Result<InstallLog, String>>>,
     pub child: Option<ChildProcess>,
     pub review: Option<InstallLog>,
     /// Saving the reviewed log (large logs take a moment to write).
     pub save_job: Option<Job<Result<InstallLog, (InstallLog, String)>>>,
     pub error: String,
-    /// Optional Gatekeeper pre-scan problem; it must not prevent monitoring.
-    pub gatekeeper_scan_note: Option<String>,
+    pub cancel_requested: bool,
     /// "Try it, then undo": everything recorded is removed after review.
     pub trial: bool,
     /// Installer Decrapifier checklist for the log under review: each
@@ -67,15 +66,31 @@ impl MonitorState {
     }
 
     pub fn cancel(&mut self, store: &Store) {
-        if let Some(j) = &self.before_job {
-            j.cancel();
-        }
-        if let Some(j) = &self.after_job {
-            j.cancel();
-        }
-        store.clear_pending();
-        *self = MonitorState::default();
+        if let Some(j) = &self.before_job { j.cancel(); }
+        if let Some(j) = &self.after_job { j.cancel(); }
+        self.cancel_requested = true;
+        self.finish_cancellation(store);
     }
+
+    /// Do not discard worker handles or clear pending data while a publisher
+    /// can still recreate it. Never launch an installer from a cancelled result.
+    fn finish_cancellation(&mut self, store: &Store) -> bool {
+        if !self.cancel_requested { return false; }
+        if self.before_job.as_ref().is_some_and(|j| j.poll().is_some()) { self.before_job = None; }
+        if self.after_job.as_ref().is_some_and(|j| j.poll().is_some()) { self.after_job = None; }
+        if self.save_job.as_ref().is_some_and(|j| j.poll().is_some()) { self.save_job = None; }
+        if self.decrap_job.as_ref().is_some_and(|j| j.poll().is_some()) { self.decrap_job = None; }
+        if self.before_job.is_some() || self.after_job.is_some() || self.save_job.is_some() || self.decrap_job.is_some() {
+            return false;
+        }
+        if let Err(error) = store.clear_pending_checked() {
+            self.error = format!("Cancellation cleanup failed; pending data may remain. Correct access and retry: {error:#}");
+            return false;
+        }
+        *self = MonitorState::default();
+        true
+    }
+
 }
 
 /// Note under the Installer Decrapifier checklist in Monitor Review:
@@ -151,24 +166,6 @@ impl App {
             ..Default::default()
         };
         self.monitor.before_job = Some(Job::spawn(ctx, move |pr| {
-            let mut gatekeeper_note = None;
-            if settings.gatekeeper_enabled && settings.gatekeeper_scan_after_install {
-                let prepared = (|| -> anyhow::Result<()> {
-                    let store = Store::at(&root)?;
-                    let mut queue = setupscope_core::gatekeeper::Queue::load(&store)?;
-                    let current: Vec<_> = setupscope_core::startup::list_startup(reg.as_ref())
-                        .iter()
-                        .map(setupscope_core::gatekeeper::WatchedEntry::from)
-                        .collect();
-                    if setupscope_core::gatekeeper::seed_baseline_if_empty(&mut queue, &current) {
-                        queue.save(&store)?;
-                    }
-                    Ok(())
-                })();
-                if let Err(error) = prepared {
-                    gatekeeper_note = Some(error.to_string());
-                }
-            }
             if trial {
                 // A second safety net besides the log and the backup. Best
                 // effort: System Protection may be off, or one was made today.
@@ -180,7 +177,7 @@ impl App {
             store
                 .save_pending(&session, &snap)
                 .map_err(|e| e.to_string())?;
-            Ok(gatekeeper_note)
+            Ok(())
         }));
     }
 
@@ -222,6 +219,14 @@ impl App {
     }
 
     pub fn poll_monitor(&mut self, ctx: &egui::Context) {
+        if self.monitor.cancel_requested {
+            if self.monitor.finish_cancellation(&self.store) {
+                self.reload_logs();
+                self.reload_backups();
+                self.set_status(t("Monitoring cancelled after workers stopped. Existing installations were not undone."));
+            } else { ctx.request_repaint_after(std::time::Duration::from_millis(150)); }
+            return;
+        }
         if let Some(r) = self.monitor.decrap_job.as_ref().and_then(|j| j.poll()) {
             self.monitor.decrap_job = None;
             match r {
@@ -248,11 +253,6 @@ impl App {
             match r {
                 Ok(log) => {
                     let trial = self.monitor.trial;
-                    let scan_after_install = !trial
-                        && self.settings.gatekeeper_enabled
-                        && self.settings.gatekeeper_scan_after_install
-                        && self.monitor.gatekeeper_scan_note.is_none();
-                    let scan_note = self.monitor.gatekeeper_scan_note.take();
                     self.store.clear_pending();
                     self.monitor = Default::default();
                     self.reload_logs();
@@ -264,29 +264,7 @@ impl App {
                             "Saved install log for {name}",
                             &[("name", log.name.clone())],
                         );
-                        if scan_after_install {
-                            match gatekeeper_scan_after_install(self.reg.as_ref(), &self.store) {
-                                Ok(count) if count > 0 => self.set_status(tf(
-                                    "{saved}; Gatekeeper queued {count} startup change(s) for review",
-                                    &[("saved", saved), ("count", count.to_string())],
-                                )),
-                                Ok(_) => self.set_status(tf(
-                                    "{saved}; Gatekeeper found no new startup changes",
-                                    &[("saved", saved)],
-                                )),
-                                Err(error) => self.set_status(tf(
-                                    "{saved}; Gatekeeper scan failed: {error}",
-                                    &[("saved", saved), ("error", error.to_string())],
-                                )),
-                            }
-                        } else if let Some(note) = scan_note {
-                            self.set_status(tf(
-                                "{saved}; Gatekeeper scan skipped because its pre-install baseline failed: {error}",
-                                &[("saved", saved), ("error", note)],
-                            ));
-                        } else {
-                            self.set_status(saved);
-                        }
+                        self.set_status(saved);
                         self.logs.selected = Some(log.id);
                     }
                 }
@@ -299,8 +277,7 @@ impl App {
         if let Some(r) = self.monitor.before_job.as_ref().and_then(|j| j.poll()) {
             self.monitor.before_job = None;
             match r {
-                Ok(gatekeeper_note) => {
-                    self.monitor.gatekeeper_scan_note = gatekeeper_note;
+                Ok(()) => {
                     self.monitor.phase = Phase::Installing;
                     let inst = self.monitor.installer.clone();
                     if !inst.is_empty() {
@@ -347,9 +324,16 @@ impl App {
 
     pub fn ui_monitor(&mut self, ctx: &egui::Context) {
         egui::CentralPanel::default().frame(theme::content_frame()).show(ctx, |ui| {
+          egui::ScrollArea::vertical().id_salt("monitor_workflow").show(ui, |ui| {
             // The focused control's explanation line, for keyboard
             // and touch users (see a11y::explain).
             super::a11y::focus_hint(ui, theme::MUTED);
+            if self.monitor.cancel_requested {
+                ui.spinner();
+                if !self.monitor.error.is_empty() { theme::warning_banner(ui, &self.monitor.error); }
+                ui.label(t("Cancellation requested. Waiting for the active worker before clearing the recorded session. An OS call or publication may need to finish."));
+                return;
+            }
             if !self.monitor.error.is_empty() {
                 ui.colored_label(theme::BAD, &self.monitor.error);
                 ui.add_space(6.0);
@@ -426,6 +410,7 @@ impl App {
             } else {
                 self.live = None;
             }
+          });
         });
     }
 
@@ -456,7 +441,7 @@ impl App {
         ui.ctx()
             .request_repaint_after(std::time::Duration::from_millis(500));
         let live_header = egui::CollapsingHeader::new(RichText::new(t("Live activity")).strong())
-            .default_open(self.settings.advanced_mode)
+            .default_open(true)
             .show(ui, |ui| {
                 let (a, c, r, g) = live.counts();
                 small_muted(ui, tf(
@@ -495,8 +480,8 @@ impl App {
         ui.vertical_centered(|ui| {
             ui.heading(RichText::new(t("Install with monitoring")).strong());
             ui.add_space(4.0);
-            muted(ui, t("SetupScope records every file, folder, registry key, service and scheduled task an installation adds or changes."));
-            muted(ui, t("Later it can remove exactly those changes, and nothing else."));
+            muted(ui, t("SetupScope records observed installation changes within your configured capture scope."));
+            muted(ui, t("Review captured evidence and the removal plan before applying changes. Capture and recovery coverage have limits."));
         });
         ui.add_space(20.0);
         ui.columns(2, |cols| {
@@ -505,7 +490,7 @@ impl App {
                 ui.label(RichText::new(format!("📦 {}", t("Install and monitor"))).strong().size(16.0));
                 small_muted(ui, t("Choose an installer. SetupScope takes a snapshot, runs it, and waits for you to finish."));
                 ui.add_space(10.0);
-                if super::a11y::explain(theme::primary_button(ui, t("Choose installer…")), &t("Choose an installer file. SetupScope snapshots your PC, runs the installer, and records everything it changes, so the program can be removed exactly later.")).clicked() {
+                if super::a11y::explain(theme::primary_button(ui, t("Choose installer…")), &t("Choose an installer file. SetupScope captures the configured scope before and after installation for later review and removal planning.")).clicked() {
                     self.start_install_and_monitor(ctx);
                 }
             });
@@ -893,21 +878,6 @@ impl App {
     }
 }
 
-fn gatekeeper_scan_after_install(
-    reg: &dyn setupscope_core::platform::Registry,
-    store: &Store,
-) -> anyhow::Result<usize> {
-    let mut queue = setupscope_core::gatekeeper::Queue::load(store)?;
-    let current: Vec<_> = setupscope_core::startup::list_startup(reg)
-        .iter()
-        .map(setupscope_core::gatekeeper::WatchedEntry::from)
-        .collect();
-    let summary = setupscope_core::gatekeeper::run_scan(&mut queue, &current, &store.list_logs());
-    let count = summary.added.len() + summary.changed.len();
-    queue.save(store)?;
-    Ok(count)
-}
-
 impl App {
     /// Remove everything a trial install added: the exact log, with files
     /// created since and without Simple mode's trimming (every item was
@@ -931,6 +901,38 @@ impl App {
 #[cfg(test)]
 mod tests {
     use super::{discard_prompt, strike_note, Confirm};
+
+    #[test]
+    fn cancelling_waits_for_a_pending_snapshot_publisher() {
+        use super::*;
+        let path = std::env::temp_dir().join(format!("monitor-cancel-{}", setupscope_core::util::new_id()));
+        let store = Store::at(&path).unwrap();
+        let writer = store.clone();
+        let (release, wait) = std::sync::mpsc::channel();
+        let (done, finished) = std::sync::mpsc::channel();
+        let ctx = egui::Context::default();
+        let mut state = MonitorState { phase: Phase::Before, ..Default::default() };
+        state.before_job = Some(Job::spawn(&ctx, move |_| {
+            wait.recv().unwrap();
+            writer.save_pending(&PendingSession {name:"test".into(), ..Default::default()}, &Default::default()).unwrap();
+            done.send(()).unwrap();
+            Ok(())
+        }));
+        state.cancel(&store);
+        assert!(state.cancel_requested && state.before_job.is_some());
+        assert_eq!(state.phase, Phase::Before);
+        release.send(()).unwrap();
+        finished.recv_timeout(std::time::Duration::from_secs(5)).unwrap();
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        while !state.finish_cancellation(&store) {
+            assert!(std::time::Instant::now() < deadline);
+            std::thread::yield_now();
+        }
+        assert_eq!(state.phase, Phase::Idle);
+        assert!(store.pending().is_none());
+        assert!(!path.join("pending/before.snap").exists());
+        std::fs::remove_dir_all(path).unwrap();
+    }
 
     // Audit P1-4: the Monitor Review strike note must describe the
     // backup configuration actually in force — the save job honors

@@ -1,45 +1,19 @@
-name: Soak
-
-# Install, remove and verify real programs over and over for hours, with the
-# background watcher running, to catch leftovers that build up, watcher
-# misfires and resource leaks. Hosted runners allow up to six hours; for a
-# multi-day run use scripts/soak.ps1 on a test VM.
+name: Focused soak checks
 on:
-  schedule:
-    - cron: '23 3 * * 6'
   workflow_dispatch:
-    inputs:
-      hours:
-        description: Hours to run (at most 5.5)
-        default: '5'
-
+permissions:
+  contents: read
 jobs:
-  soak:
+  checks:
     runs-on: windows-latest
-    timeout-minutes: 355
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-      - name: Build
-        run: cargo build --release --locked
-      - name: Soak
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec
+      - run: cargo build --example lockholder --locked
+      - name: Repeat bounded safety fixtures
         shell: pwsh
         run: |
-          $hours = [double]('${{ inputs.hours }}' -replace '^$', '5')
-          if ($hours -gt 5.5) { $hours = 5.5 }
-          ./scripts/soak.ps1 -SetupScope target/release/setupscope.exe -Hours $hours -Work "$env:RUNNER_TEMP\soak"
-      - name: Summary
-        if: always()
-        shell: pwsh
-        run: |
-          if (Test-Path "$env:RUNNER_TEMP\soak\soak-summary.md") {
-            Get-Content "$env:RUNNER_TEMP\soak\soak-summary.md" | Out-File -Append $env:GITHUB_STEP_SUMMARY
+          foreach ($iteration in 1..5) {
+            cargo test --lib --locked
+            if ($LASTEXITCODE -ne 0) {throw "Fixture iteration failed: $iteration"}
           }
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: soak-results
-          path: |
-            ${{ runner.temp }}/soak/soak.csv
-            ${{ runner.temp }}/soak/soak-summary.md

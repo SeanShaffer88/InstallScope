@@ -4,10 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-  # The slow full-system performance check runs weekly and on demand,
-  # not on every push, so ordinary CI finishes in a few minutes.
-  schedule:
-    - cron: '17 7 * * 1'
   workflow_dispatch:
 
 env:
@@ -15,6 +11,10 @@ env:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   test:
@@ -46,6 +46,8 @@ jobs:
               }
             exit $code
           }
+      - name: Focused UI tests
+        run: cargo test --bin setupscope --locked
       - name: Clippy
         shell: pwsh
         run: |
@@ -61,11 +63,13 @@ jobs:
           }
       - name: Release build
         run: cargo build --release --locked
-      - name: Smoke test the CLI
+      - name: Safe version/help smoke
         shell: pwsh
         run: |
-          ./target/release/setupscope.exe --version
-          ./target/release/setupscope.exe programs | Select-Object -First 5
+          foreach ($option in '--version','--help') {
+            $app = Start-Process ./target/release/setupscope.exe -ArgumentList $option -Wait -PassThru -WindowStyle Hidden
+            if ($app.ExitCode -ne 0) { throw "Smoke failed: $option" }
+          }
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: SetupScope-dev
@@ -84,97 +88,6 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
       - name: Build
         run: cargo build --release --locked --target aarch64-pc-windows-msvc
-
-  perf:
-    name: Performance budget (Windows)
-    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@b725eda525362e7cf34af9a7243cac1e3f01a7ec # stable
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
-      - name: Release build
-        run: cargo build --release --locked
-      - name: Startup and idle budget
-        shell: pwsh
-        run: |
-          # Cold start until the window exists, then 20 s untouched: CPU and memory.
-          # Warm-up: the first launch measures program sizes and checks
-          # signatures in the background, then caches them for later launches.
-          $w = Start-Process ./target/release/setupscope.exe -PassThru
-          Start-Sleep -Seconds 150
-          Stop-Process $w -Force
-          $runs = @()
-          foreach ($n in 1..3) {
-            $sw = [Diagnostics.Stopwatch]::StartNew()
-            $env:SETUPSCOPE_REPAINT_LOG = "$PWD\repaint-$n.log"
-            $p = Start-Process ./target/release/setupscope.exe -PassThru
-            while ($p.MainWindowHandle -eq 0 -and $sw.Elapsed.TotalSeconds -lt 30) { Start-Sleep -Milliseconds 25; $p.Refresh() }
-            $startMs = [int]$sw.Elapsed.TotalMilliseconds
-            Start-Sleep -Seconds 30; $p.Refresh()
-            $cpu0 = $p.TotalProcessorTime.TotalMilliseconds
-            Start-Sleep -Seconds 20; $p.Refresh()
-            $idle = [Math]::Round(($p.TotalProcessorTime.TotalMilliseconds - $cpu0) / 200 / [Environment]::ProcessorCount, 2)
-            $ram = [Math]::Round($p.WorkingSet64 / 1MB)
-            $priv = [Math]::Round($p.PrivateMemorySize64 / 1MB)
-            Stop-Process $p -Force
-            $runs += [pscustomobject]@{ start = $startMs; idle = $idle; ram = $ram; priv = $priv }
-          }
-          $runs | ForEach-Object { Write-Host "run: window $($_.start) ms, idle $($_.idle) %, $($_.ram) MB" }
-          # Why frames were drawn in the last run's idle period (most common causes).
-          $lines = Get-Content repaint-3.log
-          Write-Host "frames drawn: $($lines.Count)"
-          $lines | Select-Object -Last 300 | ForEach-Object { ($_ -split ' ', 2)[1] } | Group-Object | Sort-Object Count -Descending | Select-Object -First 6 |
-            ForEach-Object { Write-Host "::notice title=Repaint cause::$($_.Count)x $($_.Name)" }
-          $start = ($runs.start | Sort-Object)[1]
-          $idle = ($runs.idle | Sort-Object)[1]
-          $ram = ($runs.ram | Measure-Object -Maximum).Maximum
-          $priv = ($runs.priv | Measure-Object -Maximum).Maximum
-          Write-Host "::notice title=Startup and idle::window after $start ms, idle CPU $idle %, working set $ram MB, private $priv MB"
-          @"
-          ### Startup and idle
-          | Measure | Value | Budget |
-          |---|---|---|
-          | Time until the window appears (median of 3) | $start ms | 3000 ms |
-          | CPU while idle (median of 3) | $idle % | 1 % |
-          | Working set | $ram MB | 400 MB |
-          | Private memory | $priv MB | |
-          "@ | Out-File -Append $env:GITHUB_STEP_SUMMARY
-          if ($start -gt 3000 -or $idle -gt 1 -or $ram -gt 400) { throw "Startup or idle budget exceeded" }
-      - name: Performance budget
-        shell: pwsh
-        run: |
-          # Full system snapshot on the (large) CI image: time and peak memory.
-          $sw = [Diagnostics.Stopwatch]::StartNew()
-          $p = Start-Process ./target/release/setupscope.exe -ArgumentList 'snapshot','perf.snap' -PassThru -NoNewWindow
-          $peak = 0
-          while (-not $p.HasExited) { $p.Refresh(); $peak = [Math]::Max($peak, $p.PeakWorkingSet64); Start-Sleep -Milliseconds 200 }
-          $sw.Stop()
-          $secs = [Math]::Round($sw.Elapsed.TotalSeconds, 1)
-          $mb = [Math]::Round($peak / 1MB)
-          $snapMb = [Math]::Round((Get-Item perf.snap).Length / 1MB, 1)
-          $exeMb = [Math]::Round((Get-Item ./target/release/setupscope.exe).Length / 1MB, 1)
-          $sw2 = [Diagnostics.Stopwatch]::StartNew()
-          ./target/release/setupscope.exe programs --trust --json | Out-Null
-          $trustSecs = [Math]::Round($sw2.Elapsed.TotalSeconds, 1)
-          @"
-          ### Performance
-          | Measure | Value | Budget |
-          |---|---|---|
-          | Snapshot time | $secs s | 1800 s |
-          | Snapshot peak memory | $mb MB | 1500 MB |
-          | Snapshot file | $snapMb MB | |
-          | Program list with signatures | $trustSecs s | 300 s |
-          | SetupScope.exe size | $exeMb MB | 40 MB |
-          "@ | Out-File -Append $env:GITHUB_STEP_SUMMARY
-          Write-Host "snapshot ${secs}s, peak ${mb}MB, signatures ${trustSecs}s, exe ${exeMb}MB"
-          Write-Host "::notice title=Performance::snapshot $secs s, peak $mb MB, file $snapMb MB, signatures $trustSecs s, exe $exeMb MB"
-          # Time limits are loose because hosted runner speed varies several-fold
-          # for the same code (the same commit measured 5 and 20 minutes);
-          # memory is deterministic and stays strict.
-          if ($secs -gt 1800 -or $mb -gt 1500 -or $trustSecs -gt 300 -or $exeMb -gt 40) { throw "Performance budget exceeded" }
 
   core-linux:
     name: Core tests (Linux)

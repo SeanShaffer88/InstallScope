@@ -1,0 +1,34 @@
+{
+  "Schema": 1,
+  "Version": "1.0.0.0",
+  "Passed": true,
+  "CheckedUtc": "2026-10-22T18:30:40.068614Z",
+  "GuiRequested": false,
+  "GuiVerified": false,
+  "HostBuild": "10.0.26300.0",
+  "Checks": [
+    "Copied executable integrity: SetupScope.exe",
+    "Copied executable integrity: SetupScope-cli.exe",
+    "Version and loader without developer PATH",
+    "Console help",
+    "Eleven embedded language choices",
+    "System JSON",
+    "Offline pinned catalog",
+    "Passive project inspection without developer PATH",
+    "Read-only synthetic log; raw secret omitted",
+    "Structured failure",
+    "Retired command rejected",
+    "Fresh portable data only"
+  ],
+  "Executables": [
+    {
+      "Name": "SetupScope.exe",
+      "Hash": "BD4F162836D1A1707548F573F137D3519877E4711BFC578C98905D69F8B9ABA8"
+    },
+    {
+      "Name": "SetupScope-cli.exe",
+      "Hash": "417EE68791FBDB8D7D10ABF1B038072A55B7E68A69FF909E47B33820D77809CE"
+    }
+  ],
+  "Limit": "Per-process environment/profile isolation on the current OS. Not a VM, new user, clean OS, network sandbox, installation or screen-reader certification."
+}

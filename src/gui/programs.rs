@@ -55,6 +55,7 @@ pub enum SortCol {
 
 #[derive(Default)]
 pub struct ProgramsState {
+    pub window_picker: super::window_picker::WindowPicker,
     /// The filtered, sorted list and the monitored-program set, recomputed
     /// only when their inputs change (not on every frame).
     pub visible_cache: Option<(u64, std::rc::Rc<Vec<InstalledProgram>>)>,
@@ -328,6 +329,29 @@ impl App {
     }
 
     pub fn poll_programs(&mut self, ctx: &egui::Context) {
+        if !self.tool_windows.contains(&super::app::Tab::Programs) || self.wizard.is_some() {
+            self.programs.window_picker.cancel();
+        }
+        if let Some(result) = self.programs.window_picker.poll() {
+            self.programs.window_picker.message = Some(match result {
+                Ok(path) => {
+                    let mut all = self.programs.list.clone();
+                    all.extend(self.programs.store_apps.clone());
+                    if let Some(program) =
+                        setupscope_core::windowidentify::unique_program(&all, &path)
+                    {
+                        self.programs.selected = Some(program.key.clone());
+                        self.programs.filter.clear();
+                        self.programs.view = View::All;
+                        self.programs.visible_cache = None;
+                        format!("{}: {}\n{}\n{}", t("Matched installed folder"), program.name, path, t("Review the details. This is path evidence, not verified ownership. No action was started."))
+                    } else {
+                        format!("{}\n{}\n{}", t("No unique installed-folder match"), path, t("Shared hosts, missing registrations and ambiguous folders remain unknown. Search Programs manually; no selection was changed."))
+                    }
+                }
+                Err(error) => error,
+            });
+        }
         if let Some(u) = self.programs.usage_job.as_ref().and_then(|j| j.poll()) {
             self.programs.usage_job = None;
             self.programs.usage = u;
@@ -340,8 +364,7 @@ impl App {
             self.programs.job = None;
             self.programs.list = list;
             self.programs.broken = broken;
-            let n = self.programs.list.len();
-            self.set_status(tf("{n} programs installed", &[("n", n.to_string())]));
+            self.set_status(t("Program inventory refreshed."));
             self.load_icons(ctx);
             self.check_trust(ctx);
             // How each program is used, worked out in the background.
@@ -616,6 +639,9 @@ impl App {
     }
 
     pub fn start_uninstall(&mut self, programs: Vec<InstalledProgram>, force: bool) {
+        if self.wizard.is_some() || self.removal.is_some() || self.confirm.is_some() {
+            self.set_status(t("Finish or cancel the current removal review first.")); return;
+        }
         if programs.is_empty() {
             return;
         }
@@ -635,6 +661,9 @@ impl App {
         programs: Vec<InstalledProgram>,
         deprovision: Vec<String>,
     ) {
+        if self.wizard.is_some() || self.removal.is_some() || self.confirm.is_some() {
+            self.set_status(t("Finish or cancel the current removal review first.")); return;
+        }
         if programs.is_empty() {
             return;
         }
@@ -681,14 +710,15 @@ impl App {
                 // The focused control's explanation line, for keyboard
                 // and touch users (see a11y::explain).
                 super::a11y::focus_hint(ui, theme::MUTED);
+                ui.vertical(|ui| self.programs.window_picker.controls(ui, !self.programs.list.is_empty() && self.wizard.is_none()));
                 ui.horizontal(|ui| {
                     let r = super::a11y::explain(
                         search_box(ui, &mut self.programs.filter, "Search programs", 260.0),
                         &t("Search by program name or publisher. The list below filters as you type."),
                     );
-                    if self.focus_search {
+                    if self.focus_search == Some(super::app::Tab::Programs) {
                         r.request_focus();
-                        self.focus_search = false;
+                        self.focus_search = None;
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if super::a11y::explain(
@@ -1172,10 +1202,10 @@ impl App {
                     };
                     field(ui, "Digital signature", &text);
                 }
-                if p.source != Source::Store && self.settings.advanced_mode {
+                if p.source != Source::Store {
                     field(ui, "Uninstaller", &p.uninstall_string);
                     field(ui, "Registry key", &p.key);
-                } else if self.settings.advanced_mode {
+                } else {
                     field(ui, "Package", &p.key);
                 }
                 if !p.comments.is_empty() {
@@ -1214,7 +1244,7 @@ impl App {
         });
         ui.horizontal_wrapped(|ui| {
             if p.source != Source::Store
-                && self.settings.advanced_mode
+
                 && super::a11y::explain(
                     ui.button(t("Forced removal")),
                     &t("Skip the program's own uninstaller and remove everything SetupScope can find."),
@@ -1242,7 +1272,7 @@ impl App {
                 platform::shell_open(&p.install_location);
             }
             if p.source != Source::Store
-                && self.settings.advanced_mode
+
                 && super::a11y::explain(
                     ui.button(t("Open in Registry Editor")),
                     &t("Open this program's uninstall entry in Registry Editor. Changes there apply immediately, outside SetupScope."),

@@ -321,6 +321,7 @@ pub fn interrupted(list: &[Backup]) -> Vec<&Backup> {
 
 /// Keep what an interrupted operation did and stop asking about it.
 pub fn mark_complete(root: &Path, id: &str) -> Result<()> {
+    crate::util::validate_local_id(id)?;
     let manifest = root.join(id).join("manifest.json");
     let mut b: Backup = crate::json::compat::from_str(&std::fs::read_to_string(&manifest)?)?;
     b.complete = true;
@@ -385,9 +386,18 @@ pub fn list_backups(root: &Path) -> Vec<Backup> {
 }
 
 pub fn delete_backup(root: &Path, id: &str) -> Result<()> {
+    crate::util::validate_local_id(id)?;
     let dir = root.join(id);
     if dir.join("manifest.json").exists() {
-        std::fs::remove_dir_all(dir)?;
+        let resolved_root = root.canonicalize()?;
+        let resolved_dir = dir.canonicalize()?;
+        anyhow::ensure!(
+            resolved_dir != resolved_root
+                && resolved_dir.starts_with(&resolved_root)
+                && !crate::util::is_link(&dir),
+            "Backup directory escapes its root or is linked; deletion refused"
+        );
+        std::fs::remove_dir_all(&dir)?;
     }
     Ok(())
 }
@@ -405,6 +415,7 @@ pub fn delete_backup(root: &Path, id: &str) -> Result<()> {
 /// backup could not be taken (any partial capture is removed); the
 /// caller must not go ahead with the restore in that case.
 pub fn backup_before_restore(root: &Path, id: &str, reg: &dyn Registry) -> Result<Option<Backup>> {
+    crate::util::validate_local_id(id)?;
     let manifest = root.join(id).join("manifest.json");
     let source: Backup = crate::json::compat::from_str(&std::fs::read_to_string(&manifest)?)?;
     let mut w = BackupWriter::new(root, &format!("Before restoring: {}", source.title))?;
@@ -502,6 +513,7 @@ fn capture_current_state(w: &mut BackupWriter, source: &Backup, reg: &dyn Regist
 
 /// Undo an operation by replaying its backup in reverse order.
 pub fn restore_backup(root: &Path, id: &str, reg: &dyn Registry) -> Result<Vec<ActionResult>> {
+    crate::util::validate_local_id(id)?;
     let dir = root.join(id);
     let manifest = dir.join("manifest.json");
     let mut backup: Backup = crate::json::compat::from_str(&std::fs::read_to_string(&manifest)?)?;
@@ -897,5 +909,22 @@ mod tests {
         std::fs::create_dir(&thing).unwrap();
         assert!(backup_before_restore(&broot, &b.id, &reg).is_err());
         assert_eq!(list_backups(&broot).len(), 1);
+    }
+    #[test]
+    fn backup_ids_cannot_escape_the_root() {
+        let td = crate::util::tempdir().unwrap();
+        let root = td.path().join("backups");
+        std::fs::create_dir_all(&root).unwrap();
+        let outside = td.path().join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        std::fs::write(outside.join("manifest.json"), "preserve").unwrap();
+        for id in ["../outside", "..\\outside", "C:\\outside", "", ".", "NUL"] {
+            assert!(delete_backup(&root, id).is_err());
+            assert!(mark_complete(&root, id).is_err());
+        }
+        assert_eq!(
+            std::fs::read_to_string(outside.join("manifest.json")).unwrap(),
+            "preserve"
+        );
     }
 }

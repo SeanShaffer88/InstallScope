@@ -4,7 +4,7 @@
 //! precisely from an install log when the program was monitored, otherwise
 //! with the leftover scanner (install folder, data folders, shortcuts,
 //! registry keys, file associations, services, scheduled tasks) — and packs
-//! it into one `.setupsweep` file (a zip with a JSON manifest). Paths inside
+//! it into one `.setupscope` file (a zip with a JSON manifest). Paths inside
 //! user profiles and Program Files are stored as `%VARIABLES%`, so they land
 //! in the right place even when the user name or drive differs.
 //!
@@ -832,7 +832,7 @@ mod tests {
         });
 
         // Export with the source variables (no env dependence).
-        let pkg = src.path().join("move.setupsweep");
+        let pkg = src.path().join("move.setupscope");
         let m = export_with(&c, &reg, &pkg, &|_| {}, &from).unwrap();
         assert!(
             m.files.iter().all(|f| f.path.starts_with("%ProgramFiles%")),

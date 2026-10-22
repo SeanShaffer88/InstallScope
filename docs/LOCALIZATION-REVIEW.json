@@ -1,0 +1,583 @@
+{
+  "date": "2026-10-22",
+  "review": "Independent second-agent source-versus-translation semantic review",
+  "scope": "600 owned strings and 58 technical invariants per locale; legacy inactive UI excluded",
+  "locales": 10,
+  "reviewed_translatable": 6000,
+  "corrected_keys": 80,
+  "counts": {
+    "de": 6,
+    "fr": 5,
+    "it": 2,
+    "es": 3,
+    "pt-BR": 13,
+    "pl": 11,
+    "ru": 7,
+    "zh-CN": 3,
+    "ja": 2,
+    "ko": 28
+  },
+  "limit": "Agent review is not human native-speaker certification. Actual clean Windows VM remains unverified.",
+  "changes": [
+    {
+      "locale": "de",
+      "key": "Loaded local installation receipts. Unknown/pending outcomes require vendor inspection before retry.",
+      "before": "Lokale Installationsbelege geladen. Unbekannte/ausstehende Ergebnisse erfordern vor einem erneuten Versuch eine Prüfung beim Anbieter.",
+      "after": "Lokale Installationsbelege geladen. Bei unbekannten/ausstehenden Ergebnissen vor einem erneuten Versuch den Installationszustand mit den Werkzeugen des Anbieters prüfen.",
+      "reason": "Clarify inspecting vendor-managed installation state, rather than contacting/checking the vendor."
+    },
+    {
+      "locale": "de",
+      "key": "Maximum (exclusive)",
+      "before": "Maximum (ausschließlich)",
+      "after": "Maximum (nicht eingeschlossen)",
+      "reason": "Make exclusive bound immediately clear; ausschließlich can mean solely."
+    },
+    {
+      "locale": "de",
+      "key": "Maximum version (exclusive)",
+      "before": "Höchstversion (ausschließlich)",
+      "after": "Höchstversion (nicht eingeschlossen)",
+      "reason": "Make exclusive bound immediately clear."
+    },
+    {
+      "locale": "de",
+      "key": "Minimum version must be lower than the exclusive maximum version",
+      "before": "Mindestversion muss unter der ausschließlichen Höchstversion liegen",
+      "after": "Die Mindestversion muss unter der nicht eingeschlossenen Höchstversion liegen",
+      "reason": "Clarify exclusive upper limit."
+    },
+    {
+      "locale": "de",
+      "key": "Read-only listeners and file owners; no processes are terminated.",
+      "before": "Schreibgeschützte Listener und dateiverwendende Prozesse; keine Prozesse werden beendet.",
+      "after": "Schreibgeschützte Prüfung von Listenern und dateiverwendenden Prozessen; keine Prozesse werden beendet.",
+      "reason": "Read-only describes the inspection, not the listener/process itself."
+    },
+    {
+      "locale": "de",
+      "key": "Read-only listeners, process ownership and file holders.",
+      "before": "Schreibgeschützte Listener, Prozesszuordnung und dateiverwendende Prozesse.",
+      "after": "Schreibgeschützte Prüfung von Listenern, Prozesszuordnungen und dateiverwendenden Prozessen.",
+      "reason": "Read-only describes the inspection, not the listener/process itself."
+    },
+    {
+      "locale": "fr",
+      "key": "Environment operation failed unexpectedly. Preserve local receipts and reload before recovery.",
+      "before": "L’opération d’environnement a échoué de manière inattendue. Conservez les reçus locaux et rechargez-les avant la restauration.",
+      "after": "L’opération d’environnement a échoué de manière inattendue. Conservez les reçus locaux et rechargez avant la restauration.",
+      "reason": "Avoid inventing an instruction to reload receipts specifically when source only says reload."
+    },
+    {
+      "locale": "fr",
+      "key": "Loaded local installation receipts. Unknown/pending outcomes require vendor inspection before retry.",
+      "before": "Reçus d’installation locaux chargés. Les résultats inconnus/en attente exigent une inspection du fournisseur avant de réessayer.",
+      "after": "Reçus d’installation locaux chargés. Si le résultat est inconnu ou en attente, vérifiez l’état de l’installation avec les outils du fournisseur avant de réessayer.",
+      "reason": "Clarify inspecting vendor-managed installation state, rather than inspecting/contacting the supplier."
+    },
+    {
+      "locale": "fr",
+      "key": "Only a compiled, pinned catalog is accepted. This view makes explicit network and disk changes; diagnostics elsewhere remain read-only. No automatic catalog refresh, installer launch or repair. Full installers are cached; project packages, workloads, MSVC and Windows SDK layouts are not included. Integrity is not proof of vendor safety. Signatures use cached Windows trust without online revocation checks. Cancel is checked between bounded operations; network calls can take up to 30 seconds to return. Closing SetupScope cannot undo or cancel a vendor installation.",
+      "before": "Seul un catalogue compilé à versions fixes est accepté. Cette vue apporte des modifications explicites au réseau et au disque ; les autres diagnostics restent en lecture seule. Aucune actualisation automatique du catalogue, lancement d’installation ou réparation. Les programmes d’installation complets sont mis en cache ; les paquets de projet, charges de travail et dispositions MSVC et Windows SDK sont exclus. L’intégrité ne prouve pas la sûreté du fournisseur. Les signatures utilisent la confiance Windows en cache sans vérification de révocation en ligne. L’annulation est vérifiée entre les opérations limitées ; les appels réseau peuvent prendre jusqu’à 30 secondes avant de rendre la main. Fermer SetupScope ne peut ni annuler ni interrompre une installation du fournisseur.",
+      "after": "Seul un catalogue compilé à versions fixes est accepté. Cette vue apporte des modifications explicites au réseau et au disque ; les autres diagnostics restent en lecture seule. Aucune actualisation automatique du catalogue, lancement d’installation ou réparation. Les programmes d’installation complets sont mis en cache ; les paquets de projet, charges de travail et dispositions MSVC et Windows SDK sont exclus. L’intégrité ne prouve pas la sûreté du fournisseur. Les signatures utilisent la confiance Windows en cache sans vérification de révocation en ligne. L’annulation est vérifiée entre les opérations limitées ; les appels réseau peuvent prendre jusqu’à 30 secondes avant de rendre la main. Fermer SetupScope ne peut ni annuler les effets d’une installation du fournisseur ni l’interrompre.",
+      "reason": "Distinguish undoing effects from cancelling a running installation."
+    },
+    {
+      "locale": "fr",
+      "key": "Request Administrator Prompt",
+      "before": "Demander une invite administrateur",
+      "after": "Demander une confirmation UAC administrateur",
+      "reason": "Clarify elevation prompt rather than an administrator command prompt."
+    },
+    {
+      "locale": "fr",
+      "key": "Vendor installation may be active. Finish/cancel its UI; closing SetupScope cannot cancel or undo it. A pending receipt remains if tracking is interrupted.",
+      "before": "L’installation du fournisseur peut être active. Terminez/annulez-la dans son interface ; fermer SetupScope ne peut ni l’arrêter ni l’annuler. Un reçu en attente est conservé si le suivi est interrompu.",
+      "after": "L’installation du fournisseur peut être active. Terminez-la ou annulez-la dans son interface ; fermer SetupScope ne peut ni l’interrompre ni annuler ses effets. Un reçu en attente est conservé si le suivi est interrompu.",
+      "reason": "Distinguish stopping vendor installation from undoing its effects."
+    },
+    {
+      "locale": "it",
+      "key": "Loaded local installation receipts. Unknown/pending outcomes require vendor inspection before retry.",
+      "before": "Ricevute locali di installazione caricate. Gli esiti sconosciuti/in attesa richiedono una verifica presso il fornitore prima di riprovare.",
+      "after": "Ricevute locali di installazione caricate. In caso di esiti sconosciuti o in attesa, verificare lo stato dell’installazione con gli strumenti del fornitore prima di riprovare.",
+      "reason": "Clarify inspecting vendor-managed installation state, rather than contacting the vendor."
+    },
+    {
+      "locale": "it",
+      "key": "Request Administrator Prompt",
+      "before": "Richiedi prompt amministratore",
+      "after": "Richiedi conferma UAC amministratore",
+      "reason": "Clarify elevation prompt rather than an administrator command prompt."
+    },
+    {
+      "locale": "es",
+      "key": "Each observed candidate is evaluated separately. There is no overall compatible verdict: a shell may select another candidate. Known proxies, launchers, SDK hosts, scripts, prerelease/special builds and unreadable metadata remain unknown. Unrecognized wrappers can report their own versions. This does not verify identity or evaluate project manifests or semantic-version ranges.",
+      "before": "Cada candidato observado se evalúa por separado. No hay un veredicto global de compatibilidad: un intérprete de comandos puede seleccionar otro candidato. Los proxies, lanzadores, hosts de SDK, scripts y compilaciones preliminares o especiales conocidos, así como los metadatos ilegibles, siguen siendo desconocidos. Los contenedores no reconocidos pueden indicar sus propias versiones. Esto no verifica la identidad ni evalúa manifiestos del proyecto o intervalos de versiones semánticas.",
+      "after": "Cada candidato observado se evalúa por separado. No hay un veredicto global de compatibilidad: un intérprete de comandos puede seleccionar otro candidato. Los proxies, lanzadores, hosts de SDK, scripts y compilaciones preliminares o especiales conocidos, así como los metadatos ilegibles, siguen siendo desconocidos. Los programas intermediarios no reconocidos pueden indicar sus propias versiones. Esto no verifica la identidad ni evalúa manifiestos del proyecto o intervalos de versiones semánticas.",
+      "reason": "Wrapper denotes an executable intermediary here, not a container."
+    },
+    {
+      "locale": "es",
+      "key": "Script/wrapper or unsupported file type; never executed to obtain a version",
+      "before": "Script, contenedor o tipo de archivo no admitido; nunca se ejecuta para obtener una versión",
+      "after": "Script, programa intermediario o tipo de archivo no admitido; nunca se ejecuta para obtener una versión",
+      "reason": "Wrapper denotes an executable intermediary here, not a container."
+    },
+    {
+      "locale": "es",
+      "key": "Explicitly omit this selected variable from the child environment, or delete its user-level value after separate persistent review. Machine-level values are never changed.",
+      "before": "Omita explícitamente esta variable seleccionada del entorno secundario o elimine su valor a nivel de usuario tras una revisión persistente independiente. Nunca se modifican los valores a nivel de equipo.",
+      "after": "Omita explícitamente esta variable seleccionada del entorno secundario o elimine su valor a nivel de usuario tras una revisión independiente del cambio persistente. Nunca se modifican los valores a nivel de equipo.",
+      "reason": "The change is persistent; the review is a distinct approval step, not a persistent review."
+    },
+    {
+      "locale": "pt-BR",
+      "key": "Explicitly omit this selected variable from the child environment, or delete its user-level value after separate persistent review. Machine-level values are never changed.",
+      "before": "Omita explicitamente esta variável selecionada do ambiente filho ou exclua seu valor no nível do usuário após revisão persistente separada. Valores no nível da máquina nunca são alterados.",
+      "after": "Omita explicitamente esta variável selecionada do ambiente filho ou exclua seu valor no nível do usuário após uma revisão separada da alteração persistente. Valores no nível da máquina nunca são alterados.",
+      "reason": "The change is persistent; the review is a distinct approval step."
+    },
+    {
+      "locale": "pt-BR",
+      "key": "Cancel Publisher Verification",
+      "before": "Cancelar verificação do editor",
+      "after": "Cancelar verificação do fornecedor",
+      "reason": "Use the familiar Brazilian Windows signing term fornecedor, avoiding confusion with a text editor."
+    },
+    {
+      "locale": "pt-BR",
+      "key": "Explicit HTTPS request to official vendor hosts and approved CDN redirects. OS TLS is validated; no cookies, automatic authentication or executable commands. Size/hash are checked before publication, then publisher checked. No installation.",
+      "before": "Solicitação HTTPS explícita aos hosts oficiais do fornecedor e redirecionamentos CDN aprovados. O TLS do SO é validado; sem cookies, autenticação automática ou comandos executáveis. Tamanho e hash são verificados antes de disponibilizar o arquivo, e depois o editor é verificado. Sem instalação.",
+      "after": "Solicitação HTTPS explícita aos hosts oficiais do fornecedor e redirecionamentos CDN aprovados. O TLS do SO é validado; sem cookies, autenticação automática ou comandos executáveis. Tamanho e hash são verificados antes de disponibilizar o arquivo, e depois o fornecedor é verificado. Sem instalação.",
+      "reason": "Use the familiar Brazilian Windows signing term fornecedor, avoiding confusion with a text editor."
+    },
+    {
+      "locale": "pt-BR",
+      "key": "Explicitly requests Windows runas/UAC. Otherwise normal vendor activation is used; the vendor can still request elevation itself. Never bypass UAC or approve an unknown publisher.",
+      "before": "Solicita explicitamente runas/UAC do Windows. Caso contrário, usa a ativação normal do fornecedor; o fornecedor ainda pode solicitar elevação por conta própria. Nunca contorne o UAC nem aprove um editor desconhecido.",
+      "after": "Solicita explicitamente runas/UAC do Windows. Caso contrário, usa a ativação normal do fornecedor; o fornecedor ainda pode solicitar elevação por conta própria. Nunca contorne o UAC nem aprove um fornecedor desconhecido.",
+      "reason": "Use the familiar Brazilian Windows signing term fornecedor, avoiding confusion with a text editor."
+    },
+    {
+      "locale": "pt-BR",
+      "key": "Microsoft publisher verified. Review the observed hash, channel and selected workload before launch.",
+      "before": "Editor Microsoft verificado. Revise o hash observado, o canal e a carga de trabalho selecionada antes de iniciar.",
+      "after": "Fornecedor Microsoft verificado. Revise o hash observado, o canal e a carga de trabalho selecionada antes de iniciar.",
+      "reason": "Use the familiar Brazilian Windows signing term fornecedor, avoiding confusion with a text editor."
+    },
+    {
+      "locale": "pt-BR",
+      "key": "Read cached installers in the background. Check exact pinned size, SHA-256/SHA-512 and expected Authenticode publisher. Invalid or missing files block installation; nothing is downloaded or repaired.",
+      "before": "Leia instaladores em cache em segundo plano. Verifique tamanho fixado exato, SHA-256/SHA-512 e editor Authenticode esperado. Arquivos inválidos ou ausentes bloqueiam a instalação; nada é baixado ou reparado.",
+      "after": "Leia instaladores em cache em segundo plano. Verifique tamanho fixado exato, SHA-256/SHA-512 e fornecedor Authenticode esperado. Arquivos inválidos ou ausentes bloqueiam a instalação; nada é baixado ou reparado.",
+      "reason": "Use the familiar Brazilian Windows signing term fornecedor, avoiding confusion with a text editor."
+    },
+    {
+      "locale": "pt-BR",
+      "key": "Verify Publisher And Prepare Native Setup Review",
+      "before": "Verificar editor e preparar revisão de instalação nativa",
+      "after": "Verificar fornecedor e preparar revisão de instalação nativa",
+      "reason": "Use the familiar Brazilian Windows signing term fornecedor, avoiding confusion with a text editor."
+    },
+    {
+      "locale": "pt-BR",
+      "key": "Verify and hold the cached installer and parent paths; show the exact fixed vendor command, pinned digest, publisher, privilege request and recovery limits. Nothing launches.",
+      "before": "Verifique e retenha o instalador em cache e os caminhos pais; mostre o comando fixo exato do fornecedor, o resumo criptográfico fixado, o editor, a solicitação de privilégios e os limites de recuperação. Nada é iniciado.",
+      "after": "Verifique e retenha o instalador em cache e os caminhos pais; mostre o comando fixo exato do fornecedor, o resumo criptográfico fixado, o fornecedor, a solicitação de privilégios e os limites de recuperação. Nada é iniciado.",
+      "reason": "Use the familiar Brazilian Windows signing term fornecedor, avoiding confusion with a text editor."
+    },
+    {
+      "locale": "pt-BR",
+      "key": "{p0}\nOfficial download: {p1}\n{p2}: {p3}\nExpected publisher: {p4}",
+      "before": "{p0}\nDownload oficial: {p1}\n{p2}: {p3}\nEditor esperado: {p4}",
+      "after": "{p0}\nDownload oficial: {p1}\n{p2}: {p3}\nFornecedor esperado: {p4}",
+      "reason": "Use the familiar Brazilian Windows signing term fornecedor, avoiding confusion with a text editor."
+    },
+    {
+      "locale": "pt-BR",
+      "key": "{p0}: {p1}\nPublisher: {p2}",
+      "before": "{p0}: {p1}\nEditor: {p2}",
+      "after": "{p0}: {p1}\nFornecedor: {p2}",
+      "reason": "Use the familiar Brazilian Windows signing term fornecedor, avoiding confusion with a text editor."
+    },
+    {
+      "locale": "pt-BR",
+      "key": "Passive evidence only: CLI files and running services do not prove WSL or a container engine works. Distributions, optional-feature enablement, WSL versions, active contexts, daemon health, Linux/Windows container mode, nested virtualization, permissions and project compatibility remain unverified. No command, engine, distribution, network/pipe connection, configuration file read or system change is requested. Service names are conventional hints; missing services do not establish absence. CPU hints can be masked by a hypervisor; false does not prove firmware virtualization is disabled.",
+      "before": "Somente evidências passivas: arquivos de CLI e serviços em execução não comprovam que o WSL ou um mecanismo de contêineres funciona. Distribuições, ativação de recursos opcionais, versões do WSL, contextos ativos, integridade do daemon, modo de contêineres Linux/Windows, virtualização aninhada, permissões e compatibilidade com o projeto permanecem não verificados. Nenhum comando, mecanismo, distribuição, conexão de rede ou pipe, leitura de arquivo de configuração ou alteração do sistema é solicitado. Nomes de serviços são indícios convencionais; serviços ausentes não comprovam ausência do software. Indícios da CPU podem ser mascarados por um hipervisor; falso não comprova que a virtualização esteja desativada no firmware.",
+      "after": "Somente evidências passivas: arquivos de CLI e serviços em execução não comprovam que o WSL ou um mecanismo de contêineres funciona. Distribuições, ativação de recursos opcionais, versões do WSL, contextos ativos, estado operacional do daemon, modo de contêineres Linux/Windows, virtualização aninhada, permissões e compatibilidade com o projeto permanecem não verificados. Nenhum comando, mecanismo, distribuição, conexão de rede ou pipe, leitura de arquivo de configuração ou alteração do sistema é solicitado. Nomes de serviços são indícios convencionais; serviços ausentes não comprovam ausência do software. Indícios da CPU podem ser mascarados por um hipervisor; falso não comprova que a virtualização esteja desativada no firmware.",
+      "reason": "Runtime/daemon health means operational state, distinct from binary integrity."
+    },
+    {
+      "locale": "pt-BR",
+      "key": "Passive host evidence only. Runtime health is unverified; no commands or system changes.",
+      "before": "Somente evidências passivas do host. A integridade do runtime não é verificada; sem comandos ou alterações do sistema.",
+      "after": "Somente evidências passivas do host. A estado de funcionamento do runtime não é verificada; sem comandos ou alterações do sistema.",
+      "reason": "Runtime/daemon health means operational state, distinct from binary integrity."
+    },
+    {
+      "locale": "pt-BR",
+      "key": "Passive observations; runtime health remains unverified. Full scope is available above.",
+      "before": "Observações passivas; a integridade do runtime permanece não verificada. O escopo completo está disponível acima.",
+      "after": "Observações passivas; a estado de funcionamento do runtime permanece não verificada. O escopo completo está disponível acima.",
+      "reason": "Runtime/daemon health means operational state, distinct from binary integrity."
+    },
+    {
+      "locale": "pl",
+      "key": "Maximum (exclusive)",
+      "before": "Maksimum (wyłącznie)",
+      "after": "Maksimum (bez tej wartości)",
+      "reason": "Clarify an exclusive numeric bound; wyłącznie normally means only."
+    },
+    {
+      "locale": "pl",
+      "key": "Maximum version (exclusive)",
+      "before": "Wersja maksymalna (wyłącznie)",
+      "after": "Wersja maksymalna (bez tej wartości)",
+      "reason": "Clarify an exclusive numeric bound; wyłącznie normally means only."
+    },
+    {
+      "locale": "pl",
+      "key": "Minimum version must be lower than the exclusive maximum version",
+      "before": "Wersja minimalna musi być niższa od wyłącznej wersji maksymalnej",
+      "after": "Wersja minimalna musi być niższa od górnej granicy zakresu (wyłączonej z zakresu)",
+      "reason": "Make the maximum exclusion explicit rather than using ambiguous wyłączna."
+    },
+    {
+      "locale": "pl",
+      "key": "I Reviewed The Code, Tool, Arguments And Side Effects",
+      "before": "Sprawdzono kod, narzędzie, argumenty i skutki uboczne",
+      "after": "Potwierdzam sprawdzenie kodu, narzędzia, argumentów i skutków ubocznych",
+      "reason": "Consent acknowledges the current user review rather than stating impersonally that someone reviewed it."
+    },
+    {
+      "locale": "pl",
+      "key": "I Reviewed The Command, Vendor Terms, Disk Usage And Recovery",
+      "before": "Sprawdzono polecenie, warunki dostawcy, zużycie dysku i odzyskiwanie",
+      "after": "Potwierdzam sprawdzenie polecenia, warunków dostawcy, zużycia dysku i opcji odzyskiwania",
+      "reason": "Consent acknowledges the current user review rather than stating impersonally that someone reviewed it."
+    },
+    {
+      "locale": "pl",
+      "key": "I reviewed selected vendors' licensing and redistribution terms",
+      "before": "Sprawdzono warunki licencji i redystrybucji wybranych dostawców",
+      "after": "Potwierdzam sprawdzenie warunków licencji i redystrybucji wybranych dostawców",
+      "reason": "Consent acknowledges the current user review rather than stating impersonally that someone reviewed it."
+    },
+    {
+      "locale": "pl",
+      "key": "I reviewed these persistent user changes and the local prior-state backup",
+      "before": "Sprawdzono te trwałe zmiany użytkownika i lokalną kopię zapasową wcześniejszego stanu",
+      "after": "Potwierdzam sprawdzenie tych trwałych zmian użytkownika i lokalnej kopii zapasowej wcześniejszego stanu",
+      "reason": "Consent acknowledges the current user review rather than stating impersonally that someone reviewed it."
+    },
+    {
+      "locale": "pl",
+      "key": "I reviewed this exact installer, command, licensing and system effects",
+      "before": "Sprawdzono ten konkretny instalator, polecenie, licencję i skutki dla systemu",
+      "after": "Potwierdzam sprawdzenie tego konkretnego instalatora, polecenia, licencji i skutków dla systemu",
+      "reason": "Consent acknowledges the current user review rather than stating impersonally that someone reviewed it."
+    },
+    {
+      "locale": "pl",
+      "key": "I reviewed this exact preview for sharing",
+      "before": "Sprawdzono ten konkretny podgląd do udostępnienia",
+      "after": "Potwierdzam sprawdzenie tego konkretnego podglądu do udostępnienia",
+      "reason": "Consent acknowledges the current user review rather than stating impersonally that someone reviewed it."
+    },
+    {
+      "locale": "pl",
+      "key": "I reviewed this executable, arguments, directory, environment and privileges",
+      "before": "Sprawdzono ten plik wykonywalny, argumenty, katalog, środowisko i uprawnienia",
+      "after": "Potwierdzam sprawdzenie tego pliku wykonywalnego, argumentów, katalogu, środowiska i uprawnień",
+      "reason": "Consent acknowledges the current user review rather than stating impersonally that someone reviewed it."
+    },
+    {
+      "locale": "pl",
+      "key": "I reviewed this receipt and want its exact prior user values restored",
+      "before": "Sprawdzono ten zapis operacji i chcę przywrócić dokładne wcześniejsze wartości użytkownika",
+      "after": "Potwierdzam sprawdzenie tego zapisu operacji i chcę przywrócić dokładne wcześniejsze wartości użytkownika",
+      "reason": "Keep personal consent explicit and consistent with other acknowledgments."
+    },
+    {
+      "locale": "ru",
+      "key": "Display filters do not refresh evidence. Changing Include UDP affects only the next explicit scan; the report lists the queried sources and times.",
+      "before": "Фильтры отображения не обновляют данные. Изменение «Включить связанные конечные точки UDP» влияет лишь на следующее явное сканирование; отчёт содержит запрошенные источники и время.",
+      "after": "Фильтры отображения не обновляют данные. Изменение «Включить привязанные конечные точки UDP» влияет лишь на следующее явное сканирование; отчёт содержит запрошенные источники и время.",
+      "reason": "Bound UDP endpoint means socket binding, not a linked endpoint."
+    },
+    {
+      "locale": "ru",
+      "key": "Include UDP bound endpoints",
+      "before": "Включить связанные конечные точки UDP",
+      "after": "Включить привязанные конечные точки UDP",
+      "reason": "Bound UDP endpoint means socket binding, not a linked endpoint."
+    },
+    {
+      "locale": "ru",
+      "key": "Optional numeric minimum: 1–4 components, each 0–65535. Embedded product metadata must be at least this value. No semantic-version operators or prerelease tags.",
+      "before": "Необязательный числовой минимум: 1–4 компонента, каждый 0–65535. Встроенные метаданные продукта должны быть не ниже этого значения. Операторы семантических версий и предварительные теги не допускаются.",
+      "after": "Необязательный числовой минимум: 1–4 компонента, каждый 0–65535. Встроенные метаданные продукта должны быть не ниже этого значения. Операторы семантических версий и теги предварительных версий не допускаются.",
+      "reason": "Prerelease tags refer to version qualifiers."
+    },
+    {
+      "locale": "ru",
+      "key": "Use 1–4 numeric version components (0–65535), such as 22.0. No wildcards, operators or prerelease tags.",
+      "before": "Используйте 1–4 числовых компонента версии (0–65535), например 22.0. Подстановочные знаки, операторы и предварительные теги не допускаются.",
+      "after": "Используйте 1–4 числовых компонента версии (0–65535), например 22.0. Подстановочные знаки, операторы и теги предварительных версий не допускаются.",
+      "reason": "Prerelease tags refer to version qualifiers."
+    },
+    {
+      "locale": "ru",
+      "key": "Use 1–4 numeric version components, such as 22.0. No wildcards, operators or prerelease tags.",
+      "before": "Используйте 1–4 числовых компонента версии, например 22.0. Подстановочные знаки, операторы и предварительные теги не допускаются.",
+      "after": "Используйте 1–4 числовых компонента версии, например 22.0. Подстановочные знаки, операторы и теги предварительных версий не допускаются.",
+      "reason": "Prerelease tags refer to version qualifiers."
+    },
+    {
+      "locale": "ru",
+      "key": "Default: launch a child with this environment only",
+      "before": "По умолчанию: запускать дочерний процесс только с этой средой",
+      "after": "По умолчанию: применять эту среду только к запускаемому дочернему процессу",
+      "reason": "Child-only scope must not imply discarding the remaining inherited environment."
+    },
+    {
+      "locale": "zh-CN",
+      "key": "Default: launch a child with this environment only",
+      "before": "默认：仅使用此环境启动子进程",
+      "after": "默认：仅将此环境应用于启动的子进程",
+      "reason": "Child-only scope must not imply discarding the remaining inherited environment."
+    },
+    {
+      "locale": "zh-CN",
+      "key": "{p0}\nPID {p1} · Exit {p2}\n{p3}\n{p4}\nDigest {p5}\nElevation requested {p6}",
+      "before": "{p0}\nPID {p1} · 退出 {p2}\n{p3}\n{p4}\n摘要 {p5}\n已请求提权 {p6}",
+      "after": "{p0}\nPID {p1} · 退出 {p2}\n{p3}\n{p4}\n摘要 {p5}\n请求提权：{p6}",
+      "reason": "Boolean label must not affirm that elevation was requested when the value is false."
+    },
+    {
+      "locale": "ja",
+      "key": "Default: launch a child with this environment only",
+      "before": "既定: この環境のみで子プロセスを起動",
+      "after": "既定: 起動する子プロセスにだけこの環境を適用",
+      "reason": "Clarify process-local scope rather than an exclusive replacement environment."
+    },
+    {
+      "locale": "ja",
+      "key": "Journal Undoing, restore exact prior bytes/types/absence and verify. If interrupted, retain and reopen the receipt. Changes since this review or conflicting current values are rejected; third-party registry writers cannot be locked out atomically.",
+      "before": "「取り消し中」の状態を記録に保存し、以前のバイト列、型、値が存在しない状態を正確に復元して検証します。中断された場合は、記録を保持して開き直してください。この確認以降の変更や競合する現在値は拒否されます。他のプログラムによるレジストリへの書き込みをアトミックに排除することはできません。",
+      "after": "Undoing（取り消し中）の状態を記録に保存し、以前のバイト列、型、値が存在しない状態を正確に復元して検証します。中断された場合は、記録を保持して開き直してください。この確認以降の変更や競合する現在値は拒否されます。他のプログラムによるレジストリへの書き込みをアトミックに排除することはできません。",
+      "reason": "Preserve exact persisted Undoing state identifier alongside its explanation."
+    },
+    {
+      "locale": "ko",
+      "key": "Changing the package, library or privilege request clears review. The installer is rehashed and its signature rechecked immediately before launch. A durable receipt must be created before launching.",
+      "before": "패키지, 라이브러리 또는 권한 요청을 변경하면 검토가 해제됩니다. 실행 직전에 설치 프로그램의 해시와 서명을 다시 확인합니다. 실행 전에 영구 보존되는 영수증을 생성해야 합니다.",
+      "after": "패키지, 라이브러리 또는 권한 요청을 변경하면 검토가 해제됩니다. 실행 직전에 설치 프로그램의 해시와 서명을 다시 확인합니다. 실행 전에 안전하게 저장된 작업 기록을 생성해야 합니다.",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence. Durable means safely persisted, not a promise of permanent retention."
+    },
+    {
+      "locale": "ko",
+      "key": "Choose receipt",
+      "before": "영수증 선택",
+      "after": "작업 기록 선택",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "Choose the receipt to open and review. Selection never changes Windows.",
+      "before": "열어서 검토할 영수증을 선택하세요. 선택은 Windows를 변경하지 않습니다.",
+      "after": "열어서 검토할 작업 기록을 선택하세요. 선택은 Windows를 변경하지 않습니다.",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "Environment operation failed unexpectedly. Preserve local receipts and reload before recovery.",
+      "before": "환경 작업이 예기치 않게 실패했습니다. 로컬 영수증을 보존하고 복구 전에 다시 불러오세요.",
+      "after": "환경 작업이 예기치 않게 실패했습니다. 로컬 작업 기록을 보존하고 복구 전에 다시 불러오세요.",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "For an uncertain persistent save, Refresh receipts and open the transaction before retrying or undoing. Earlier backups are retained; do not delete pending receipts.",
+      "before": "영구 저장 결과가 불확실하면 다시 시도하거나 실행 취소하기 전에 영수증을 새로 고치고 트랜잭션을 여세요. 이전 백업은 유지됩니다. 대기 중인 영수증을 삭제하지 마세요.",
+      "after": "영구 저장 결과가 불확실하면 다시 시도하거나 실행 취소하기 전에 작업 기록을 새로 고치고 트랜잭션을 여세요. 이전 백업은 유지됩니다. 대기 중인 작업 기록을 삭제하지 마세요.",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "I reviewed this receipt and want its exact prior user values restored",
+      "before": "이 영수증을 검토했으며 여기에 기록된 정확한 이전 사용자 값을 복원하려고 합니다",
+      "after": "이 작업 기록을 검토했으며 여기에 기록된 정확한 이전 사용자 값을 복원하려고 합니다",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "Installation Receipts",
+      "before": "설치 영수증",
+      "after": "설치 작업 기록",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "Journal Undoing, restore exact prior bytes/types/absence and verify. If interrupted, retain and reopen the receipt. Changes since this review or conflicting current values are rejected; third-party registry writers cannot be locked out atomically.",
+      "before": "Undoing 상태를 저널에 기록하고 정확한 이전 바이트/형식/값 없음 상태를 복원한 뒤 검증합니다. 중단되면 영수증을 보존하고 다시 여세요. 이 검토 이후의 변경이나 충돌하는 현재 값은 거부됩니다. 타사 프로그램의 레지스트리 쓰기를 원자적으로 차단할 수는 없습니다.",
+      "after": "Undoing 상태를 저널에 기록하고 정확한 이전 바이트/형식/값 없음 상태를 복원한 뒤 검증합니다. 중단되면 작업 기록을 보존하고 다시 여세요. 이 검토 이후의 변경이나 충돌하는 현재 값은 거부됩니다. 타사 프로그램의 레지스트리 쓰기를 원자적으로 차단할 수는 없습니다.",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "Loaded local installation receipts. Unknown/pending outcomes require vendor inspection before retry.",
+      "before": "로컬 설치 영수증을 불러왔습니다. 알 수 없거나 대기 중인 결과는 다시 시도하기 전에 공급업체를 통한 확인이 필요합니다.",
+      "after": "로컬 설치 작업 기록을 불러왔습니다. 알 수 없거나 대기 중인 결과는 다시 시도하기 전에 공급업체를 통한 확인이 필요합니다.",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "Loaded receipt: {p0} · {p1} · {p2}",
+      "before": "불러온 영수증: {p0} · {p1} · {p2}",
+      "after": "불러온 작업 기록: {p0} · {p1} · {p2}",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "Local Library Root (cache and receipts)",
+      "before": "로컬 라이브러리 루트(캐시 및 영수증)",
+      "after": "로컬 라이브러리 루트(캐시 및 작업 기록)",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "Open environment receipt",
+      "before": "환경 영수증 열기",
+      "after": "환경 작업 기록 열기",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "Optional persistent edits, separate from the default child-only environment. Every apply and undo requires a fresh explicit review and retains a local recovery receipt.",
+      "before": "기본 자식 전용 환경과 별개인 선택적 영구 편집입니다. 적용과 실행 취소마다 새로 명시적으로 검토해야 하며 로컬 복구 영수증을 유지합니다.",
+      "after": "기본 자식 전용 환경과 별개인 선택적 영구 편집입니다. 적용과 실행 취소마다 새로 명시적으로 검토해야 하며 로컬 복구 작업 기록을 유지합니다.",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "Persist this exact preview to HKCU only, after writing a recovery receipt. Reject stale values, serialize SetupScope writers and verify each write. Other applications can still race the registry; on interruption inspect the retained receipt and review undo.",
+      "before": "복구 영수증을 기록한 후 이 정확한 미리 보기를 HKCU에만 영구 저장합니다. 오래된 값을 거부하고 SetupScope 쓰기를 직렬화하며 각 쓰기를 검증합니다. 다른 애플리케이션은 여전히 레지스트리와 경합할 수 있습니다. 중단되면 보존된 영수증을 검사하고 실행 취소를 검토하세요.",
+      "after": "복구 작업 기록을 기록한 후 이 정확한 미리 보기를 HKCU에만 영구 저장합니다. 오래된 값을 거부하고 SetupScope 쓰기를 직렬화하며 각 쓰기를 검증합니다. 다른 애플리케이션은 여전히 레지스트리와 경합할 수 있습니다. 중단되면 보존된 작업 기록을 검사하고 실행 취소를 검토하세요.",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "Read at most 20 recent receipts from a bounded local directory. No vendor query or installer execution. Prepared/pending records are not proof of installed state.",
+      "before": "범위가 제한된 로컬 디렉터리에서 최근 영수증을 최대 20개 읽습니다. 공급업체 조회나 설치 프로그램 실행은 없습니다. 준비됨/대기 중 기록이 설치 상태를 입증하지는 않습니다.",
+      "after": "범위가 제한된 로컬 디렉터리에서 최근 작업 기록을 최대 20개 읽습니다. 공급업체 조회나 설치 프로그램 실행은 없습니다. 준비됨/대기 중 기록이 설치 상태를 입증하지는 않습니다.",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "Rechecks the held file hash and Microsoft signature, records a receipt, then opens the interactive vendor UI.",
+      "before": "보유한 파일 해시와 Microsoft 서명을 다시 확인하고 영수증을 기록한 다음 공급업체 대화형 UI를 엽니다.",
+      "after": "보유한 파일 해시와 Microsoft 서명을 다시 확인하고 작업 기록을 기록한 다음 공급업체 대화형 UI를 엽니다.",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "Refresh Local Receipts",
+      "before": "로컬 영수증 새로 고침",
+      "after": "로컬 작업 기록 새로 고침",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "Refresh environment receipts",
+      "before": "환경 영수증 새로 고침",
+      "after": "환경 작업 기록 새로 고침",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "Required before applying. Exact selected prior values, types and absence are journaled under SetupScopeData/environment-profiles. These private receipts can contain sensitive old values. Edits affect future processes and are not an atomic multi-variable transaction.",
+      "before": "적용 전에 필요합니다. 선택한 정확한 이전 값, 형식 및 값 없음 상태를 SetupScopeData/environment-profiles 아래 저널에 기록합니다. 이 비공개 영수증에는 민감한 이전 값이 포함될 수 있습니다. 편집은 이후 프로세스에 영향을 미치며 다중 변수 원자적 트랜잭션이 아닙니다.",
+      "after": "적용 전에 필요합니다. 선택한 정확한 이전 값, 형식 및 값 없음 상태를 SetupScopeData/environment-profiles 아래 저널에 기록합니다. 이 비공개 작업 기록에는 민감한 이전 값이 포함될 수 있습니다. 편집은 이후 프로세스에 영향을 미치며 다중 변수 원자적 트랜잭션이 아닙니다.",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "Saved current-user transaction IDs. Open a receipt to review its exact original and intended values before undoing.",
+      "before": "저장된 현재 사용자 트랜잭션 ID입니다. 실행 취소 전에 영수증을 열어 정확한 원래 값과 의도한 값을 검토하세요.",
+      "after": "저장된 현재 사용자 트랜잭션 ID입니다. 실행 취소 전에 작업 기록을 열어 정확한 원래 값과 의도한 값을 검토하세요.",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "Saved settings, profiles and recovery records remain in your data folder. Review exported files and receipts before sharing.",
+      "before": "저장된 설정, 프로필 및 복구 기록은 데이터 폴더에 남습니다. 공유 전에 내보낸 파일과 영수증을 검토하세요.",
+      "after": "저장된 설정, 프로필 및 복구 기록은 데이터 폴더에 남습니다. 공유 전에 내보낸 파일과 작업 기록을 검토하세요.",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "Use an absolute local folder. Cache is dependencies/downloads; receipts are dependencies/receipts. Existing files are never silently replaced. Network/reparse paths are blocked. Changing this clears install review.",
+      "before": "절대 경로의 로컬 폴더를 사용하세요. 캐시는 dependencies/downloads, 영수증은 dependencies/receipts입니다. 기존 파일을 알리지 않고 교체하지 않습니다. 네트워크/재분석 경로는 차단됩니다. 변경하면 설치 검토가 해제됩니다.",
+      "after": "절대 경로의 로컬 폴더를 사용하세요. 캐시는 dependencies/downloads, 작업 기록은 dependencies/receipts에 저장됩니다. 기존 파일을 알리지 않고 교체하지 않습니다. 네트워크/재분석 경로는 차단됩니다. 변경하면 설치 검토가 해제됩니다.",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "Vendor installation may be active. Finish/cancel its UI; closing SetupScope cannot cancel or undo it. A pending receipt remains if tracking is interrupted.",
+      "before": "공급업체 설치가 진행 중일 수 있습니다. 해당 UI에서 완료/취소하세요. SetupScope를 닫아도 취소하거나 되돌릴 수 없습니다. 추적이 중단되면 대기 중인 영수증이 남습니다.",
+      "after": "공급업체 설치가 진행 중일 수 있습니다. 해당 UI에서 완료/취소하세요. SetupScope를 닫아도 취소하거나 되돌릴 수 없습니다. 추적이 중단되면 대기 중인 작업 기록이 남습니다.",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "Working locally. Persistent apply/undo finishes its journaled operation; there is no halfway cancellation. If interrupted, reload the retained receipt before recovery.",
+      "before": "로컬에서 작업합니다. 영구 적용/실행 취소는 저널에 기록된 작업을 끝까지 수행하며 중간 취소는 없습니다. 중단되면 복구 전에 보존된 영수증을 다시 불러오세요.",
+      "after": "로컬에서 작업합니다. 영구 적용/실행 취소는 저널에 기록된 작업을 끝까지 수행하며 중간 취소는 없습니다. 중단되면 복구 전에 보존된 작업 기록을 다시 불러오세요.",
+      "reason": "Use operation record rather than financial receipt for durable installation/recovery evidence."
+    },
+    {
+      "locale": "ko",
+      "key": "Explicit read-only queries. No process control or unlocking; ownership can be incomplete.",
+      "before": "명시적 읽기 전용 조회입니다. 프로세스 제어나 잠금 해제는 없으며 소유자 정보가 불완전할 수 있습니다.",
+      "after": "명시적 읽기 전용 조회입니다. 프로세스 제어나 잠금 해제는 없으며 파일 점유 프로세스 정보가 불완전할 수 있습니다.",
+      "reason": "File holders are processes using a file, not filesystem ownership principals."
+    },
+    {
+      "locale": "ko",
+      "key": "Register only this local file with a temporary Restart Manager query and compare reported PID/start times with current read-only process metadata. Never requests shutdown, restart, unlock or termination. Zero owners does not prove absence of locks.",
+      "before": "이 로컬 파일만 임시 Restart Manager 조회에 등록하고 보고된 PID/시작 시간을 현재 읽기 전용 프로세스 메타데이터와 비교합니다. 종료, 다시 시작, 잠금 해제 또는 강제 종료는 요청하지 않습니다. 소유자가 0명이라고 잠금이 없다는 뜻은 아닙니다.",
+      "after": "이 로컬 파일만 임시 Restart Manager 조회에 등록하고 보고된 PID/시작 시간을 현재 읽기 전용 프로세스 메타데이터와 비교합니다. 종료, 다시 시작, 잠금 해제 또는 강제 종료는 요청하지 않습니다. 점유 프로세스가 0개라고 잠금이 없다는 뜻은 아닙니다.",
+      "reason": "Count file-holding processes rather than human owners."
+    },
+    {
+      "locale": "ko",
+      "key": "Passive evidence only: CLI files and running services do not prove WSL or a container engine works. Distributions, optional-feature enablement, WSL versions, active contexts, daemon health, Linux/Windows container mode, nested virtualization, permissions and project compatibility remain unverified. No command, engine, distribution, network/pipe connection, configuration file read or system change is requested. Service names are conventional hints; missing services do not establish absence. CPU hints can be masked by a hypervisor; false does not prove firmware virtualization is disabled.",
+      "before": "수동적 증거만 제공합니다. CLI 파일과 실행 중인 서비스가 WSL 또는 컨테이너 엔진의 작동을 입증하지는 않습니다. 배포판, 선택적 기능 활성화, WSL 버전, 활성 컨텍스트, 데몬 상태, Linux/Windows 컨테이너 모드, 중첩 가상화, 권한 및 프로젝트 호환성은 미확인 상태입니다. 명령, 엔진, 배포판, 네트워크/파이프 연결, 구성 파일 읽기 또는 시스템 변경을 요청하지 않습니다. 서비스 이름은 일반적인 힌트이며 서비스가 없다고 해당 구성 요소의 부재가 입증되지는 않습니다. 하이퍼바이저가 CPU 힌트를 숨길 수 있으므로 false가 펌웨어 가상화 비활성화를 입증하지는 않습니다.",
+      "after": "수동적 증거만 제공합니다. CLI 파일과 실행 중인 서비스가 WSL 또는 컨테이너 엔진의 작동을 입증하지는 않습니다. 배포판, 선택적 기능 활성화, WSL 버전, 활성 컨텍스트, 데몬 상태, Linux/Windows 컨테이너 모드, 중첩 가상화, 권한 및 프로젝트 호환성은 미확인 상태입니다. 명령 실행, 엔진이나 배포판 시작, 네트워크/파이프 연결, 구성 파일 읽기 또는 시스템 변경을 요청하지 않습니다. 서비스 이름은 일반적인 힌트이며 서비스가 없다고 해당 구성 요소의 부재가 입증되지는 않습니다. 하이퍼바이저가 CPU 힌트를 숨길 수 있으므로 false가 펌웨어 가상화 비활성화를 입증하지는 않습니다.",
+      "reason": "Make the denied execution/start operations explicit without losing passive-check limits."
+    },
+    {
+      "locale": "ru",
+      "key": "Not Inspected — No Automatic Scans",
+      "before": "Не проверено — автоматическое сканирование отключено",
+      "after": "Не проверено — автоматического сканирования нет",
+      "reason": "Avoid implying an existing toggle for automatic scans."
+    },
+    {
+      "locale": "zh-CN",
+      "key": "Only a compiled, pinned catalog is accepted. This view makes explicit network and disk changes; diagnostics elsewhere remain read-only. No automatic catalog refresh, installer launch or repair. Full installers are cached; project packages, workloads, MSVC and Windows SDK layouts are not included. Integrity is not proof of vendor safety. Signatures use cached Windows trust without online revocation checks. Cancel is checked between bounded operations; network calls can take up to 30 seconds to return. Closing SetupScope cannot undo or cancel a vendor installation.",
+      "before": "仅接受内置的固定版本目录。此视图会明确更改网络和磁盘；其他位置的诊断仍为只读。不自动刷新目录、启动安装程序或修复。缓存完整安装程序；不包含项目软件包、工作负载、MSVC 和 Windows SDK 布局。完整性不证明供应商安全。签名使用 Windows 缓存信任，不进行在线吊销检查。在有范围限制的操作之间检查取消；网络调用最多可能需要 30 秒才返回。关闭 SetupScope 无法撤销或取消供应商安装。",
+      "after": "仅接受内置的固定版本目录。此视图会执行明确请求的网络操作和磁盘更改；其他位置的诊断仍为只读。不自动刷新目录、启动安装程序或修复。缓存完整安装程序；不包含项目软件包、工作负载、MSVC 和 Windows SDK 布局。完整性不证明供应商安全。签名使用 Windows 缓存信任，不进行在线吊销检查。在有范围限制的操作之间检查取消；网络调用最多可能需要 30 秒才返回。关闭 SetupScope 无法撤销或取消供应商安装。",
+      "reason": "Clarify network activity rather than imply changing network configuration."
+    },
+    {
+      "locale": "ko",
+      "key": "Invalid version resource signature",
+      "before": "잘못된 버전 리소스 서명",
+      "after": "잘못된 버전 리소스 시그니처",
+      "reason": "Distinguish fixed version-resource signature from Authenticode publisher verification."
+    }
+  ]
+}

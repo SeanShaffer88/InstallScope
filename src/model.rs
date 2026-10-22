@@ -658,7 +658,12 @@ impl ChangeSet {
             dirs_added: self.files_added.iter().filter(|f| f.is_dir).count(),
             files_removed: self.files_removed.len(),
             files_modified: self.files_modified.len(),
-            bytes_added: self.files_added.iter().map(|f| f.size).sum(),
+            // Imported metadata can claim arbitrary sizes. Clamp the display
+            // total rather than overflowing or panicking while reviewing it.
+            bytes_added: self
+                .files_added
+                .iter()
+                .fold(0u64, |total, f| total.saturating_add(f.size)),
         }
     }
 }
@@ -761,6 +766,29 @@ mod tests {
     fn sizes() {
         assert_eq!(human_size(512), "512 B");
         assert_eq!(human_size(1536), "1.5 KB");
+    }
+
+    #[test]
+    fn imported_change_sizes_cannot_overflow_report_totals() {
+        let changes = ChangeSet {
+            files_added: vec![
+                FileEntry {
+                    path: "a".into(),
+                    is_dir: false,
+                    size: u64::MAX,
+                    mtime: 0,
+                },
+                FileEntry {
+                    path: "b".into(),
+                    is_dir: false,
+                    size: 1,
+                    mtime: 0,
+                },
+            ],
+            ..Default::default()
+        };
+        assert_eq!(changes.stats().bytes_added, u64::MAX);
+        assert_eq!(changes.stats().files_added, 2);
     }
 }
 

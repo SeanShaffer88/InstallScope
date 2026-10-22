@@ -745,8 +745,6 @@ dependencies = [
 [[package]]
 name = "eframe"
 version = "0.33.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "457481173e6db5ca9fa2be93a58df8f4c7be639587aeb4853b526c6cf87db4e6"
 dependencies = [
  "ahash",
  "bytemuck",
@@ -2525,12 +2523,15 @@ dependencies = [
 
 [[package]]
 name = "setupscope"
-version = "0.1.0"
+version = "1.0.0"
 dependencies = [
  "anyhow",
  "eframe",
  "egui",
  "egui_extras",
+ "quick-xml",
+ "semver",
+ "toml",
  "wgpu",
  "windows-sys 0.59.0",
  "winresource",

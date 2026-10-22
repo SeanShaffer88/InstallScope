@@ -4,6 +4,14 @@
 use crate::model::*;
 use crate::platform::{split_hive, HIVES};
 
+/// Publish an explicit export to a new file; never truncate existing user data.
+pub fn save_new_export(path: &std::path::Path, bytes: &[u8]) -> std::io::Result<()> {
+    if !path.is_absolute() {
+        return Err(std::io::Error::other("Choose an absolute export path"));
+    }
+    crate::store::durable::write(path, bytes, false)
+}
+
 pub fn long_path(path: &str) -> String {
     match split_hive(path) {
         Some((h, rest)) => {
@@ -578,5 +586,18 @@ mod xml_tests {
         assert!(xml.contains("&quot;q&quot;"));
         assert!(xml.trim_end().ends_with("</SetupScopeLog>"));
         assert!(to_print_html(&log).contains("print()"));
+    }
+}
+
+#[cfg(test)]
+mod export_safety_tests {
+    #[test]
+    fn new_export_preserves_existing_and_rejects_relative_destinations() {
+        let dir = crate::util::tempdir().unwrap();
+        let path = dir.path().join("export.ini");
+        super::save_new_export(&path, b"original").unwrap();
+        assert!(super::save_new_export(&path, b"replacement").is_err());
+        assert_eq!(std::fs::read(&path).unwrap(), b"original");
+        assert!(super::save_new_export(std::path::Path::new("relative.ini"), b"x").is_err());
     }
 }

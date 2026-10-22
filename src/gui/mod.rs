@@ -1,79 +1,29 @@
 //! The SetupScope desktop interface (egui, rendered with DirectX 12 on Windows).
 
 mod a11y;
-mod alt_ui;
 mod app;
-mod ask;
-mod backups;
-mod builder;
-mod cleaner;
 mod dashboard;
-mod debloat_ui;
-mod difftree_ui;
-mod extinv_ui;
+mod devcheck_ui;
+mod dependency_ui;
+mod native_toolchain_ui;
+mod devinspect_ui;
+mod container_readiness_ui;
+mod build_log_ui;
+mod build_run_ui;
+pub(crate) mod system_info;
+mod diagnostic_bundle_ui;
+mod envprofile_ui;
 #[cfg(windows)]
 mod filedialog;
-mod gatekeeper_ui;
-mod lab;
-mod logs;
-mod monitor;
-#[cfg(all(windows, feature = "native-ui-preview"))]
-mod native_programs;
-mod plan;
-mod precheck;
-mod privacy_ui;
-mod programs;
-mod restore_ui;
-mod settings_tab;
-mod shell_ui;
-mod slowdown_ui;
-mod startup_tab;
-mod storage_ui;
+mod projectdoctor_ui;
+mod project_readiness_ui;
 mod theme;
-mod transfer_ui;
 mod widgets;
+mod tool_window;
 
 use setupscope_core::snapshot::Progress;
 use std::sync::mpsc;
 use std::sync::Arc;
-
-/// Reloads a list in the background. A reload asked for while one is
-/// running is queued, so the newest data always wins.
-pub struct Reload<T> {
-    job: Option<Job<T>>,
-    again: bool,
-}
-
-impl<T> Default for Reload<T> {
-    fn default() -> Self {
-        Reload {
-            job: None,
-            again: false,
-        }
-    }
-}
-
-impl<T: Send + 'static> Reload<T> {
-    pub fn request(&mut self, ctx: &egui::Context, f: impl FnOnce() -> T + Send + 'static) {
-        if self.job.is_some() {
-            self.again = true;
-        } else {
-            self.job = Some(Job::spawn(ctx, move |_| f()));
-        }
-    }
-
-    /// The new data when a reload finished. `rerun` is called to start the
-    /// queued reload, if any.
-    pub fn poll(&mut self) -> Option<(T, bool)> {
-        let r = self.job.as_ref()?.poll()?;
-        self.job = None;
-        Some((r, std::mem::take(&mut self.again)))
-    }
-
-    pub fn busy(&self) -> bool {
-        self.job.is_some()
-    }
-}
 
 /// Work running on a background thread, polled once per frame.
 pub struct Job<T> {
@@ -167,17 +117,12 @@ fn install_fonts(ctx: &egui::Context) {
 }
 
 pub fn run(install_target: Option<String>, launch_args: Vec<String>) -> anyhow::Result<()> {
-    #[cfg(all(windows, feature = "native-ui-preview"))]
-    {
-        return native_programs::run(install_target, launch_args);
-    }
-
-    #[cfg(not(all(windows, feature = "native-ui-preview")))]
     {
         let mut viewport = egui::ViewportBuilder::default()
             .with_title("SetupScope")
-            .with_inner_size([1180.0, 760.0])
-            .with_min_inner_size([820.0, 520.0])
+            .with_inner_size([960.0, 600.0])
+            .with_maximized(false)
+            .with_min_inner_size([740.0, 300.0])
             .with_app_id("SetupScope");
         if let Some(icon) = load_icon() {
             viewport = viewport.with_icon(Arc::new(icon));
@@ -186,6 +131,7 @@ pub fn run(install_target: Option<String>, launch_args: Vec<String>) -> anyhow::
             viewport,
             renderer: eframe::Renderer::Wgpu,
             centered: true,
+            persist_window: false,
             ..Default::default()
         };
         eframe::run_native(
@@ -193,7 +139,7 @@ pub fn run(install_target: Option<String>, launch_args: Vec<String>) -> anyhow::
             options,
             Box::new(|cc| {
                 install_fonts(&cc.egui_ctx);
-                Ok(Box::new(app::App::new(cc, install_target, launch_args)))
+                Ok(Box::new(app::App::new(cc, install_target, launch_args)?))
             }),
         )?;
         Ok(())

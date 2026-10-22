@@ -1,10 +1,7 @@
-//! Browser extensions page (Tools): inventory of installed extensions,
-//! grouped by browser and profile, with reversible Disable/Restore.
-//!
-//! Disabling moves the extension's files into SetupScope's data folder and
-//! records the exact original location; restoring moves them back. Nothing
-//! is ever deleted, and the profile's other data is never touched.
+//! Recognized browser extensions with best-effort same-volume file holding.
+//! Durable receipts support recovery; browser sync or policy may recreate files.
 
+use super::a11y;
 use super::app::{App, Confirm};
 use super::theme;
 use super::widgets::*;
@@ -16,40 +13,50 @@ use setupscope_core::i18n::{t, tf};
 #[derive(Default)]
 pub struct ExtInvState {
     pub items: Option<Vec<InstalledExtension>>,
-    pub job: Option<Job<Vec<InstalledExtension>>>,
+    pub job: Option<Job<ExtensionScan>>,
+    pub receipt_error: Option<String>,
+    pub operation_message: Option<Result<String, String>>,
     /// A disable or restore running in the background; the String is the
     /// message for the status line (Ok) or an error to report (Err).
     pub op_job: Option<Job<Result<String, String>>>,
 }
+pub type ExtensionScan = (Vec<InstalledExtension>, Option<String>);
 
 /// A stable key for one extension row: browser + profile dir + extension id.
 fn key_of(e: &InstalledExtension) -> String {
     format!(
-        "{}\u{1f}{}\u{1f}{}",
+        "{}\u{1f}{}\u{1f}{}\u{1f}{}",
         e.browser,
         e.profile_dir.display(),
-        e.id
+        e.id,
+        e.held.as_ref().map(|r| r.held_path.as_str()).unwrap_or("")
     )
 }
 
 impl App {
     pub fn scan_extensions(&mut self) {
+        if self.extinv.job.is_some() || self.extinv.op_job.is_some() {
+            return;
+        }
         let root = self.store.root.clone();
         let ctx = self.ctx.clone();
         self.extinv.items = None;
         self.extinv.job = Some(Job::spawn(&ctx, move |pr| {
             pr.set_phase(t("Reading browser profiles"));
-            extinv::discover(&root)
+            let problem = extinv::recovery_problem(&root);
+            (extinv::discover(&root), problem)
         }));
     }
 
     pub fn poll_extinv(&mut self) {
-        if let Some(items) = self.extinv.job.as_ref().and_then(|j| j.poll()) {
+        if let Some((items, problem)) = self.extinv.job.as_ref().and_then(|j| j.poll()) {
             self.extinv.job = None;
             self.extinv.items = Some(items);
+            self.extinv.receipt_error = problem;
         }
         if let Some(result) = self.extinv.op_job.as_ref().and_then(|j| j.poll()) {
             self.extinv.op_job = None;
+            self.extinv.operation_message = Some(result.clone());
             match result {
                 Ok(msg) => self.set_status(msg),
                 Err(err) => self.set_status(err),
@@ -69,6 +76,7 @@ impl App {
     }
 
     pub fn disable_extension(&mut self, key: &str) {
+        if self.extinv.job.is_some() || self.extinv.op_job.is_some() { return; }
         let Some(item) = self.extinv_item(key) else {
             return;
         };
@@ -78,7 +86,7 @@ impl App {
             pr.set_phase(tf("Disabling {name}", &[("name", item.name.clone())]));
             match extinv::disable(&root, &item) {
                 Ok(rec) => Ok(tf(
-                    "{name} disabled; restore it here any time. (You may need to restart the browser.)",
+                    "{name} files moved to the holding area. Keep SetupScope data for recovery; browser sync or policy may recreate files.",
                     &[("name", rec.name)],
                 )),
                 Err(e) => Err(format!("{:#}", e)),
@@ -87,6 +95,7 @@ impl App {
     }
 
     pub fn restore_extension(&mut self, key: &str) {
+        if self.extinv.job.is_some() || self.extinv.op_job.is_some() { return; }
         let Some(item) = self.extinv_item(key) else {
             return;
         };
@@ -112,7 +121,7 @@ impl App {
             self.ask(
                 "Disable extension",
                 tf(
-                    "{name} ({browser}, profile \"{profile}\") will stop working in the browser, but its files are kept by SetupScope and it can be restored with one click.\r\n\r\nPlease close {browser} first; a running browser may lock files.",
+                    "{name} ({browser}, profile \"{profile}\") will have its extension files moved to SetupScope holding storage on the same volume. Keep that storage for recovery. Browser sync, policy or repair may recreate the extension; disabling is not guaranteed.\r\n\r\nPlease close {browser} first; a running browser may lock files.",
                     &[
                         ("name", item.name),
                         ("browser", item.browser),
@@ -130,7 +139,7 @@ impl App {
             self.ask(
                 "Restore extension",
                 tf(
-                    "{name} ({browser}, profile \"{profile}\") will be put back exactly where it was.",
+                    "{name} ({browser}, profile \"{profile}\") will have its held files moved back to the original path only if it is vacant. Close the browser first. Browser settings may still require manual review.",
                     &[
                         ("name", item.name),
                         ("browser", item.browser),
@@ -162,6 +171,19 @@ impl App {
                 return;
             }
             let items = self.extinv.items.clone().unwrap_or_default();
+            a11y::focus_hint(ui, theme::MUTED);
+            if let Some(message) = &self.extinv.operation_message {
+                match message { Ok(message) => { ui.label(message); }, Err(error) => { ui.colored_label(theme::BAD, error); } }
+            }
+            if let Some(problem) = &self.extinv.receipt_error {
+                ui.colored_label(theme::BAD, problem);
+                ui.label(t("Disable/restore are blocked. Reconciliation changes receipt metadata only, never extension files. Corrupt or conflicting records require manual recovery; preserve the holding folder and journal."));
+                ui.add(egui::Label::new(extinv::extinv_dir(&self.store.root).display().to_string()).selectable(true));
+                if a11y::explain(ui.button(t("Reconcile interrupted receipt")), &t("Check the journal and source/held paths. If exactly one copy is available, update the local receipt to match it. No extension data moves or deletes; ambiguous or corrupt states remain blocked.")).clicked() {
+                    let root = self.store.root.clone();
+                    self.extinv.op_job = Some(Job::spawn(ctx, move |_| extinv::reconcile(&root).map(|_| t("Receipt reconciled; no extension files moved.")).map_err(|e| format!("{e:#}"))));
+                }
+            }
             if items.is_empty() {
                 ui.add_space(40.0);
                 ui.vertical_centered(|ui| {
@@ -169,10 +191,10 @@ impl App {
                     ui.heading(t("No browser extensions found"));
                     muted(
                         ui,
-                        t("SetupScope looked through the profiles of the supported Chromium-based and Firefox-based browsers and found no extensions."),
+                        t("No extensions were listed in the checked profiles. Missing permissions, unsupported profiles or recovery errors can leave coverage incomplete."),
                     );
                     ui.add_space(8.0);
-                    if ui.button(format!("⟳ {}", t("Scan again"))).clicked() {
+                    if a11y::explain(ui.button(format!("⟳ {}", t("Scan again"))), &t("Read the supported profiles and local recovery receipts again; no files move.")).clicked() {
                         self.scan_extensions();
                     }
                 });
@@ -199,12 +221,12 @@ impl App {
                         .strong(),
                     );
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if ui.button(format!("⟳ {}", t("Scan again"))).clicked() {
+                        if a11y::explain(ui.button(format!("⟳ {}", t("Scan again"))), &t("Read the supported profiles and local recovery receipts again; no files move.")).clicked() {
                             self.scan_extensions();
                         }
                     });
                 });
-                small_muted(ui, t("Disabling an extension moves its files into SetupScope's data folder; nothing is deleted and the rest of your profile is untouched. Restoring puts the files back exactly. Close the browser before disabling or restoring."));
+                small_muted(ui, t("Close the browser before a move. Holding extension files is not a guarantee of browser-disable state: sync, policy or browser repair can recreate them. Only same-volume moves are supported; no copy/delete fallback. Existing destinations and linked/reparse paths are refused. The journal preserves recovery intent after interruption. Other profile data is not edited."));
             });
             ui.add_space(8.0);
             // Group by browser, then profile.
@@ -243,7 +265,7 @@ impl App {
         let key = key_of(item);
         let held = item.held.is_some();
         let state_text = if held {
-            t("Disabled by SetupScope")
+            t("Held copy — restore available")
         } else {
             match item.enabled {
                 Some(true) => t("Enabled"),
@@ -278,17 +300,13 @@ impl App {
                     });
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if held {
-                            if ui
-                                .button(RichText::new(t("Restore")).strong())
-                                .on_hover_text(t("Put this extension back exactly where it was"))
+                            if a11y::explain(ui.add_enabled(self.extinv.receipt_error.is_none(), egui::Button::new(RichText::new(t("Restore")).strong())), &t("Review restoring the held files to the recorded profile. Existing destinations are preserved. Recovery errors block this action."))
                                 .clicked()
                             {
                                 self.confirm_restore_extension(&key);
                             }
                         } else {
-                            if ui
-                                .button(t("Disable"))
-                                .on_hover_text(t("Move this extension's files into SetupScope's data folder; nothing is deleted"))
+                            if a11y::explain(ui.add_enabled(self.extinv.receipt_error.is_none(), egui::Button::new(t("Disable"))), &t("Review holding this extension's files in SetupScope's data folder. Close the browser first; file moves do not guarantee browser-disable state. Recovery errors block this action."))
                                 .clicked()
                             {
                                 self.confirm_disable_extension(&key);

@@ -1,63 +1,33 @@
-; SetupScope installer (NSIS 3, Unicode)
-; Copyright (C) 2026 Sean Shaffer — MIT
-;
-; Build:  makensis -DVERSION=0.1.0 -DEXE=path\to\SetupScope.exe installer\setupscope.nsi
-; Output: SetupScope-Setup-<VERSION>.exe next to this script (or -DOUTDIR=...)
-
+; SetupScope per-user installer. Copyright 2026 Sean Shaffer; MIT.
 Unicode true
 ManifestDPIAware true
-RequestExecutionLevel admin
-SetCompressor /SOLID lzma
-
-!ifndef VERSION
-  !define VERSION "0.0.0"
+RequestExecutionLevel user
+SetCompressor /SOLID zlib
+!include "MUI2.nsh"
+!include "LogicLib.nsh"
+!include "x64.nsh"
+!include "WinVer.nsh"
+!include "FileFunc.nsh"
+!ifndef PAYLOAD
+  !error "Build with scripts/package-installer.ps1; a verified payload is required."
 !endif
-!ifndef EXE
-  !define EXE "..\target\release\setupscope.exe"
-!endif
-!ifndef OUTDIR
-  !define OUTDIR "."
-!endif
-
-!define APP "SetupScope"
-!define PUBLISHER "Sean Shaffer"
-!define URL "https://github.com/SeanShaffer88/SetupScope"
-; Breaking rename: the Expunge-era uninstall key is not reused.
-!define UNINST_KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\SetupScope"
-
-Name "${APP} ${VERSION}"
-OutFile "${OUTDIR}\SetupScope-Setup-${VERSION}.exe"
-InstallDir "$PROGRAMFILES64\${APP}"
-InstallDirRegKey HKLM "${UNINST_KEY}" "InstallLocation"
-BrandingText "${APP} ${VERSION} · © ${PUBLISHER}"
-
-VIProductVersion "${VERSION}.0"
-VIAddVersionKey /LANG=1033 "ProductName" "${APP}"
-VIAddVersionKey /LANG=1033 "CompanyName" "${PUBLISHER}"
-VIAddVersionKey /LANG=1033 "LegalCopyright" "© 2026 ${PUBLISHER} (MIT)"
-VIAddVersionKey /LANG=1033 "FileDescription" "${APP} Setup"
+!define VERSION "1.0.0.0"
+!define KEY "Software\Microsoft\Windows\CurrentVersion\Uninstall\SetupScope"
+Name "SetupScope ${VERSION}"
+OutFile "${OUTPUT}"
+InstallDir "$LOCALAPPDATA\Programs\SetupScope"
+InstallDirRegKey HKCU "${KEY}" "InstallLocation"
+BrandingText "SetupScope - Windows Software Development Toolkit"
+VIProductVersion "${VERSION}"
+VIAddVersionKey /LANG=1033 "ProductName" "SetupScope"
+VIAddVersionKey /LANG=1033 "CompanyName" "Sean Shaffer"
+VIAddVersionKey /LANG=1033 "FileDescription" "SetupScope Installer"
 VIAddVersionKey /LANG=1033 "FileVersion" "${VERSION}"
 VIAddVersionKey /LANG=1033 "ProductVersion" "${VERSION}"
-
-!include "MUI2.nsh"
-!include "x64.nsh"
-!include "LogicLib.nsh"
-!include "FileFunc.nsh"
-!include "WinVer.nsh"
-
-!macro AddShellVerb EXT
-  WriteRegStr HKLM "Software\Classes\SystemFileAssociations\${EXT}\shell\SetupSweepInstall" "MUIVerb" "Install with SetupScope"
-  WriteRegStr HKLM "Software\Classes\SystemFileAssociations\${EXT}\shell\SetupSweepInstall" "Icon" '"$INSTDIR\SetupScope.exe",0'
-  WriteRegStr HKLM "Software\Classes\SystemFileAssociations\${EXT}\shell\SetupSweepInstall\command" "" '"$INSTDIR\SetupScope.exe" --monitor-install "%1"'
-!macroend
-
+VIAddVersionKey /LANG=1033 "LegalCopyright" "Copyright 2026 Sean Shaffer; MIT"
 !define MUI_ICON "..\assets\setupscope.ico"
 !define MUI_UNICON "..\assets\setupscope.ico"
 !define MUI_ABORTWARNING
-!define MUI_FINISHPAGE_RUN "$INSTDIR\SetupScope.exe"
-!define MUI_FINISHPAGE_LINK "${URL}"
-!define MUI_FINISHPAGE_LINK_LOCATION "${URL}"
-
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_LICENSE "..\LICENSE"
 !insertmacro MUI_PAGE_COMPONENTS
@@ -66,8 +36,6 @@ VIAddVersionKey /LANG=1033 "ProductVersion" "${VERSION}"
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
-
-; Same languages as the app itself.
 !insertmacro MUI_LANGUAGE "English"
 !insertmacro MUI_LANGUAGE "Spanish"
 !insertmacro MUI_LANGUAGE "German"
@@ -79,79 +47,123 @@ VIAddVersionKey /LANG=1033 "ProductVersion" "${VERSION}"
 !insertmacro MUI_LANGUAGE "Japanese"
 !insertmacro MUI_LANGUAGE "Korean"
 !insertmacro MUI_LANGUAGE "Polish"
-!insertmacro MUI_RESERVEFILE_LANGDLL
+
+!macro CheckRunning
+  System::Call 'kernel32::OpenMutexW(i 0x100000, i 0, w "Local\SetupScope.Desktop.v1") p.r0'
+  ${If} $0 != 0
+    System::Call 'kernel32::CloseHandle(p r0)'
+    MessageBox MB_ICONSTOP|MB_OK "Close SetupScope and its tool windows, then try again." /SD IDOK
+    SetErrorLevel 2
+    Abort
+  ${EndIf}
+!macroend
 
 Function .onInit
-  ; SetupScope is built for Windows 11 only (build 22000 or later, 64-bit).
-  ${IfNot} ${RunningX64}
+  ${IfNot} ${IsNativeAMD64}
   ${OrIfNot} ${AtLeastBuild} 22000
-    MessageBox MB_ICONSTOP "SetupScope requires 64-bit Windows 11."
+    MessageBox MB_ICONSTOP|MB_OK "This package requires Windows 11 x64." /SD IDOK
+    SetErrorLevel 2
     Abort
   ${EndIf}
   SetRegView 64
-  !insertmacro MUI_LANGDLL_DISPLAY
+  SetShellVarContext current
+  !insertmacro CheckRunning
 FunctionEnd
+
+; Existing unrelated directories and portable folders must never become an
+; installer-owned tree. The generated uninstaller deletes explicit files only.
+Function ValidateDirectory
+  IfFileExists "$INSTDIR\portable" unsafe
+  IfFileExists "$INSTDIR\portable.txt" unsafe
+  IfFileExists "$INSTDIR\SetupScope.install-owner" owned
+  IfFileExists "$INSTDIR\*.*" unsafe done
+  owned:
+  FileOpen $0 "$INSTDIR\SetupScope.install-owner" r
+  IfErrors unsafe
+  FileRead $0 $1
+  FileClose $0
+  StrCmp $1 "SetupScope.Install.v1" done unsafe
+  unsafe:
+    MessageBox MB_ICONSTOP|MB_OK "Choose an empty folder or a folder installed by this SetupScope installer. Portable folders and unrelated files are preserved." /SD IDOK
+    SetErrorLevel 2
+    Abort
+  done:
+FunctionEnd
+
+Section "SetupScope (required)" App
+  SectionIn RO
+  !insertmacro CheckRunning
+  Call ValidateDirectory
+  SetOutPath "$INSTDIR"
+  SetOverwrite on
+  FileOpen $0 "$INSTDIR\SetupScope.install-owner" w
+  IfErrors install_failed
+  FileWrite $0 "SetupScope.Install.v1"
+  FileClose $0
+  WriteUninstaller "$INSTDIR\Uninstall.exe"
+  IfErrors install_failed
+  ClearErrors
+  !include "${PAYLOAD}\install-files.nsh"
+  IfErrors install_failed
+  WriteRegStr HKCU "${KEY}" "DisplayName" "SetupScope"
+  WriteRegStr HKCU "${KEY}" "DisplayVersion" "${VERSION}"
+  WriteRegStr HKCU "${KEY}" "Publisher" "Sean Shaffer"
+  WriteRegStr HKCU "${KEY}" "InstallLocation" "$INSTDIR"
+  WriteRegStr HKCU "${KEY}" "DisplayIcon" "$INSTDIR\SetupScope.exe,0"
+  WriteRegStr HKCU "${KEY}" "UninstallString" '$\"$INSTDIR\Uninstall.exe$\"'
+  WriteRegStr HKCU "${KEY}" "QuietUninstallString" '$\"$INSTDIR\Uninstall.exe$\" /S'
+  WriteRegStr HKCU "${KEY}" "URLInfoAbout" "https://github.com/SeanShaffer88/SetupScope"
+  WriteRegDWORD HKCU "${KEY}" "NoModify" 1
+  WriteRegDWORD HKCU "${KEY}" "NoRepair" 1
+  ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
+  WriteRegDWORD HKCU "${KEY}" "EstimatedSize" $0
+  Goto install_done
+  install_failed:
+    SetErrorLevel 1
+    Abort "Installation could not finish. No user data was removed; retry setup."
+  install_done:
+SectionEnd
+
+Section "Start Menu shortcuts" StartMenu
+  CreateDirectory "$SMPROGRAMS\SetupScope"
+  CreateShortcut "$SMPROGRAMS\SetupScope\SetupScope.lnk" "$INSTDIR\SetupScope.exe"
+  CreateShortcut "$SMPROGRAMS\SetupScope\Uninstall SetupScope.lnk" "$INSTDIR\Uninstall.exe"
+SectionEnd
+Section /o "Desktop shortcut" Desktop
+  CreateShortcut "$DESKTOP\SetupScope.lnk" "$INSTDIR\SetupScope.exe"
+SectionEnd
 
 Function un.onInit
   SetRegView 64
+  SetShellVarContext current
+  !insertmacro CheckRunning
+  FileOpen $0 "$INSTDIR\SetupScope.install-owner" r
+  IfErrors refuse
+  FileRead $0 $1
+  FileClose $0
+  StrCmp $1 "SetupScope.Install.v1" ready refuse
+  refuse:
+    MessageBox MB_ICONSTOP|MB_OK "Installation ownership could not be verified. No files were removed." /SD IDOK
+    SetErrorLevel 2
+    Abort
+  ready:
 FunctionEnd
 
-Section "SetupScope" SecMain
-  SectionIn RO
-  SetOutPath "$INSTDIR"
-  File "/oname=SetupScope.exe" "${EXE}"
-  !ifdef TOOLS
-    ; The PortableApps.com Launcher (official source and its NSIS compiler)
-    ; used by PortableApps Forge.
-    RMDir /r "$INSTDIR\tools\PortableApps.comLauncher"
-    SetOutPath "$INSTDIR\tools\PortableApps.comLauncher"
-    File /r "${TOOLS}\*.*"
-    SetOutPath "$INSTDIR"
-  !endif
-  File "/oname=LICENSE.txt" "..\LICENSE"
-  WriteUninstaller "$INSTDIR\Uninstall.exe"
-
-  ; Start menu
-  CreateShortcut "$SMPROGRAMS\${APP}.lnk" "$INSTDIR\SetupScope.exe"
-
-  ; Apps & features entry
-  WriteRegStr HKLM "${UNINST_KEY}" "DisplayName" "${APP}"
-  WriteRegStr HKLM "${UNINST_KEY}" "DisplayVersion" "${VERSION}"
-  WriteRegStr HKLM "${UNINST_KEY}" "Publisher" "${PUBLISHER}"
-  WriteRegStr HKLM "${UNINST_KEY}" "DisplayIcon" "$INSTDIR\SetupScope.exe,0"
-  WriteRegStr HKLM "${UNINST_KEY}" "InstallLocation" "$INSTDIR"
-  WriteRegStr HKLM "${UNINST_KEY}" "URLInfoAbout" "${URL}"
-  WriteRegStr HKLM "${UNINST_KEY}" "HelpLink" "${URL}/issues"
-  WriteRegStr HKLM "${UNINST_KEY}" "UninstallString" '"$INSTDIR\Uninstall.exe"'
-  WriteRegStr HKLM "${UNINST_KEY}" "QuietUninstallString" '"$INSTDIR\Uninstall.exe" /S'
-  WriteRegDWORD HKLM "${UNINST_KEY}" "NoModify" 1
-  WriteRegDWORD HKLM "${UNINST_KEY}" "NoRepair" 1
-  ${GetSize} "$INSTDIR" "/S=0K" $0 $1 $2
-  WriteRegDWORD HKLM "${UNINST_KEY}" "EstimatedSize" $0
-SectionEnd
-
-Section "Right-click: Install with SetupScope" SecShell
-  ; Adds "Install with SetupScope" to the context menu of .exe and .msi files.
-  !insertmacro AddShellVerb ".exe"
-  !insertmacro AddShellVerb ".msi"
-SectionEnd
-
-Section "Desktop shortcut" SecDesktop
-  CreateShortcut "$DESKTOP\${APP}.lnk" "$INSTDIR\SetupScope.exe"
-SectionEnd
-
 Section "Uninstall"
-  Delete "$INSTDIR\SetupScope.exe"
-  Delete "$INSTDIR\LICENSE.txt"
+  !insertmacro CheckRunning
+  !include "${PAYLOAD}\uninstall-files.nsh"
   Delete "$INSTDIR\Uninstall.exe"
-  RMDir /r "$INSTDIR\tools\PortableApps.comLauncher"
-  RMDir "$INSTDIR\tools"
+  Delete "$INSTDIR\SetupScope.install-owner"
   RMDir "$INSTDIR"
-  Delete "$SMPROGRAMS\${APP}.lnk"
-  Delete "$DESKTOP\${APP}.lnk"
-  DeleteRegKey HKLM "${UNINST_KEY}"
-  DeleteRegKey HKLM "Software\Classes\SystemFileAssociations\.exe\shell\SetupSweepInstall"
-  DeleteRegKey HKLM "Software\Classes\SystemFileAssociations\.msi\shell\SetupSweepInstall"
-  ; Install logs and backups in %LOCALAPPDATA%\SetupScope are kept on uninstall
-  ; and may be needed to undo earlier removals. Expunge-era data is left untouched.
+  Delete "$SMPROGRAMS\SetupScope\SetupScope.lnk"
+  Delete "$SMPROGRAMS\SetupScope\Uninstall SetupScope.lnk"
+  RMDir "$SMPROGRAMS\SetupScope"
+  Delete "$DESKTOP\SetupScope.lnk"
+  DeleteRegKey HKCU "${KEY}"
+  ; Deliberately retain %LOCALAPPDATA%\SetupScope and all unknown files.
+  Goto uninstall_done
+  uninstall_failed:
+    SetErrorLevel 1
+    Abort "Some application files could not be removed. Close programs using this folder and retry. User data was preserved."
+  uninstall_done:
 SectionEnd

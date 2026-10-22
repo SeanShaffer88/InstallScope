@@ -1,14 +1,14 @@
 //! Settings page.
 
 use super::a11y;
-use super::app::{App, Confirm, Tab};
+use super::app::{App, Confirm};
 use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
 use setupscope_core::i18n::{self, t, tf};
 use setupscope_core::noise::{self, Learned};
-use setupscope_core::settings::{FileRoot, Settings};
+use setupscope_core::settings::{FileRoot, ScanProfile, Settings};
 
 /// Keyboard shortcuts shown in Settings (keys, description).
 const SHORTCUTS: &[(&str, &str)] = &[
@@ -27,8 +27,8 @@ const SHORTCUTS: &[(&str, &str)] = &[
     ),
     ("Delete", "Uninstall the selected program"),
     ("Esc", "Close a dialog or window, or leave a text box"),
-    ("Ctrl+1 … Ctrl+9", "Go to a page"),
-    ("Ctrl+Tab / Ctrl+Shift+Tab", "Next / previous page"),
+    ("Ctrl+1 … Ctrl+9", "Open or focus a tool window from the dashboard"),
+    ("Ctrl+Tab / Ctrl+Shift+Tab", "Open the next / previous tool"),
     ("Ctrl+F", "Search"),
     ("Ctrl+K", "Ask SetupScope (plain-language search)"),
     ("F5", "Refresh"),
@@ -62,6 +62,7 @@ pub struct SettingsState {
     pub shell_registered: Option<(bool, bool)>,
     /// Name typed for "Save as profile".
     pub profile_name: String,
+    deleted_profile: Option<ScanProfile>,
 }
 
 impl SettingsState {
@@ -231,7 +232,7 @@ impl App {
         a11y::explain(builtin.header_response, &t("Show the built-in list of temporary files, logs and caches SetupScope ignores on its own. The list is part of SetupScope and cannot be edited here."));
         ui.add_space(6.0);
         if let Some(job) = &self.settings_ui.learn_job {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 job_progress(ui, &job.progress.phase(), job.progress.count());
                 if a11y::explain(ui.small_button(t("Cancel")), &t("Cancel the background-noise check. No exclusions are added from an unfinished check.")).clicked() {
                     job.progress
@@ -258,7 +259,7 @@ impl App {
                 });
             let mut apply = false;
             let mut discard = false;
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 apply = a11y::explain(theme::primary_button(ui, t("Ignore selected")), &t("Add the ticked paths above to your ignored registry keys and files, so future snapshots leave them out.")).clicked();
                 discard = a11y::explain(ui.button(t("Discard")), &t("Throw these suggestions away without adding any of them to your ignored lists.")).clicked();
             });
@@ -268,7 +269,7 @@ impl App {
                 self.settings_ui.learned = None;
             }
         } else {
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 if a11y::explain(ui.button(format!("🔎 {}", t("Learn background noise"))), &t("Take two snapshots a minute apart and list what Windows changed on its own, so that noise can be ignored in future snapshots.")).clicked() {
                     self.start_learning(ctx);
                 }
@@ -312,8 +313,7 @@ impl App {
             if let Some(name) = chosen {
                 self.settings.use_profile(&name);
                 self.settings_ui.load(&self.settings);
-                self.save_settings();
-                self.set_status(tf("Using profile {name}", &[("name", name)]));
+                if self.save_settings() { self.set_status(tf("Using profile {name}", &[("name", name)])); }
             }
             if manage {
                 ui.add_space(8.0);
@@ -334,13 +334,26 @@ impl App {
                     self.settings_ui.dirty = false;
                     self.settings.save_profile(&name);
                     self.settings_ui.profile_name.clear();
-                    self.save_settings();
-                    self.set_status(tf("Saved profile {name}", &[("name", name)]));
+                    if self.save_settings() { self.set_status(tf("Saved profile {name}", &[("name", name)])); }
                 }
                 let active = self.settings.active_profile.clone();
                 if !active.is_empty() && a11y::explain(ui.button(t("Delete profile")), &t("Delete the profile chosen above. Its saved scope is removed; the scope on screen stays as a custom scope.")).clicked() {
+                    let previous = self.settings.clone();
+                    let deleted = self.settings.profiles.iter().find(|p| p.name.eq_ignore_ascii_case(&active)).cloned();
                     self.settings.delete_profile(&active);
-                    self.save_settings();
+                    if self.save_settings() { self.settings_ui.deleted_profile = deleted; }
+                    else { self.settings = previous; }
+                }
+                if let Some(deleted) = self.settings_ui.deleted_profile.clone() {
+                    let conflict = self.settings.profiles.iter().any(|p| p.name.eq_ignore_ascii_case(&deleted.name));
+                    if a11y::explain(ui.add_enabled(!conflict, egui::Button::new(format!("Undo Profile Deletion: {}", deleted.name))),
+                        "Restore the last deleted scope in this application session. Existing profiles with the same name are never replaced. This does not change the current capture scope.").clicked() {
+                        let previous = self.settings.clone();
+                        self.settings.profiles.push(deleted);
+                        if self.save_settings() { self.settings_ui.deleted_profile = None; }
+                        else { self.settings = previous; }
+                    }
+                    if conflict { small_muted(ui, "Undo is blocked because a profile with that name already exists; it will not be overwritten."); }
                 }
             }
         });
@@ -362,7 +375,7 @@ impl App {
                 theme::card(ui, |ui| {
                     ui.label(RichText::new(t("General")).heading());
                     ui.add_space(4.0);
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         let lang_label = ui.label(t("Language"));
                         let current = self
                             .languages
@@ -381,7 +394,7 @@ impl App {
                             i18n::set_language(&self.settings.language);
                         }
                     });
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         let size_label = ui.label(t("Interface size"));
                         let r = ui.add(egui::Slider::new(&mut self.settings.zoom, 0.75..=2.0).step_by(0.05));
                         let r = a11y::explain(r.labelled_by(size_label.id), &t("How large text and controls are. Raise it if the interface is hard to read; it applies straight away."));
@@ -392,24 +405,6 @@ impl App {
                     });
                     small_muted(ui, t("Translations live in the lang folder; you can add or improve languages without rebuilding."));
                     ui.add_space(8.0);
-                    let was_advanced = self.settings.advanced_mode;
-                    ui.horizontal(|ui| {
-                        ui.label(t("Interface mode"));
-                        changed |= a11y::explain(
-                            ui.radio_value(&mut self.settings.advanced_mode, false, t("Simple")),
-                            &t("Plain language, fewer technical details. Recommended if you're not sure."),
-                        )
-                        .changed();
-                        changed |= a11y::explain(
-                            ui.radio_value(&mut self.settings.advanced_mode, true, t("Advanced")),
-                            &t("All details: registry keys, services, scheduled tasks and the Installer Lab for developers."),
-                        )
-                        .changed();
-                    });
-                    if was_advanced != self.settings.advanced_mode {
-                        // System components appear or disappear with the mode.
-                        self.programs.needs_refresh = true;
-                    }
                     if a11y::explain(ui.checkbox(&mut self.settings.high_contrast, t("High contrast (brighter text, stronger outlines)")), &t("A brighter colour scheme with stronger outlines, for anyone who finds the standard colours hard to read.")).changed() {
                         changed = true;
                         super::theme::apply(ctx, self.settings.high_contrast);
@@ -418,8 +413,9 @@ impl App {
                 ui.add_space(10.0);
                 theme::card(ui, |ui| {
                     ui.label(RichText::new(t("Keyboard")).heading());
-                    small_muted(ui, t("Everything in SetupScope can be used without a mouse. Screen readers such as Narrator and NVDA read every control."));
+                    small_muted(ui, t("Use Tab to move between controls and Enter or Space to activate them."));
                     ui.add_space(4.0);
+                    let shortcuts = egui::CollapsingHeader::new(t("All Keyboard Shortcuts")).id_salt("settings_shortcuts").show(ui, |ui| {
                     egui::Grid::new("keys").num_columns(2).spacing([18.0, 4.0]).show(ui, |ui| {
                         for (keys, what) in SHORTCUTS {
                             ui.label(RichText::new(*keys).monospace().color(theme::ACCENT_TEXT));
@@ -427,13 +423,15 @@ impl App {
                             ui.end_row();
                         }
                     });
+                    });
+                    a11y::explain(shortcuts.header_response, "Expand the complete keyboard reference. Tab and Enter/Space work throughout the tools.");
                 });
                 ui.add_space(10.0);
                 theme::card(ui, |ui| {
                     ui.label(RichText::new(t("Safety")).heading());
                     ui.add_space(4.0);
                     changed |= a11y::explain(ui.checkbox(&mut self.settings.create_restore_point, t("Create a System Restore point before uninstalling")), &t("SetupScope asks Windows for a restore point before each uninstall, so system changes can be rolled back if an uninstall goes wrong. A restore point does not bring back deleted files.")).changed();
-                    if self.settings.advanced_mode {
+                    {
                         changed |= a11y::explain(
                             ui.checkbox(
                                 &mut self.settings.backup_before_removal,
@@ -445,8 +443,8 @@ impl App {
                         if !self.settings.backup_before_removal {
                             theme::warning_banner(ui, t("Backups are off. SetupScope cannot restore files or registry changes made by removal and cleanup workflows."));
                         }
-                        changed |= a11y::explain(ui.checkbox(&mut self.settings.confirm_actions, t("Ask before deleting things")), &t("Ask for confirmation before SetupScope deletes anything. Restoring to a restore point, deleting a backup and deep cleaning always ask even with this off, because they can't be undone.")).changed();
-                        small_muted(ui, t("When off, SetupScope deletes without asking first. Restoring your PC to a restore point, deleting a backup and deep cleaning always ask, because they can't be undone."));
+                        changed |= a11y::explain(ui.checkbox(&mut self.settings.confirm_actions, t("Ask before deleting things")), &t("Ask for confirmation before SetupScope deletes anything. Deleting a backup, extension moves and privacy/debloat changes always ask even with this off.")).changed();
+                        small_muted(ui, t("When off, SetupScope deletes without asking first. Deleting a backup, extension moves and privacy/debloat changes always ask."));
                         changed |= a11y::explain(
                             ui.checkbox(&mut self.settings.use_recycle_bin, t("Also send removed files to the Recycle Bin")),
                             &t("Removed files are also kept in the Recycle Bin, using extra disk space. This is separate from SetupScope's own backups."),
@@ -467,11 +465,9 @@ impl App {
                             &t("When a monitored program is uninstalled, also remove files it created after the installation was recorded, in the places it was seen using. Without this, only what the recording captured is removed."),
                         )
                         .changed();
-                    } else {
-                        small_muted(ui, t("Simple mode always backs up before removing and asks before deleting. Options that could harm Windows or slow your PC are only in Advanced mode."));
                     }
                 });
-                if self.settings.advanced_mode {
+                {
                     ui.add_space(10.0);
                     theme::card(ui, |ui| {
                         ui.label(RichText::new(t("Installer Decrapifier")).heading());
@@ -507,7 +503,7 @@ impl App {
                     ui.label(RichText::new(t("Program list")).heading());
                     ui.add_space(4.0);
                     let mut refresh = false;
-                    if self.settings.advanced_mode {
+                    {
                         refresh |= a11y::explain(ui.checkbox(&mut self.settings.show_system_components, t("Show system components and updates")), &t("Also list Windows' own components and updates on the Programs page. They are part of Windows; most people never need to see them.")).changed();
                     }
                     refresh |= a11y::explain(ui.checkbox(&mut self.settings.show_store_apps, t("Load Microsoft Store apps at startup")), &t("Load apps from the Microsoft Store into the program list when SetupScope starts. Turning it off starts SetupScope a little faster but hides those apps.")).changed();
@@ -516,7 +512,7 @@ impl App {
                         self.programs.needs_refresh = true;
                     }
                 });
-                if self.settings.advanced_mode {
+                {
                     ui.add_space(10.0);
                     theme::card(ui, |ui| {
                         ui.label(RichText::new(t("Background monitoring")).heading());
@@ -542,46 +538,6 @@ impl App {
                             }
                         }
                         small_muted(ui, t("Starts with Windows at low priority, keeps a snapshot, and saves an install log (tagged \"auto\") whenever a new program appears. Taking snapshots uses some disk and memory after sign-in. Needs Administrator rights to turn on or off."));
-                    });
-                }
-                if self.settings.advanced_mode {
-                    ui.add_space(10.0);
-                    theme::card(ui, |ui| {
-                        ui.label(RichText::new(t("Autostart Gatekeeper")).heading());
-                        ui.add_space(4.0);
-                        changed |= a11y::explain(
-                            ui.checkbox(
-                                &mut self.settings.gatekeeper_enabled,
-                                t("Watch for new autostart entries and keep them for review"),
-                            ),
-                            &t("Compares the programs that start with Windows with a saved baseline whenever a scan runs, and queues anything new for you to keep or remove. It never blocks an installer and never removes an entry without your decision."),
-                        )
-                        .changed();
-                        small_muted(ui, t("Opt-in and off by default. Nothing runs in the background: a scan happens when you click Scan now on the Autostart Gatekeeper page, or run \"setupscope gatekeeper scan\". Run and RunOnce entries and Startup-folder shortcuts are covered; services and scheduled tasks stay on the Startup page."));
-                        let mut after_install = self.settings.gatekeeper_scan_after_install;
-                        let scan_explanation = t("Seed a baseline before a monitored installation, then queue new or changed Run and Startup-folder entries after you save its install log. This only scans; you still decide whether to keep or remove each entry.");
-                        let scan_response = ui.add_enabled(
-                            self.settings.gatekeeper_enabled,
-                            egui::Checkbox::new(
-                                &mut after_install,
-                                t("Scan after monitored installs"),
-                            ),
-                        );
-                        let scan_changed = a11y::explain(scan_response, &scan_explanation).changed();
-                        if scan_changed {
-                            self.settings.gatekeeper_scan_after_install = after_install;
-                        }
-                        changed |= scan_changed;
-                        small_muted(ui, t("Runs only for installations recorded from this app’s Monitor page. It scans before and after the install, and never blocks the installer or changes startup entries."));
-                        if a11y::explain(
-                            ui.button(format!("→ {}", t("Open the review queue"))),
-                            &t("Go to the Autostart Gatekeeper page, where every new startup entry waits until you keep or remove it."),
-                        )
-                        .clicked()
-                        {
-                            self.tab = Tab::Gatekeeper;
-                            self.on_tab_opened(ctx, Tab::Gatekeeper);
-                        }
                     });
                 }
                 if changed {
@@ -623,14 +579,7 @@ impl App {
                     );
                 });
                 ui.add_space(10.0);
-                if !self.settings.advanced_mode {
-                    theme::card(ui, |ui| {
-                        small_muted(ui, t("Switch to Advanced mode to change what snapshots capture."));
-                        if a11y::explain(ui.button(t("Reset everything to defaults")), &t("Put every setting back to its default, except the language. SetupScope asks first; install logs and backups are not touched.")).clicked() {
-                            self.ask("Reset settings?", t("All settings except the language go back to their defaults."), "Reset", Confirm::ResetSettings);
-                        }
-                    });
-                } else {
+                {
                 theme::card(ui, |ui| {
                     ui.label(RichText::new(t("Monitoring scope")).heading());
                     small_muted(ui, t("What snapshots capture. One entry per line; %VARIABLES% and * wildcards work."));
@@ -647,7 +596,7 @@ impl App {
                     list_editor(ui, "Ignored registry keys", "Background noise Windows changes on its own.", &mut st.reg_excl, &mut dirty);
                     list_editor(ui, "Ignored files and folders", "", &mut st.file_excl, &mut dirty);
                     st.dirty = dirty;
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         if a11y::explain(ui.add_enabled(self.settings_ui.dirty, egui::Button::new(t("Save scope"))), &t("Save the lists above — what snapshots capture and what they ignore. The button is unavailable until you change something.")).clicked() {
                             self.settings_ui.apply(&mut self.settings);
                             self.settings_ui.dirty = false;
@@ -656,11 +605,11 @@ impl App {
                             if !active.is_empty() {
                                 self.settings.save_profile(&active);
                             }
-                            self.save_settings();
-                            self.set_status(t("Settings saved."));
+                            self.settings_ui.dirty = !self.save_settings();
+                            if !self.settings_ui.dirty { self.set_status(t("Settings saved.")); }
                         }
                         if a11y::explain(ui.button(t("Reset everything to defaults")), &t("Put every setting back to its default, except the language. SetupScope asks first; install logs and backups are not touched.")).clicked() {
-                            self.ask("Reset settings?", t("All settings except the language go back to their defaults."), "Reset", Confirm::ResetSettings);
+                            self.ask("Reset settings?", t("All settings except the language go back to their defaults. The previous settings file is preserved in the data folder before replacement."), "Reset", Confirm::ResetSettings);
                         }
                     });
                 });
@@ -669,7 +618,7 @@ impl App {
                 theme::card(ui, |ui| {
                     ui.label(RichText::new(t("Data")).heading());
                     ui.add_space(4.0);
-                    ui.horizontal(|ui| {
+                    ui.horizontal_wrapped(|ui| {
                         ui.label(t("Data folder"));
                         ui.add(egui::Label::new(RichText::new(self.store.root.to_string_lossy()).monospace()).truncate());
                         if a11y::explain(ui.small_button(t("Open")), &t("Open the data folder in Explorer. Install logs, backups and settings are stored there.")).clicked() {

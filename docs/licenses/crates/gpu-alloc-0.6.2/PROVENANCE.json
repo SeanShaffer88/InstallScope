@@ -1,0 +1,11 @@
+{
+  "package": "gpu-alloc",
+  "version": "0.6.2",
+  "source_commit": "61020bdcb4eb04fca6bbf748aeb9570e859236e0",
+  "sources": [
+    {
+      "file": "workspace-COPYING",
+      "url": "https://raw.githubusercontent.com/zakarumych/gpu-alloc/61020bdcb4eb04fca6bbf748aeb9570e859236e0/COPYING"
+    }
+  ]
+}

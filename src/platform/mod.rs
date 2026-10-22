@@ -103,6 +103,12 @@ pub trait Registry: Send + Sync {
             }
             match self.read_key(&path) {
                 Some(k) => {
+                    let bytes = k.values.values().fold(k.path.len() as u64 + 16,
+                        |total, v| total.saturating_add(v.name.len() as u64).saturating_add(v.data.len() as u64).saturating_add(20));
+                    if !progress.reserve_capture_bytes(bytes) { return; }
+                    if progress.bounded_capture() {
+                        for _ in &k.values { progress.tick(); if progress.cancelled() { return; } }
+                    }
                     snap.insert_key(k);
                     progress.tick();
                 }

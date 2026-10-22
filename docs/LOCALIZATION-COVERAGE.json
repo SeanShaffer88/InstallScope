@@ -1,0 +1,90 @@
+{
+  "scope": "Owned text in the compiled desktop interface, including tooltips, safety guidance and formatted UI statuses. Original diagnostic evidence, captured logs, vendor output, command identifiers/arguments, paths, errors from dependencies/OS, JSON schemas and CLI help retain their original form.",
+  "owned_ui_keys": 658,
+  "translatable_keys": 600,
+  "technical_invariants": 58,
+  "limits": "Coverage and placeholder integrity do not certify translation semantics, native-speaker review or rendered layout. Equal-source entries require human review.",
+  "languages": {
+    "de": {
+      "covered_ui_keys": 658,
+      "missing_keys": [],
+      "placeholder_errors": [],
+      "changed_technical_invariants": [],
+      "equal_source_review": [
+        "Host {p0} / App {p1}",
+        "System",
+        "Toolchain / PATH"
+      ]
+    },
+    "es": {
+      "covered_ui_keys": 658,
+      "missing_keys": [],
+      "placeholder_errors": [],
+      "changed_technical_invariants": [],
+      "equal_source_review": []
+    },
+    "fr": {
+      "covered_ui_keys": 658,
+      "missing_keys": [],
+      "placeholder_errors": [],
+      "changed_technical_invariants": [],
+      "equal_source_review": [
+        "Architecture"
+      ]
+    },
+    "it": {
+      "covered_ui_keys": 658,
+      "missing_keys": [],
+      "placeholder_errors": [],
+      "changed_technical_invariants": [],
+      "equal_source_review": [
+        "Host {p0} / App {p1}",
+        "Toolchain / PATH"
+      ]
+    },
+    "ja": {
+      "covered_ui_keys": 658,
+      "missing_keys": [],
+      "placeholder_errors": [],
+      "changed_technical_invariants": [],
+      "equal_source_review": []
+    },
+    "ko": {
+      "covered_ui_keys": 658,
+      "missing_keys": [],
+      "placeholder_errors": [],
+      "changed_technical_invariants": [],
+      "equal_source_review": []
+    },
+    "pl": {
+      "covered_ui_keys": 658,
+      "missing_keys": [],
+      "placeholder_errors": [],
+      "changed_technical_invariants": [],
+      "equal_source_review": [
+        "System"
+      ]
+    },
+    "pt-BR": {
+      "covered_ui_keys": 658,
+      "missing_keys": [],
+      "placeholder_errors": [],
+      "changed_technical_invariants": [],
+      "equal_source_review": []
+    },
+    "ru": {
+      "covered_ui_keys": 658,
+      "missing_keys": [],
+      "placeholder_errors": [],
+      "changed_technical_invariants": [],
+      "equal_source_review": []
+    },
+    "zh-CN": {
+      "covered_ui_keys": 658,
+      "missing_keys": [],
+      "placeholder_errors": [],
+      "changed_technical_invariants": [],
+      "equal_source_review": []
+    }
+  }
+}

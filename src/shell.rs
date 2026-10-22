@@ -15,7 +15,7 @@ use anyhow::Result;
 /// Command-line switch that starts monitoring the given installer.
 pub const MONITOR_ARG: &str = "--monitor-install";
 
-const VERB: &str = "SetupSweepInstall";
+const VERB: &str = "SetupScopeInstall";
 const EXTENSIONS: [&str; 2] = [".exe", ".msi"];
 
 fn verb_key(root: &str, ext: &str) -> String {
@@ -91,7 +91,7 @@ mod tests {
         assert!(is_registered(&reg, false));
         assert!(!is_registered(&reg, true));
         let cmd = reg
-            .read_key("HKCU\\Software\\Classes\\SystemFileAssociations\\.msi\\shell\\SetupSweepInstall\\command")
+            .read_key("HKCU\\Software\\Classes\\SystemFileAssociations\\.msi\\shell\\SetupScopeInstall\\command")
             .unwrap()
             .get_string("")
             .unwrap();

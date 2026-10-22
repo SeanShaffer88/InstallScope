@@ -7,7 +7,7 @@ fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
-    let version = env!("CARGO_PKG_VERSION");
+    let version = format!("{}.0", env!("CARGO_PKG_VERSION"));
     let mut res = winresource::WindowsResource::new();
     res.set_icon("assets/setupscope.ico")
         .set_manifest_file("assets/setupscope.manifest")
@@ -23,8 +23,8 @@ fn main() {
         )
         .set("OriginalFilename", "SetupScope.exe")
         .set("InternalName", "SetupScope")
-        .set("ProductVersion", version)
-        .set("FileVersion", version);
+        .set("ProductVersion", &version)
+        .set("FileVersion", &version);
     if let Err(e) = res.compile() {
         panic!("failed to embed Windows resources: {e}");
     }

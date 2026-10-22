@@ -1,0 +1,37 @@
+SetupScope 1.0.0.0 local release package — 2026-10-22
+
+Scope: five compact Windows developer tools with integrated dependencies,
+diagnostic export and recovery. Ship target: Windows 11 x64.
+
+485 core tests passed (six ignored: five subprocess fixtures invoked by runner
+tests and one existing explicit ignore); 43 GUI-entry tests, 3 console-entry tests and 3 CLI integration tests passed.
+Clippy and optimized build passed with warnings.
+All six catalog hashes match official metadata. Real x64 .NET SDK and CMake
+passed download, integrity/publisher verification, offline export/import and
+review preparation. Live UI verification passed; no vendor installer launched.
+
+Saved settings and recovery data preserved. No public release or system
+installation was performed. Package is unsigned. Packaged console checks
+and artifact hashes are recorded alongside the package; the current release-binary GUI pass and refreshed screenshots are recorded in
+RELEASE-VALIDATION.md.
+Clean VM, actual screen-reader coverage, broad OS/DPI and vendor installation
+remain environment-limited checks; see RELEASE-VALIDATION.md.
+
+2026-10-22 expansion: native MSVC/Windows SDK/CMake/Ninja component and
+vendor-layout review; bounded CMake/Visual Studio/.NET desktop declarations;
+explicit reviewed build/test runner with capped logs and Job Object lifetime.
+Real isolated offline Rust build + one project test passed through the runner.
+Cancellation, timeout, output floods and child cleanup passed. Vendor layouts
+are separate from pinned bundles; their creation/install was not executed.
+Shared resource catalog origin/main checked at 765177c. No new remote changes.
+
+Latest local expansion: six board cards in three columns/two rows; far-right
+Workflow Board buttons; a dedicated console executable with retained developer
+commands and reviewed install/execution/environment apply/undo. All ten catalogs
+cover 600 owned UI strings and 58 technical invariants each, including safety
+instructions and tooltips. Original evidence/vendor reviews/CLI retain their
+wording. Exact placeholders/invariants and expanded compact layouts pass.
+Live checks cover all five tools, saved-log triage, redacted preview, review
+preparation/discard, multi-window navigation and app/tool singleton behavior.
+German/Chinese/Japanese boards and CJK settings are captured. Independent
+native-speaker review remains a limit. See CLI.md and LOCALIZATION.md.

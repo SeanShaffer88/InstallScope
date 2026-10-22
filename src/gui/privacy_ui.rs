@@ -12,6 +12,7 @@ impl App {
         egui::CentralPanel::default()
             .frame(theme::content_frame())
             .show(ctx, |ui| {
+              egui::ScrollArea::vertical().id_salt("privacy_controls").show(ui, |ui| {
                 super::a11y::focus_hint(ui, theme::MUTED);
                 theme::card(ui, |ui| {
                     ui.label(RichText::new(t("Reviewed Windows privacy controls")).strong());
@@ -152,6 +153,7 @@ impl App {
                         );
                     }
                 }
+              });
             });
     }
 

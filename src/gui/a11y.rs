@@ -116,6 +116,8 @@ struct FocusExplanation {
 /// also be visible page text or a confirmation — never let this helper
 /// be the only carrier.
 pub fn explain(resp: Response, text: &str) -> Response {
+    let translated=setupscope_core::i18n::t(text);
+    let text=translated.as_str();
     if text.is_empty() {
         return resp;
     }

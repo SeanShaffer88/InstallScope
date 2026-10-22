@@ -50,21 +50,10 @@ fn classify(cmd: &str, args: &[String]) -> CmdClass {
         "logs" | "programs" | "verify" | "orphans" | "check-clean" | "backups" => ReadOnly,
         // Writes snapshots, logs, packages, settings or bookkeeping.
         "snapshot" | "diff" | "monitor" | "tag" | "merge" | "export" | "repackage"
-        | "silent-package" | "learn-noise" | "add-program" | "history" | "slowdown" | "watch"
-        | "pa-capture" | "portable-build" | "schedule-clean" => Mutating,
+        | "silent-package" | "learn-noise" | "add-program" | "history" | "watch" | "pa-capture"
+        | "portable-build" => Mutating,
         "revert" | "uninstall" => {
             if has(args, "--dry-run") {
-                ReadOnly
-            } else {
-                Destructive
-            }
-        }
-        "clean" => {
-            if has(args, "--scheduled") {
-                // The Task Scheduler entry point: the schedule the user
-                // set is the standing instruction, so it never prompts.
-                Mutating
-            } else if has(args, "--list") || has(args, "--dry-run") {
                 ReadOnly
             } else {
                 Destructive
@@ -98,21 +87,6 @@ fn classify(cmd: &str, args: &[String]) -> CmdClass {
                 Mutating
             }
         }
-        "restore-point" | "restore-points" => match sub {
-            "delete" | "rollback" => Destructive,
-            "create" => Mutating,
-            _ => ReadOnly,
-        },
-        "startup" => match sub {
-            // Backed up, and the inverse subcommand undoes it.
-            "enable" | "disable" => Mutating,
-            _ => ReadOnly,
-        },
-        "gatekeeper" => match sub {
-            "remove" => Destructive,
-            "scan" | "allow" | "enable" | "disable" => Mutating,
-            _ => ReadOnly,
-        },
         _ => Mutating,
     }
 }
@@ -245,11 +219,6 @@ fn pick_program<'a>(
                 .join(", ")
         ),
     }
-}
-
-/// Where scheduled cleaning records what it freed.
-fn st_log_path() -> anyhow::Result<PathBuf> {
-    Ok(store()?.root.join("cleaning.log"))
 }
 
 fn has(args: &[String], flag: &str) -> bool {
@@ -550,7 +519,22 @@ pub fn run(args: Vec<String>) -> i32 {
     }
 }
 
+fn retired_command(cmd: &str) -> bool {
+    matches!(
+        cmd,
+        "clean"
+            | "schedule-clean"
+            | "startup"
+            | "gatekeeper"
+            | "slowdown"
+            | "restore-point"
+            | "restore-points"
+    )
+}
+
 fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
+    let requested = args.first().map(String::as_str).unwrap_or("--help");
+    anyhow::ensure!(!retired_command(requested), "This general PC-maintenance command was removed from the developer toolkit. Reviewed program leftovers, install monitoring and backup recovery remain available. Existing scheduled tasks and saved data were not deleted.");
     // Per-command help comes before everything else: it must not warn,
     // prompt or touch the system, and it exits 0.
     if let Some(help) = requested_help(&args) {
@@ -770,7 +754,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 "export" => {
                     let out = args.get(2).ok_or_else(|| {
                         anyhow::anyhow!(
-                            "usage: setupscope transfer export <out.setupsweep> <program>..."
+                            "usage: setupscope transfer export <out.setupscope> <program>..."
                         )
                     })?;
                     let wanted: Vec<String> = args
@@ -1018,364 +1002,6 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 println!("Restart Windows to finish removing everything.");
             }
             return Ok(if failures > 0 { 2 } else { 0 });
-        }
-        "clean" => {
-            let cats = setupscope_core::cleaner::categories();
-            if has(&args, "--list") {
-                for c in &cats {
-                    let r = setupscope_core::cleaner::scan(c);
-                    println!(
-                        "{:<20} {:>10}  {}{}",
-                        c.id,
-                        human_size(r.bytes),
-                        if c.default_on && !setupscope_core::cleaner::is_advanced(c.id) {
-                            "default"
-                        } else {
-                            ""
-                        },
-                        if c.needs_admin {
-                            " (administrator)"
-                        } else {
-                            ""
-                        }
-                    );
-                }
-                return Ok(0);
-            }
-            let wanted: Vec<String> = match arg_value(&args, "--categories") {
-                Some(v) => v
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect(),
-                None => cats
-                    .iter()
-                    .filter(|c| c.default_on && !setupscope_core::cleaner::is_advanced(c.id))
-                    .map(|c| c.id.to_string())
-                    .collect(),
-            };
-            let elevated = platform::is_elevated();
-            // The Cleaner page's protected list applies here too, so a
-            // protected path survives manual and scheduled cleans alike.
-            let protect = load_settings(&store()?).cleaner_protect;
-            if !has(&args, "--dry-run") && !has(&args, "--scheduled") {
-                let what = format!(
-                    "This permanently deletes junk files in these categories: {}. \
-                     Cleaned files are not backed up and SetupScope cannot \
-                     restore them. Paths on the Cleaner page's Protected list \
-                     are kept.",
-                    wanted.join(", ")
-                );
-                if !confirm_destructive(&args, &what) {
-                    return Ok(1);
-                }
-            }
-            let mut total = 0u64;
-            for id in &wanted {
-                let Some(c) = cats.iter().find(|c| c.id == id) else {
-                    eprintln!("unknown category: {id} (see `setupscope clean --list`)");
-                    continue;
-                };
-                if c.needs_admin && !elevated {
-                    eprintln!("{id}: skipped (needs administrator rights)");
-                    continue;
-                }
-                let scan = setupscope_core::cleaner::scan_detailed(c, &protect);
-                let kept = scan.kept_totals();
-                if kept.files > 0 && !has(&args, "--scheduled") {
-                    println!(
-                        "{:<20} {:>10}  {} protected file(s) kept",
-                        id,
-                        human_size(kept.bytes),
-                        kept.files
-                    );
-                }
-                let r = if has(&args, "--dry-run") {
-                    scan.totals
-                } else {
-                    setupscope_core::cleaner::clean_files(c, &scan.files)
-                };
-                total += r.bytes;
-                if !has(&args, "--scheduled") {
-                    println!("{:<20} {:>10}  {} files", id, human_size(r.bytes), r.files);
-                }
-            }
-            if has(&args, "--scheduled") {
-                // Leave a trace for the user in the data folder.
-                let line = format!(
-                    "{}  cleaned {}\n",
-                    setupscope_core::util::now_string(),
-                    human_size(total)
-                );
-                let path = st_log_path()?;
-                let mut old = std::fs::read_to_string(&path).unwrap_or_default();
-                old.push_str(&line);
-                let keep: Vec<&str> = old.lines().rev().take(100).collect();
-                let text: String = keep.into_iter().rev().map(|l| format!("{l}\n")).collect();
-                let _ = std::fs::write(&path, text);
-            } else {
-                println!("Total: {}", human_size(total));
-            }
-        }
-        "schedule-clean" => {
-            let what = args.get(1).map(|s| s.as_str()).unwrap_or("");
-            if what == "off" {
-                setupscope_core::schedule::remove()?;
-                println!("Automatic cleaning turned off.");
-                return Ok(0);
-            }
-            let freq = match what {
-                "daily" => setupscope_core::schedule::Frequency::Daily,
-                "weekly" => setupscope_core::schedule::Frequency::Weekly,
-                "monthly" => setupscope_core::schedule::Frequency::Monthly,
-                _ => anyhow::bail!(
-                    "usage: setupscope schedule-clean daily|weekly|monthly|off [--categories a,b]"
-                ),
-            };
-            let cats: Vec<String> = match arg_value(&args, "--categories") {
-                Some(v) => v
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect(),
-                None => setupscope_core::cleaner::categories()
-                    .iter()
-                    .filter(|c| c.default_on && !setupscope_core::cleaner::is_advanced(c.id))
-                    .map(|c| c.id.to_string())
-                    .collect(),
-            };
-            let refs: Vec<&str> = cats.iter().map(|s| s.as_str()).collect();
-            setupscope_core::schedule::set(&refs, freq, platform::is_elevated())?;
-            println!("Junk will be cleaned {} ({}).", what, cats.join(", "));
-        }
-        "startup" => {
-            let entries = setupscope_core::startup::list_startup(reg.as_ref());
-            match args.get(1).map(|s| s.as_str()) {
-                Some(op @ ("enable" | "disable")) => {
-                    let name = args
-                        .get(2)
-                        .ok_or_else(|| anyhow::anyhow!("name the startup program"))?;
-                    let e = entries
-                        .iter()
-                        .find(|e| e.name.eq_ignore_ascii_case(name))
-                        .ok_or_else(|| anyhow::anyhow!("no startup program called {name}"))?;
-                    if op == "disable" && setupscope_core::startup::is_essential(e) {
-                        anyhow::bail!("{} is needed by Windows, security software or hardware and can't be disabled", e.name);
-                    }
-                    let st = store()?;
-                    let mut w = BackupWriter::new(
-                        &st.backups_dir(),
-                        &format!("Startup: {} {}", op, e.name),
-                    )?;
-                    setupscope_core::startup::set_enabled(
-                        reg.as_ref(),
-                        e,
-                        op == "enable",
-                        Some(&mut w),
-                    )?;
-                    w.finish()?;
-                    println!("{} {}d.", e.name, op);
-                }
-                _ => {
-                    if has(&args, "--json") {
-                        let items: Vec<_> = entries
-                            .iter()
-                            .map(|e| setupscope_core::json!({
-                                "name": e.name, "command": e.command, "location": e.location,
-                                "enabled": e.enabled, "all_users": e.all_users, "missing": e.missing,
-                            }))
-                            .collect();
-                        println!(
-                            "{}",
-                            setupscope_core::json::compat::to_string_pretty(&items)?
-                        );
-                    } else {
-                        let boot = setupscope_core::boot::read();
-                        if let Some(ms) = boot.as_ref().and_then(|b| b.last_boot_ms) {
-                            println!("Last startup took {:.0} s.", ms as f64 / 1000.0);
-                        }
-                        for e in &entries {
-                            let impact = boot
-                                .as_ref()
-                                .and_then(|b| b.impact_of(&e.command))
-                                .map(|i| {
-                                    format!("  [impact: {}, {} ms]", i.level().label(), i.avg_ms)
-                                })
-                                .unwrap_or_default();
-                            println!(
-                                "[{}] {}{}{impact}  {}",
-                                if e.enabled { "on " } else { "off" },
-                                e.name,
-                                if e.missing { " (missing)" } else { "" },
-                                e.command
-                            );
-                        }
-                    }
-                }
-            }
-        }
-        "gatekeeper" => {
-            // Autostart Gatekeeper: opt-in review queue for new autostart
-            // entries. Nothing here can block an installer or remove an
-            // entry the user has not explicitly decided on.
-            use setupscope_core::gatekeeper::{self as gk, Attribution, ItemState, Queue};
-            let st = store()?;
-            let mut settings = load_settings(&st);
-            let sub = args.get(1).map(|s| s.as_str());
-            match sub {
-                None | Some("show") | Some("--json") => {
-                    let q = Queue::load(&st)?;
-                    if has(&args, "--json") {
-                        println!(
-                            "{}",
-                            setupscope_core::json::compat::to_string_pretty(&q.items)?
-                        );
-                        return Ok(0);
-                    }
-                    println!(
-                        "Autostart Gatekeeper is {}.",
-                        if settings.gatekeeper_enabled {
-                            "on"
-                        } else {
-                            "off"
-                        }
-                    );
-                    if q.items.is_empty() {
-                        println!("The review queue is empty.");
-                    } else {
-                        for i in &q.items {
-                            let verdict = i
-                                .verdict
-                                .map(|v| format!(" — {}", v.label()))
-                                .unwrap_or_default();
-                            println!(
-                                "[{}] {} ({}) — {}{}",
-                                match i.state {
-                                    ItemState::Pending => " ? ",
-                                    ItemState::Allowed => " ok",
-                                    ItemState::Removed => "gone",
-                                },
-                                i.entry.name,
-                                i.entry.command,
-                                i.attribution.label(),
-                                verdict
-                            );
-                            println!(
-                                "      id {} · first seen {} · {}",
-                                i.id,
-                                i.first_seen,
-                                i.state.label()
-                            );
-                            for r in &i.verdict_reasons {
-                                println!("      {r}");
-                            }
-                            if let Attribution::Log { evidence, .. } = &i.attribution {
-                                println!("      evidence: {evidence}");
-                            }
-                            if !i.note.is_empty() {
-                                println!("      note: {}", i.note);
-                            }
-                        }
-                    }
-                    let n = q.pending().len();
-                    if n > 0 {
-                        println!(
-                            "{n} entr{} waiting for your decision: \
-                             `setupscope gatekeeper allow <id>` keeps one, \
-                             `setupscope gatekeeper remove <id>` removes it (backed up first).",
-                            if n == 1 { "y" } else { "ies" }
-                        );
-                    }
-                }
-                Some("scan") => {
-                    if !settings.gatekeeper_enabled {
-                        println!(
-                            "Autostart Gatekeeper is off, so nothing was scanned. \
-                             Turn it on with `setupscope gatekeeper enable` or in Settings."
-                        );
-                        return Ok(0);
-                    }
-                    let mut q = Queue::load(&st)?;
-                    let current: Vec<gk::WatchedEntry> =
-                        setupscope_core::startup::list_startup(reg.as_ref())
-                            .iter()
-                            .map(gk::WatchedEntry::from)
-                            .collect();
-                    let logs = st.list_logs();
-                    let summary = gk::run_scan(&mut q, &current, &logs);
-                    q.save(&st)?;
-                    println!(
-                        "Scan complete: {} new, {} changed, {} waiting for your decision.",
-                        summary.added.len(),
-                        summary.changed.len(),
-                        q.pending().len()
-                    );
-                }
-                Some("allow") => {
-                    let id = args.get(2).ok_or_else(|| {
-                        anyhow::anyhow!("usage: setupscope gatekeeper allow <id>")
-                    })?;
-                    let mut q = Queue::load(&st)?;
-                    let item = q.allow(id)?;
-                    q.save(&st)?;
-                    println!(
-                        "Kept \"{}\": it stays as it is, and future scans will not ask about it again.",
-                        item.entry.name
-                    );
-                }
-                Some("remove") => {
-                    let id = args.get(2).ok_or_else(|| {
-                        anyhow::anyhow!("usage: setupscope gatekeeper remove <id>")
-                    })?;
-                    let mut q = Queue::load(&st)?;
-                    let label = q
-                        .items
-                        .iter()
-                        .find(|i| i.id.as_str() == id.as_str())
-                        .map(|i| i.entry.name.clone())
-                        .unwrap_or_else(|| id.clone());
-                    let what = format!(
-                        "This removes the autostart entry \u{201c}{label}\u{201d}. \
-                         A backup is taken first, so it can be restored with \
-                         `setupscope restore <backup-id>` (the id is printed \
-                         when it finishes)."
-                    );
-                    if !confirm_destructive(&args, &what) {
-                        return Ok(1);
-                    }
-                    let (item, backup_id) =
-                        gk::remove_entry(&mut q, id, reg.as_ref(), &st.backups_dir())?;
-                    q.save(&st)?;
-                    println!(
-                        "Removed \"{}\". Backup: {} (undo with: setupscope restore {})",
-                        item.entry.name, backup_id, backup_id
-                    );
-                }
-                Some("enable") => {
-                    settings.gatekeeper_enabled = true;
-                    st.save_settings(&settings)?;
-                    println!(
-                        "Autostart Gatekeeper is on. New autostart entries will be \
-                         held in the review queue (`setupscope gatekeeper`) instead \
-                         of going unnoticed. Nothing is blocked or removed without \
-                         your decision."
-                    );
-                }
-                Some("disable") => {
-                    settings.gatekeeper_enabled = false;
-                    st.save_settings(&settings)?;
-                    println!(
-                        "Autostart Gatekeeper is off. The queue and baseline were kept; \
-                         turn it back on any time to resume reviewing."
-                    );
-                }
-                Some(other) => {
-                    anyhow::bail!(
-                        "unknown gatekeeper command \"{other}\"; use: \
-                         gatekeeper [show|--json] | scan | allow <id> | remove <id> | enable | disable"
-                    );
-                }
-            }
         }
         "watch" => {
             #[cfg(windows)]
@@ -1628,141 +1254,6 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 }
             }
         }
-        "slowdown" => {
-            use setupscope_core::history::HistoryEventKind as K;
-            use setupscope_core::time::Date;
-            let st = store()?;
-            let h = capture_history(&st, reg.as_ref());
-            let today = Date::today_local();
-            let to = match arg_value(&args, "--to") {
-                Some(s) => Date::parse_ymd(&s)
-                    .ok_or_else(|| anyhow::anyhow!("--to wants a date as YYYY-MM-DD, got {s}"))?,
-                None => today,
-            };
-            let from = match arg_value(&args, "--from") {
-                Some(s) => Date::parse_ymd(&s)
-                    .ok_or_else(|| anyhow::anyhow!("--from wants a date as YYYY-MM-DD, got {s}"))?,
-                None => today.add_days(-90),
-            };
-            if from > to {
-                anyhow::bail!("--from {from} is after --to {to}");
-            }
-            let rep = setupscope_core::history::report(&h, from, to);
-
-            // Measurements, where Windows has them: boot diagnostics for
-            // autostart entries, the usage tracker's startup figures for
-            // programs still installed. Anything unmeasured stays unranked —
-            // it is never reported as zero impact.
-            let boot = setupscope_core::boot::read();
-            let usage = setupscope_core::usage::UsageData::gather(reg.as_ref(), &st.root);
-            let programs_now = programs::list_programs(reg.as_ref(), false);
-            let measured = |e: &setupscope_core::history::HistoryEvent| -> Option<u64> {
-                if let Some(ms) = setupscope_core::history::boot_impact_ms(e, boot.as_ref()) {
-                    return Some(ms);
-                }
-                if e.kind.is_program() {
-                    let p = programs_now.iter().find(|p| {
-                        setupscope_core::model::fold(&p.name)
-                            == setupscope_core::model::fold(&e.subject)
-                    })?;
-                    return usage.for_program(p).startup_ms;
-                }
-                None
-            };
-
-            if has(&args, "--json") {
-                let doc = setupscope_core::json!({
-                    "from": from.to_string(), "to": to.to_string(),
-                    "history_started": rep.history_started,
-                    "total_events": rep.total_events,
-                    "measurements_available": boot.is_some(),
-                    "events": rep.events.iter().map(|e| event_json(e, measured(e))).collect::<Vec<_>>(),
-                });
-                println!("{}", setupscope_core::json::compat::to_string_pretty(&doc)?);
-            } else {
-                println!("Slowdown Detective — changes from {from} to {to}");
-                match &rep.history_started {
-                    Some(d) => println!(
-                        "Recording since {d} · {} events recorded in all.",
-                        rep.total_events
-                    ),
-                    None => println!("Recording has not begun."),
-                }
-                if let Some(ms) = boot.as_ref().and_then(|b| b.last_boot_ms) {
-                    println!(
-                        "Last startup took {:.0} s (Windows boot diagnostics).",
-                        ms as f64 / 1000.0
-                    );
-                }
-                if rep.is_empty() {
-                    if rep.total_events == 0 {
-                        println!(
-                            "\nNot enough history yet: SetupScope has only just begun \
-                             recording, so there is no earlier state to compare against. \
-                             Program, startup, service and scheduled-task changes from now on \
-                             will build the history this report needs."
-                        );
-                    } else {
-                        println!(
-                            "\nNothing changed between {from} and {to}. \
-                             {} events are recorded outside that window; widen it with --from/--to.",
-                            rep.total_events
-                        );
-                    }
-                } else {
-                    let mut ranked: Vec<(&setupscope_core::history::HistoryEvent, u64)> =
-                        Vec::new();
-                    let mut rest: Vec<&setupscope_core::history::HistoryEvent> = Vec::new();
-                    for e in &rep.events {
-                        match measured(e) {
-                            Some(ms) => ranked.push((e, ms)),
-                            None => rest.push(e),
-                        }
-                    }
-                    ranked.sort_by(|a, b| b.1.cmp(&a.1).then(b.0.date.cmp(&a.0.date)));
-                    if !ranked.is_empty() {
-                        println!(
-                            "\nRanked by measured startup impact (averages Windows measured):"
-                        );
-                        for (e, ms) in &ranked {
-                            println!("  [{:>6} ms] {}", ms, event_line(e));
-                        }
-                    } else if boot.is_none() {
-                        println!(
-                            "\nStartup-impact measurements are unavailable (Windows boot \
-                             diagnostics need administrator rights), so changes are ranked \
-                             by recency and count instead."
-                        );
-                    }
-                    if !rest.is_empty() {
-                        if !ranked.is_empty() {
-                            println!(
-                                "\nEverything else — no impact measurement exists for these, newest first:"
-                            );
-                        }
-                        for kind in [
-                            K::ProgramInstalled,
-                            K::ProgramUpdated,
-                            K::ProgramRemoved,
-                            K::AutostartAdded,
-                            K::AutostartRemoved,
-                            K::AutostartChanged,
-                        ] {
-                            let mut group: Vec<_> =
-                                rest.iter().filter(|e| e.kind == kind).collect();
-                            if group.is_empty() {
-                                continue;
-                            }
-                            group.reverse(); // newest first within the group
-                            println!("\n{} ({}):", kind.label(), group.len());
-                            for e in group {
-                                println!("  {}", event_line(e));
-                            }
-                        }
-                    }
-                }
-            }
-        }
         "check-clean" => {
             let id = args
                 .get(1)
@@ -1864,67 +1355,6 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 merged.id,
                 merged.name
             );
-        }
-        "restore-point" | "restore-points" => {
-            use setupscope_core::restore;
-            match args.get(1).map(String::as_str).unwrap_or("list") {
-                "list" => {
-                    let p = restore::protection();
-                    println!(
-                        "System Protection: {}",
-                        if p.enabled { "on" } else { "off" }
-                    );
-                    for r in restore::list()? {
-                        println!(
-                            "{:>5}  {}  {:<18}  {}",
-                            r.sequence,
-                            r.created,
-                            r.kind.label(),
-                            r.description
-                        );
-                    }
-                }
-                "create" => {
-                    let d = args
-                        .get(2)
-                        .cloned()
-                        .unwrap_or_else(|| "SetupScope manual restore point".into());
-                    restore::create_restore_point(&d)?;
-                    println!("Created restore point: {d}");
-                }
-                "delete" => {
-                    let n: u32 = args.get(2).and_then(|x| x.parse().ok()).ok_or_else(|| {
-                        anyhow::anyhow!("usage: setupscope restore-point delete <number> [--yes]")
-                    })?;
-                    let what = format!(
-                        "This deletes System Restore point {n} for good; Windows \
-                         can no longer roll back to it."
-                    );
-                    if !confirm_destructive(&args, &what) {
-                        return Ok(1);
-                    }
-                    restore::delete(n)?;
-                    println!("Deleted restore point {n}");
-                }
-                "rollback" => {
-                    let n: u32 = args.get(2).and_then(|x| x.parse().ok()).ok_or_else(|| {
-                        anyhow::anyhow!("usage: setupscope restore-point rollback <number> --yes")
-                    })?;
-                    let what = format!(
-                        "Windows restarts right away and rolls system files and \
-                         settings back to restore point {n}. Programs installed \
-                         after that point may stop working; System Restore does \
-                         not touch your documents."
-                    );
-                    if !confirm_destructive(&args, &what) {
-                        return Ok(1);
-                    }
-                    restore::restore_to(n)?;
-                }
-                other => anyhow::bail!(
-                    "unknown restore-point action {other}: use list, create, delete or rollback"
-                ),
-            }
         }
         "pa-capture" => {
             let job = args

@@ -17,6 +17,7 @@ const EOCD: u32 = 0x0605_4b50;
 const EOCD64: u32 = 0x0606_4b50;
 const EOCD64_LOC: u32 = 0x0706_4b50;
 const ZIP64_EXTRA: u16 = 0x0001;
+const MAX_DIRECTORY: u64 = 64 * 1024 * 1024;
 /// 1980-01-01 00:00 in DOS form; entries carry no meaningful time.
 const DOS_DATE: u16 = (1 << 5) | 1;
 
@@ -83,7 +84,38 @@ impl Entry {
                 Component::Normal(s) => {
                     let s = s.to_string_lossy();
                     // "C:" inside a name would be a drive on Windows.
-                    if s.contains(':') {
+                    let base = s
+                        .split('.')
+                        .next()
+                        .unwrap_or("")
+                        .trim_end_matches(' ')
+                        .to_ascii_uppercase();
+                    let device = matches!(
+                        base.as_str(),
+                        "CON" | "PRN" | "AUX" | "NUL" | "CONIN$" | "CONOUT$"
+                    ) || base
+                        .strip_prefix("COM")
+                        .or_else(|| base.strip_prefix("LPT"))
+                        .is_some_and(|n| {
+                            matches!(
+                                n,
+                                "1" | "2"
+                                    | "3"
+                                    | "4"
+                                    | "5"
+                                    | "6"
+                                    | "7"
+                                    | "8"
+                                    | "9"
+                                    | "¹"
+                                    | "²"
+                                    | "³"
+                            )
+                        });
+                    if s.chars().any(|c| c < ' ' || "<>:\"|?*".contains(c))
+                        || s.ends_with(['.', ' '])
+                        || device
+                    {
                         return None;
                     }
                     out.push(&*s);
@@ -92,7 +124,11 @@ impl Entry {
                 _ => return None,
             }
         }
-        Some(out)
+        if out.as_os_str().is_empty() {
+            None
+        } else {
+            Some(out)
+        }
     }
 }
 
@@ -101,6 +137,7 @@ pub struct ZipArchive<R: Read + Seek> {
     src: R,
     entries: Vec<Entry>,
     index: HashMap<String, usize>,
+    directory_offset: u64,
 }
 
 impl<R: Read + Seek> ZipArchive<R> {
@@ -123,6 +160,13 @@ impl<R: Read + Seek> ZipArchive<R> {
             })
             .ok_or_else(|| bad("not a ZIP file"))?;
         let eocd_pos = len - (tail_len - at) as u64;
+        if u16_at(&tail, at + 4) != 0
+            || u16_at(&tail, at + 6) != 0
+            || u16_at(&tail, at + 8) != u16_at(&tail, at + 10)
+        {
+            return Err(bad("split or multi-disk ZIP archives aren't supported"));
+        }
+        let mut directory_end = eocd_pos;
         let mut count = u16_at(&tail, at + 10) as u64;
         let mut cd_size = u32_at(&tail, at + 12) as u64;
         let mut cd_off = u32_at(&tail, at + 16) as u64;
@@ -133,18 +177,40 @@ impl<R: Read + Seek> ZipArchive<R> {
             src.read_exact(&mut loc)?;
             if u32_at(&loc, 0) == EOCD64_LOC {
                 let rec = u64_at(&loc, 8);
+                if u32_at(&loc, 4) != 0
+                    || u32_at(&loc, 16) != 1
+                    || rec.checked_add(56).is_none_or(|end| end > eocd_pos - 20)
+                {
+                    return Err(bad("unsupported or damaged ZIP64 disk layout"));
+                }
                 let mut e = [0u8; 56];
                 src.seek(SeekFrom::Start(rec))?;
                 src.read_exact(&mut e)?;
-                if u32_at(&e, 0) != EOCD64 {
+                if u32_at(&e, 0) != EOCD64
+                    || u64_at(&e, 4) < 44
+                    || rec
+                        .checked_add(12)
+                        .and_then(|v| v.checked_add(u64_at(&e, 4)))
+                        .is_none_or(|end| end > eocd_pos - 20)
+                    || u32_at(&e, 16) != 0
+                    || u32_at(&e, 20) != 0
+                    || u64_at(&e, 24) != u64_at(&e, 32)
+                {
                     return Err(bad("damaged ZIP64 end record"));
                 }
                 count = u64_at(&e, 32);
                 cd_size = u64_at(&e, 40);
                 cd_off = u64_at(&e, 48);
+                directory_end = rec;
             }
         }
-        if cd_off.checked_add(cd_size).is_none_or(|e| e > len) {
+        if cd_size > MAX_DIRECTORY {
+            return Err(bad("ZIP directory exceeds the 64 MiB inspection limit"));
+        }
+        if cd_off
+            .checked_add(cd_size)
+            .is_none_or(|e| e > directory_end)
+        {
             return Err(bad("the ZIP directory is outside the file"));
         }
         // Each entry takes at least 46 bytes, which caps `count`.
@@ -161,6 +227,9 @@ impl<R: Read + Seek> ZipArchive<R> {
                 return Err(bad("damaged ZIP directory"));
             }
             let flags = u16_at(&cd, p + 8);
+            if u16_at(&cd, p + 34) != 0 {
+                return Err(bad("split ZIP entries aren't supported"));
+            }
             let method = u16_at(&cd, p + 10);
             let crc = u32_at(&cd, p + 16);
             let mut compressed = u32_at(&cd, p + 20) as u64;
@@ -175,6 +244,8 @@ impl<R: Read + Seek> ZipArchive<R> {
             }
             let name = decode_name(&cd[p + 46..p + 46 + nlen], flags & 0x800 != 0);
             // ZIP64 extra: only the fields whose 32-bit value is all ones.
+            let needs_zip64 = [size, compressed, offset].contains(&0xFFFF_FFFF);
+            let mut has_zip64 = false;
             let mut x = p + 46 + nlen;
             let xend = x + xlen;
             while x + 4 <= xend {
@@ -182,18 +253,28 @@ impl<R: Read + Seek> ZipArchive<R> {
                 let n = u16_at(&cd, x + 2) as usize;
                 let body = x + 4;
                 if body + n > xend {
-                    break;
+                    return Err(bad("truncated ZIP extra field"));
                 }
                 if id == ZIP64_EXTRA {
+                    if has_zip64 {
+                        return Err(bad("duplicate ZIP64 extra field"));
+                    }
+                    has_zip64 = true;
                     let mut f = body;
                     for v in [&mut size, &mut compressed, &mut offset] {
-                        if *v == 0xFFFF_FFFF && f + 8 <= body + n {
+                        if *v == 0xFFFF_FFFF {
+                            if f + 8 > body + n {
+                                return Err(bad("missing ZIP64 size or offset"));
+                            }
                             *v = u64_at(&cd, f);
                             f += 8;
                         }
                     }
                 }
                 x = body + n;
+            }
+            if x != xend || (needs_zip64 && !has_zip64) {
+                return Err(bad("incomplete ZIP extra metadata"));
             }
             entries.push(Entry {
                 name,
@@ -202,18 +283,21 @@ impl<R: Read + Seek> ZipArchive<R> {
                 compressed,
                 size,
                 offset,
-                encrypted: flags & 1 != 0,
+                encrypted: flags & (1 | 64 | 8192) != 0,
             });
             p = end;
         }
         let mut index = HashMap::with_capacity(entries.len());
         for (i, e) in entries.iter().enumerate() {
-            index.entry(e.name.clone()).or_insert(i);
+            if index.insert(e.name.clone(), i).is_some() {
+                return Err(bad("duplicate ZIP entry names aren't supported"));
+            }
         }
         Ok(ZipArchive {
             src,
             entries,
             index,
+            directory_offset: cd_off,
         })
     }
 
@@ -245,7 +329,11 @@ impl<R: Read + Seek> ZipArchive<R> {
 
     /// Open entry `i` for reading.
     pub fn by_index(&mut self, i: usize) -> io::Result<ZipFile<'_, R>> {
-        let e = self.entries[i].clone();
+        let e = self
+            .entries
+            .get(i)
+            .ok_or_else(|| bad("ZIP entry index is out of range"))?
+            .clone();
         if e.encrypted {
             return Err(bad("encrypted entries aren't supported"));
         }
@@ -255,8 +343,29 @@ impl<R: Read + Seek> ZipArchive<R> {
         if u32_at(&h, 0) != LOCAL {
             return Err(bad("damaged ZIP entry"));
         }
-        let skip = u16_at(&h, 26) as i64 + u16_at(&h, 28) as i64;
-        self.src.seek(SeekFrom::Current(skip))?;
+        if u16_at(&h, 6) & (1 | 64 | 8192) != 0 || u16_at(&h, 8) != e.method {
+            return Err(bad(
+                "unsupported encryption or mismatched ZIP entry headers",
+            ));
+        }
+        let name_len = u16_at(&h, 26) as usize;
+        let extra_len = u16_at(&h, 28) as u64;
+        let data_start = e
+            .offset
+            .checked_add(30 + name_len as u64 + extra_len)
+            .ok_or_else(|| bad("ZIP entry offset overflow"))?;
+        if data_start
+            .checked_add(e.compressed)
+            .is_none_or(|end| end > self.directory_offset)
+        {
+            return Err(bad("ZIP entry data overlaps or exceeds the directory"));
+        }
+        let mut name = vec![0u8; name_len];
+        self.src.read_exact(&mut name)?;
+        if decode_name(&name, u16_at(&h, 6) & 0x800 != 0) != e.name {
+            return Err(bad("ZIP entry names disagree between headers"));
+        }
+        self.src.seek(SeekFrom::Start(data_start))?;
         let raw = (&mut self.src).take(e.compressed);
         let body = match e.method {
             0 => {
@@ -311,6 +420,9 @@ impl<R: Read> Read for ZipFile<'_, R> {
             return Ok(0);
         }
         // Never more than the declared size (+1 to notice an overrun).
+        if self.read > self.entry.size {
+            return Err(bad("a ZIP entry is larger than it says"));
+        }
         let left = (self.entry.size - self.read).saturating_add(1);
         let cap = buf.len().min(left.min(usize::MAX as u64) as usize);
         let n = match &mut self.body {
@@ -570,7 +682,8 @@ mod tests {
             .is_empty());
         // An end-record signature in the comment must not hide the real record.
         let mut commented = empty;
-        commented[20..22].copy_from_slice(&4u16.to_le_bytes());
+        let end = commented.len();
+        commented[end - 2..end].copy_from_slice(&4u16.to_le_bytes());
         commented.extend_from_slice(&EOCD.to_le_bytes());
         assert!(ZipArchive::new(Cursor::new(commented)).unwrap().is_empty());
     }
@@ -681,8 +794,111 @@ mod tests {
             "a\\..\\..\\x",
             "c:x",
             "a\0b",
+            "NUL.txt",
+            "dir/COM1",
+            "dir/lpt².log",
+            "file.",
+            "file ",
+            "dir/a*b",
+            "dir/control\u{1}name",
+            ".",
+            "",
         ] {
             assert_eq!(e(n).enclosed_name(), None, "{n}");
+        }
+    }
+
+    fn central(raw: &[u8]) -> usize {
+        raw.windows(4)
+            .position(|v| v == CENTRAL.to_le_bytes())
+            .unwrap()
+    }
+
+    #[test]
+    fn rejects_split_archives_and_duplicate_names() {
+        let original = build(&[("f", b"payload")]);
+        for field in [4, 6, 8] {
+            let mut raw = original.clone();
+            let end = raw.len() - 22;
+            raw[end + field..end + field + 2].copy_from_slice(&2u16.to_le_bytes());
+            assert!(ZipArchive::new(Cursor::new(raw)).is_err());
+        }
+        let mut raw = original;
+        let cd = central(&raw);
+        raw[cd + 34..cd + 36].copy_from_slice(&1u16.to_le_bytes());
+        assert!(ZipArchive::new(Cursor::new(raw)).is_err());
+        assert!(ZipArchive::new(Cursor::new(build(&[("same", b"a"), ("same", b"b")]))).is_err());
+    }
+
+    #[test]
+    fn rejects_header_disagreement_encryption_and_unknown_compression() {
+        let original = build(&[("f", b"payload")]);
+        let cd = central(&original);
+        for offset in [6, 8, 30, cd + 8, cd + 10] {
+            let mut raw = original.clone();
+            raw[offset] ^= 1;
+            let mut archive = ZipArchive::new(Cursor::new(raw)).unwrap();
+            assert!(archive.by_index(0).is_err(), "offset {offset}");
+        }
+        let mut raw = original;
+        raw[8..10].copy_from_slice(&12u16.to_le_bytes());
+        raw[cd + 10..cd + 12].copy_from_slice(&12u16.to_le_bytes());
+        assert!(ZipArchive::new(Cursor::new(raw))
+            .unwrap()
+            .by_index(0)
+            .is_err());
+    }
+
+    #[test]
+    fn rejects_directory_overlap_and_limits_before_allocation() {
+        let original = build(&[("f", b"payload")]);
+        let cd = central(&original);
+        let mut raw = original.clone();
+        let compressed = cd + 46 + 1 + 4 + 8;
+        raw[compressed..compressed + 8].copy_from_slice(&u64::MAX.to_le_bytes());
+        assert!(ZipArchive::new(Cursor::new(raw))
+            .unwrap()
+            .by_index(0)
+            .is_err());
+        let mut raw = original.clone();
+        let end = raw.len() - 98;
+        raw[end + 40..end + 48].copy_from_slice(&(MAX_DIRECTORY + 1).to_le_bytes());
+        assert!(ZipArchive::new(Cursor::new(raw)).is_err());
+        let mut raw = original;
+        raw[end + 48..end + 56].copy_from_slice(&(end as u64).to_le_bytes());
+        assert!(ZipArchive::new(Cursor::new(raw)).is_err());
+    }
+
+    #[test]
+    fn invalid_index_and_repeated_overrun_reads_return_errors() {
+        let mut archive = ZipArchive::new(Cursor::new(build(&[("f", b"payload")]))).unwrap();
+        assert!(archive.by_index(1).is_err());
+        archive.entries[0].size = 1;
+        let mut file = archive.by_index(0).unwrap();
+        let mut buffer = [0; 16];
+        assert!(file.read(&mut buffer).is_err());
+        assert!(file.read(&mut buffer).is_err());
+    }
+
+    #[test]
+    fn rejects_malformed_zip64_records_and_extra_fields() {
+        let original = build(&[("f", b"payload")]);
+        let record = original.len() - 98;
+        let locator = original.len() - 42;
+        let cd = central(&original);
+        for (offset, bytes) in [
+            (locator + 4, 1u32.to_le_bytes().to_vec()),
+            (locator + 16, 2u32.to_le_bytes().to_vec()),
+            (record + 16, 1u32.to_le_bytes().to_vec()),
+            (record + 4, 43u64.to_le_bytes().to_vec()),
+            (cd + 46 + 1 + 2, 23u16.to_le_bytes().to_vec()),
+        ] {
+            let mut raw = original.clone();
+            raw[offset..offset + bytes.len()].copy_from_slice(&bytes);
+            assert!(
+                ZipArchive::new(Cursor::new(raw)).is_err(),
+                "offset {offset}"
+            );
         }
     }
 }

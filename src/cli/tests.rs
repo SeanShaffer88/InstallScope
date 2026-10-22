@@ -10,15 +10,9 @@ fn every_destructive_command_classifies_destructive() {
     for args in [
         &["revert", "log1"][..],
         &["uninstall", "Some App"][..],
-        &["clean"][..],
-        &["clean", "--categories", "user_temp"][..],
         &["components", "log1", "--strike"][..],
         &["restore", "backup1"][..],
-        &["transfer", "import", "pkg.setupsweep"][..],
-        &["gatekeeper", "remove", "42"][..],
-        &["restore-point", "delete", "3"][..],
-        &["restore-point", "rollback", "3"][..],
-        &["restore-points", "delete", "3"][..],
+        &["transfer", "import", "pkg.setupscope"][..],
         &["rewind", "log1", "--to", "state1"][..],
     ] {
         let args = v(args);
@@ -40,19 +34,11 @@ fn previews_and_read_only_commands_never_classify_destructive() {
         &["backups"][..],
         &["revert", "log1", "--dry-run"][..],
         &["uninstall", "App", "--dry-run"][..],
-        &["clean", "--list"][..],
-        &["clean", "--dry-run"][..],
         &["components", "log1"][..],
         &["components", "log1", "--json"][..],
-        &["transfer", "check", "p.setupsweep"][..],
+        &["transfer", "check", "p.setupscope"][..],
         &["rewind", "log1", "--list"][..],
         &["rewind", "log1", "--to", "s", "--dry-run"][..],
-        &["restore-point"][..],
-        &["restore-point", "list"][..],
-        &["startup"][..],
-        &["startup", "--json"][..],
-        &["gatekeeper"][..],
-        &["gatekeeper", "--json"][..],
     ] {
         let args = v(args);
         assert_eq!(classify(&args[0], &args), R, "{args:?}");
@@ -63,10 +49,6 @@ fn previews_and_read_only_commands_never_classify_destructive() {
 fn automation_and_bookkeeping_classify_mutating_not_destructive() {
     use CmdClass::Mutating as M;
     for args in [
-        // The Task Scheduler entry point must never be gated.
-        &["clean", "--scheduled", "--categories", "user_temp"][..],
-        &["schedule-clean", "daily"][..],
-        &["schedule-clean", "off"][..],
         &["snapshot", "a.snap"][..],
         &["diff", "a.snap", "b.snap", "--auto"][..],
         &["monitor", "--", "setup.exe"][..],
@@ -75,13 +57,7 @@ fn automation_and_bookkeeping_classify_mutating_not_destructive() {
         &["tag", "log1", "--group", "G"][..],
         &["merge", "a", "b"][..],
         &["history"][..],
-        &["slowdown"][..],
-        &["startup", "disable", "App"][..],
-        &["gatekeeper", "scan"][..],
-        &["gatekeeper", "allow", "42"][..],
-        &["gatekeeper", "enable"][..],
-        &["restore-point", "create"][..],
-        &["transfer", "export", "o.setupsweep", "App"][..],
+        &["transfer", "export", "o.setupscope", "App"][..],
         &["rewind", "log1", "--capture"][..],
     ] {
         let args = v(args);
@@ -110,7 +86,7 @@ fn only_a_plain_yes_confirms() {
 
 #[test]
 fn every_command_has_help_that_names_its_confirmation() {
-    assert_eq!(COMMAND_HELP.len(), 31);
+    assert_eq!(COMMAND_HELP.len(), 25);
     for (name, text) in COMMAND_HELP {
         assert!(text.contains("Usage:"), "{name}: no usage line");
         assert!(
@@ -133,8 +109,7 @@ fn help_is_requested_per_command_and_never_after_a_separator() {
     // The P1-24 bug: `revert --help` was parsed as a log id.
     assert!(requested_help(&v(&["revert", "--help"])).is_some());
     assert!(requested_help(&v(&["revert", "log1", "-h"])).is_some());
-    assert!(requested_help(&v(&["help", "clean"])).is_some());
-    assert!(requested_help(&v(&["clean", "--help"])).is_some());
+    assert!(requested_help(&v(&["help", "programs"])).is_some());
     // Flags, ids and installer-side arguments are not help requests.
     assert!(requested_help(&v(&["revert", "log1"])).is_none());
     assert!(requested_help(&v(&["revert", "log1", "--yes"])).is_none());
@@ -149,15 +124,44 @@ fn destructive_help_states_the_yes_requirement() {
     for name in [
         "revert",
         "uninstall",
-        "clean",
         "restore",
-        "restore-point",
-        "gatekeeper",
         "transfer",
         "components",
         "rewind",
     ] {
         let text = help_for(name).expect(name);
         assert!(text.contains("--yes"), "{name}: help must name --yes");
+    }
+}
+
+#[test]
+fn retired_commands_refuse_before_initialization_and_have_no_active_help() {
+    for command in [
+        "clean",
+        "schedule-clean",
+        "startup",
+        "gatekeeper",
+        "slowdown",
+        "restore-point",
+        "restore-points",
+    ] {
+        assert!(retired_command(command));
+        assert!(help_for(command).is_none());
+        assert!(!HELP.contains(&format!("  setupscope {command} ")));
+        let error = run_inner(v(&[command, "--help"])).unwrap_err().to_string();
+        assert!(
+            error.contains("removed from the developer toolkit"),
+            "{command}: {error}"
+        );
+    }
+    for command in [
+        "revert",
+        "uninstall",
+        "monitor",
+        "restore",
+        "check-clean",
+        "history",
+    ] {
+        assert!(!retired_command(command));
     }
 }

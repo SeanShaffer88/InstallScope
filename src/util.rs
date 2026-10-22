@@ -21,6 +21,24 @@ pub fn new_id() -> String {
     )
 }
 
+/// Validate an opaque local record ID before using it as a path component.
+pub fn validate_local_id(id: &str) -> anyhow::Result<()> {
+    let reserved = [
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+    anyhow::ensure!(
+        !id.is_empty()
+            && id.len() <= 128
+            && id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+            && !reserved.iter().any(|r| id.eq_ignore_ascii_case(r)),
+        "Invalid local record ID; select an existing record from the local list"
+    );
+    Ok(())
+}
+
 /// Make a string safe to use as a file name.
 pub fn safe_file_name(s: &str) -> String {
     let cleaned: String = s

@@ -55,7 +55,7 @@ USAGE:
                                             (default 60) and list what changed
                                             on its own; --apply adds it to the
                                             exclusions
-  setupscope transfer export <out.setupsweep> <program>...
+  setupscope transfer export <out.setupscope> <program>...
                                             Pack programs (by name) with their files
                                             and settings to move to another PC
   setupscope transfer check <package>          Check a package against this PC
@@ -86,34 +86,14 @@ USAGE:
   setupscope uninstall <name>... [--silent] [--leftovers safe|none] [--dry-run] [--yes]
                                             Uninstall programs one after another,
                                             then remove safe leftovers (backed up)
-  setupscope clean [--categories a,b] [--list] [--dry-run] [--yes]
-                                            Clean junk (default: the safe kinds)
-  setupscope schedule-clean daily|weekly|monthly|off [--categories a,b]
-                                            Clean junk automatically
-  setupscope startup [--json]                  List startup programs
-  setupscope startup enable|disable <name>     Turn a startup program on or off
   setupscope history [--since YYYY-MM-DD] [--json]
                                             Record new changes, then list the
                                             recorded ones (program, startup,
                                             service, task changes)
-  setupscope slowdown [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--json]
-                                            What changed in the period, ranked
-                                            by measured startup impact where
-                                            Windows has it
-  setupscope gatekeeper [--json]               Review new autostart entries
-  setupscope gatekeeper scan                   Run one detection pass
-  setupscope gatekeeper allow <id>             Keep an entry, mark it reviewed
-  setupscope gatekeeper remove <id> [--yes]   Back up and remove an entry
-  setupscope gatekeeper enable|disable         Turn the Gatekeeper on or off
   setupscope watch                             Background auto-monitoring (started
                                             at sign-in when turned on in Settings)
   setupscope check-clean <log-id>              Check that nothing recorded in a log
                                             is still on the PC (exit 2 if so)
-  setupscope restore-point [list]              List System Restore points
-  setupscope restore-point create [DESCRIPTION]
-  setupscope restore-point delete <number> [--yes]
-  setupscope restore-point rollback <number> --yes
-                                            Restart Windows into a restore point
   setupscope backups                           List backups
   setupscope restore <backup-id> [--yes]       Undo a removal from its backup
   setupscope pa-capture <job.json>             Run a PortableApps Forge job file
@@ -129,14 +109,9 @@ USAGE:
   changes, and how it asks before destructive actions.
 
 CONFIRMATION:
-  Commands that remove or overwrite things (revert, uninstall, clean,
-  components --strike, restore, transfer import, gatekeeper remove,
-  restore-point delete and rollback, rewind --to) ask before they act:
-  in a terminal they say what will happen and wait for a typed \"yes\";
-  without a terminal (scripts) they refuse and exit 1 unless --yes is
-  given. Read-only commands and --dry-run previews never ask. The one
-  exception is `clean --scheduled`, the Task Scheduler entry point: the
-  schedule you set is itself the instruction, so it never asks.
+  Mutating removal/recovery commands require review and explicit confirmation.
+  Scripts must pass --yes after reviewing targets and recovery limitations.
+  Read-only commands and --dry-run previews never ask.
 
 Exit codes: 0 success, 1 error (including \"not confirmed\"), 2 finished
 with failures / findings.
@@ -318,7 +293,7 @@ Confirmation: none.",
         "\
 setupscope transfer — move programs to another PC
 
-Usage: setupscope transfer export <out.setupsweep> <program>...
+Usage: setupscope transfer export <out.setupscope> <program>...
        setupscope transfer check <package>
        setupscope transfer import <package> [--overwrite] [--yes]
 
@@ -405,52 +380,6 @@ Confirmation: destructive. Asks before starting; scripts must pass
 confirmed.",
     ),
     (
-        "clean",
-        "\
-setupscope clean — clean junk files
-
-Usage: setupscope clean [--categories a,b] [--list] [--dry-run] [--yes]
-       setupscope clean --scheduled [--categories a,b]
-
-Deletes junk in the chosen categories (default: the safe kinds);
---list shows each category's size and changes nothing. Cleaned files
-are deleted permanently: they are NOT backed up and SetupScope
-cannot restore them. Paths on the Cleaner page's Protected list are
-always kept. --dry-run reports sizes and deletes nothing.
---scheduled is the Task Scheduler entry point (see schedule-clean):
-the schedule itself is the instruction, so it never asks and never
-takes --yes.
-Confirmation: destructive (except --list, --dry-run and --scheduled).
-Asks before deleting; scripts must pass --yes.",
-    ),
-    (
-        "schedule-clean",
-        "\
-setupscope schedule-clean — clean junk automatically
-
-Usage: setupscope schedule-clean daily|weekly|monthly|off [--categories a,b]
-
-Creates (or, with off, removes) the Windows Task Scheduler task that
-runs `setupscope clean --scheduled`. What each run freed is recorded
-in cleaning.log in the data folder.
-Confirmation: none — the schedule is set or removed exactly as asked;
-each scheduled run is the standing instruction.",
-    ),
-    (
-        "startup",
-        "\
-setupscope startup — list and toggle startup programs
-
-Usage: setupscope startup [--json]
-       setupscope startup enable|disable <name>
-
-Lists the programs that start with Windows. enable/disable turns one
-on or off: the change is backed up first and can be undone with
-`setupscope restore <backup-id>` or the inverse command. Entries
-Windows, security software or hardware need cannot be disabled.
-Confirmation: none (backed up and reversible); listing is read-only.",
-    ),
-    (
         "history",
         "\
 setupscope history — the recorded change history
@@ -461,37 +390,6 @@ First records observed program, startup, service and scheduled-task changes
 into history.json, then lists them, newest first. Inventory omissions can
 reflect access limits; an observed change does not establish its cause.
 Confirmation: none.",
-    ),
-    (
-        "slowdown",
-        "\
-setupscope slowdown — Slowdown Detective report
-
-Usage: setupscope slowdown [--from YYYY-MM-DD] [--to YYYY-MM-DD] [--json]
-
-What changed in the period (default: the last 90 days), ranked by
-measured startup impact where Windows has a measurement; unmeasured
-changes are listed unranked, never as zero impact.
-Confirmation: none.",
-    ),
-    (
-        "gatekeeper",
-        "\
-setupscope gatekeeper — Autostart Gatekeeper review queue
-
-Usage: setupscope gatekeeper [--json]
-       setupscope gatekeeper scan
-       setupscope gatekeeper allow <id>
-       setupscope gatekeeper remove <id> [--yes]
-       setupscope gatekeeper enable|disable
-
-New autostart entries wait in a review queue; nothing is ever blocked
-live or removed without your decision. allow keeps an entry; remove
-deletes it, backed up first (undo with `setupscope restore
-<backup-id>`). scan runs one detection pass (when the Gatekeeper is
-off, it scans nothing). enable/disable turn the Gatekeeper on or off.
-Confirmation: remove is destructive. It asks first; scripts must
-pass --yes. The rest never ask.",
     ),
     (
         "watch",
@@ -516,24 +414,6 @@ Usage: setupscope check-clean <log-id>
 Read-only. Exits 0 when nothing the log recorded is still on the PC,
 2 when something was left behind (the leftovers are printed).
 Confirmation: none.",
-    ),
-    (
-        "restore-point",
-        "\
-setupscope restore-point — System Restore points
-
-Usage: setupscope restore-point [list]
-       setupscope restore-point create [DESCRIPTION]
-       setupscope restore-point delete <number> [--yes]
-       setupscope restore-point rollback <number> [--yes]
-
-list is read-only. create makes a restore point. delete removes one
-permanently — that rollback point is gone for good. rollback restarts
-Windows right away and rolls system files and settings back to the
-chosen point; programs installed after it may stop working, and
-System Restore does not touch your documents.
-Confirmation: delete and rollback are destructive. They ask first;
-scripts must pass --yes.",
     ),
     (
         "backups",

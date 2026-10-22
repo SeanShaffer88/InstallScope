@@ -36,7 +36,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     SetMenuInfo, SetTimer, SetWindowLongPtrW, SetWindowTextW, ShowWindow, TranslateMessage,
     WindowFromPoint, CREATESTRUCTW, CW_USEDEFAULT, GA_ROOT, GWLP_USERDATA, HMENU, IDC_ARROW,
     IDC_CROSS, LBS_EXTENDEDSEL, LBS_HASSTRINGS, LBS_NOTIFY, LBS_OWNERDRAWFIXED, LB_ADDSTRING,
-    LB_GETCURSEL, LB_GETSELCOUNT, LB_GETSELITEMS, LB_RESETCONTENT, LB_SETCURSEL,
+    LB_GETCURSEL, LB_GETSELCOUNT, LB_GETSELITEMS, LB_RESETCONTENT, LB_SETCURSEL, MB_DEFBUTTON2,
     MB_ICONINFORMATION, MB_ICONWARNING, MB_YESNO, MENUINFO, MF_GRAYED, MF_OWNERDRAW, MF_POPUP,
     MF_STRING, MIM_APPLYTOSUBMENUS, MIM_BACKGROUND, MSG, SW_HIDE, SW_SHOW, WM_CANCELMODE,
     WM_CAPTURECHANGED, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_DRAWITEM, WM_ERASEBKGND,
@@ -87,6 +87,7 @@ const TIMER_UNINSTALL: usize = 1;
 const SEARCH_CHANGED: u16 = 0x0300;
 const LIST_SELECTION_CHANGED: u16 = 1;
 const BUTTON_CLICKED: u16 = 0;
+const CONFIRM_FLAGS: u32 = MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2;
 const ES_AUTOHSCROLL: u32 = 0x0080;
 const ES_AUTOVSCROLL: u32 = 0x0040;
 const ES_LEFT: u32 = 0;
@@ -138,7 +139,7 @@ struct NativePrograms {
     brand_mark: HWND,
     brand_name: HWND,
     nav_programs: HWND,
-    nav_items: [HWND; 17],
+    nav_items: [HWND; 13],
     page_title: HWND,
     page_subtitle: HWND,
     list_heading: HWND,
@@ -253,10 +254,7 @@ impl NativePrograms {
             Ok(Ok(programs)) => {
                 self.programs = programs;
                 self.filter_programs();
-                self.set_status(&tf(
-                    "{n} programs",
-                    &[("n", self.programs.len().to_string())],
-                ));
+                self.set_status(&t("Program inventory refreshed."));
                 true
             }
             Ok(Err(error)) => {
@@ -426,7 +424,7 @@ impl NativePrograms {
                 self.hwnd,
                 wide(&prompt).as_ptr(),
                 wide("Remove from list").as_ptr(),
-                MB_YESNO | MB_ICONWARNING,
+                CONFIRM_FLAGS,
             ) == 6
         };
         if !confirmed {
@@ -494,6 +492,9 @@ impl NativePrograms {
         if self.restore_point_receiver.is_some() {
             return;
         }
+        let Some(restore_point) = self.preflight_restore_point() else {
+            return;
+        };
         for program in &selected {
             if let Err(error) = self.uninstall_command(program) {
                 let message = format!("{}: {error}", program.name);
@@ -502,16 +503,22 @@ impl NativePrograms {
                 return;
             }
         }
-        let prompt = tf(
-            "Uninstall {n} selected programs one at a time? SetupScope will show a separate leftover review after each program. Nothing is removed until you review that program's findings.",
+        let mut prompt = tf(
+            "Uninstall {n} selected programs one at a time? Each vendor uninstaller or Windows Store removal changes the PC before SetupScope shows a separate leftover review. SetupScope's backups cover its own cleanup, not the vendor's uninstall. A restore point is an additional safety net, not guaranteed recovery. Continue?",
             &[("n", selected.len().to_string())],
         );
+        prompt.push_str("\r\n\r\n");
+        prompt.push_str(&t(if restore_point {
+            "One restore point will be created and verified before the batch starts. Failure cancels the batch."
+        } else {
+            "No System Restore point will be created."
+        }));
         let confirmed = unsafe {
             windows_sys::Win32::UI::WindowsAndMessaging::MessageBoxW(
                 self.hwnd,
                 wide(&prompt).as_ptr(),
                 wide("Confirm batch uninstall").as_ptr(),
-                MB_YESNO | MB_ICONWARNING,
+                CONFIRM_FLAGS,
             ) == 6
         };
         if !confirmed {
@@ -521,7 +528,7 @@ impl NativePrograms {
         self.batch_completed = 0;
         self.batch_queue = selected;
         self.batch_active = true;
-        if self.create_restore_point && self.elevated {
+        if restore_point {
             self.begin_restore_point(PendingUninstall::Batch);
         } else {
             self.launch_next_batch_program();
@@ -662,6 +669,9 @@ impl NativePrograms {
         if self.restore_point_receiver.is_some() {
             return;
         }
+        let Some(restore_point) = self.preflight_restore_point() else {
+            return;
+        };
         let command = match self.uninstall_command(&program) {
             Ok(command) => command,
             Err(error) => {
@@ -670,29 +680,35 @@ impl NativePrograms {
                 return;
             }
         };
-        let prompt = if program.source == programs::Source::Store {
+        let mut prompt = if program.source == programs::Source::Store {
             tf(
-                "SetupScope will ask Windows to uninstall {name} for this user. Any leftover cleanup will be presented for review afterward.\r\n\r\nContinue?",
+                "SetupScope will ask Windows to uninstall {name} for this user before showing a leftover review. SetupScope's backups cover its own cleanup, not restoring the removed application. A restore point is an additional safety net, not guaranteed recovery.\r\n\r\nContinue?",
                 &[("name", program.name.clone())],
             )
         } else {
             tf(
-                "SetupScope will start {name}'s own uninstaller. Any leftover cleanup will be presented for review afterward.\r\n\r\nContinue?",
+                "SetupScope will start {name}'s own uninstaller before showing a leftover review. SetupScope's backups cover its own cleanup, not the vendor's uninstall. A restore point is an additional safety net, not guaranteed recovery.\r\n\r\nContinue?",
                 &[("name", program.name.clone())],
             )
         };
+        prompt.push_str("\r\n\r\n");
+        prompt.push_str(&t(if restore_point {
+            "A restore point will be created and verified before removal starts. Failure cancels the uninstall."
+        } else {
+            "No System Restore point will be created."
+        }));
         let confirmed = unsafe {
             windows_sys::Win32::UI::WindowsAndMessaging::MessageBoxW(
                 self.hwnd,
                 wide(&prompt).as_ptr(),
                 wide("Confirm uninstall").as_ptr(),
-                MB_YESNO | MB_ICONWARNING,
+                CONFIRM_FLAGS,
             ) == 6
         };
         if !confirmed {
             return;
         }
-        if self.create_restore_point && self.elevated {
+        if restore_point {
             self.begin_restore_point(PendingUninstall::Single { program, command });
             return;
         }
@@ -770,6 +786,21 @@ impl NativePrograms {
     fn sync_restore_point_check(&mut self) {
         let checked = unsafe { SendMessageW(self.restore_point_check, BM_GETCHECK, 0, 0) };
         self.create_restore_point = checked != 0;
+    }
+
+    fn preflight_restore_point(&self) -> Option<bool> {
+        match setupscope_core::restore::preflight_restore_point(
+            self.create_restore_point,
+            self.elevated,
+        ) {
+            Ok(requested) => Some(requested),
+            Err(error) => {
+                let message = t(&error.to_string());
+                self.set_status(&message);
+                show_error(self.hwnd, &message);
+                None
+            }
+        }
     }
 
     /// Create the pre-uninstall restore point on a background thread (the
@@ -1174,7 +1205,7 @@ impl NativePrograms {
                 self.hwnd,
                 wide(&prompt).as_ptr(),
                 wide("Confirm leftover removal").as_ptr(),
-                MB_YESNO | MB_ICONWARNING,
+                CONFIRM_FLAGS,
             ) == 6
         };
         if !confirmed {
@@ -1386,7 +1417,7 @@ impl NativePrograms {
             );
             EnableWindow(
                 self.restore_point_check,
-                i32::from(self.view == View::Programs && self.elevated),
+                i32::from(self.view == View::Programs),
             );
         }
         unsafe { layout_controls(self) };
@@ -1423,7 +1454,7 @@ fn build_native_removal_plan(
         let hidden = revert::simplify(&mut plan);
         if hidden > 0 {
             plan.info.push(tf(
-                "{n} higher-risk or uncertain items were left out of this Simple-mode review. Use the full interface's Advanced mode to inspect them.",
+                "{n} higher-risk or uncertain items were left out of this legacy review. Inspect the complete plan in the developer interface.",
                 &[("n", hidden.to_string())],
             ));
         }
@@ -1457,24 +1488,7 @@ fn find_program_for_image<'a>(
     programs: &'a [InstalledProgram],
     image_path: &std::path::Path,
 ) -> Option<&'a InstalledProgram> {
-    let image = normalize_windows_path(&image_path.to_string_lossy());
-    let mut matches = programs.iter().filter(|program| {
-        let location = normalize_windows_path(&program.install_location);
-        !location.is_empty()
-            && image
-                .strip_prefix(&location)
-                .is_some_and(|suffix| suffix.is_empty() || suffix.starts_with('\\'))
-    });
-    let first = matches.next()?;
-    matches.next().is_none().then_some(first)
-}
-
-fn normalize_windows_path(path: &str) -> String {
-    path.trim()
-        .trim_matches('"')
-        .replace('/', "\\")
-        .trim_end_matches('\\')
-        .to_lowercase()
+    setupscope_core::windowidentify::unique_program(programs, &image_path.to_string_lossy())
 }
 
 fn process_image_path(process_id: u32) -> Result<std::path::PathBuf> {
@@ -1554,7 +1568,7 @@ pub fn run(install_target: Option<String>, _launch_args: Vec<String>) -> Result<
         brand_mark: std::ptr::null_mut(),
         brand_name: std::ptr::null_mut(),
         nav_programs: std::ptr::null_mut(),
-        nav_items: [std::ptr::null_mut(); 17],
+        nav_items: [std::ptr::null_mut(); 13],
         page_title: std::ptr::null_mut(),
         page_subtitle: std::ptr::null_mut(),
         list_heading: std::ptr::null_mut(),
@@ -1701,7 +1715,7 @@ pub fn run(install_target: Option<String>, _launch_args: Vec<String>) -> Result<
     }
     unsafe { install_menu(hwnd, state.brushes[1])? };
     unsafe {
-        ShowWindow(hwnd, SW_SHOW);
+        ShowWindow(hwnd, windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWMAXIMIZED);
         UpdateWindow(hwnd);
     }
     platform::apply_window_style(COLOR_ACCENT, true);
@@ -2120,10 +2134,7 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
         "📡   Monitor",
         "📋   Install Logs",
         "💾   Backups",
-        "🚀   Startup",
-        "🗑   Cleaner",
         "Utilities",
-        "⏪   System Restore",
         "📸   Snapshots",
         "🎒   PortableApps Forge",
         "📦   Setup Package Creator (Planned)",
@@ -2131,7 +2142,6 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
         "💿   Temporary Scratch Disk (Planned)",
         "🗂   VSS Viewer (Planned)",
         "🛡   Bloatware Shield",
-        "☰   Right-Click Menu",
         "⚙   Settings",
     ];
     for (index, label) in nav_labels.iter().enumerate() {
@@ -2162,9 +2172,9 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
     state.footer = create(
         "STATIC",
         &format!(
-            "SetupScope {} · © {}",
-            setupscope_core::APP_VERSION,
-            setupscope_core::APP_AUTHOR
+            "{} · SetupScope {}",
+            super::system_info::summary(),
+            setupscope_core::APP_VERSION
         ),
         0x000D,
         0,
@@ -2219,7 +2229,9 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
         if state.create_restore_point { 1 } else { 0 },
         0,
     );
-    EnableWindow(state.restore_point_check, i32::from(state.elevated));
+    // Keep an explicit opt-out available without elevation; preflight blocks
+    // requested restore points instead of silently dropping the safety net.
+    EnableWindow(state.restore_point_check, 1);
     state.toggle_item = create(
         "BUTTON",
         &t("Toggle selection"),
@@ -2279,10 +2291,6 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
         state.nav_items[10],
         state.nav_items[11],
         state.nav_items[12],
-        state.nav_items[13],
-        state.nav_items[14],
-        state.nav_items[15],
-        state.nav_items[16],
         state.page_title,
         state.page_subtitle,
         state.list_heading,
@@ -2354,7 +2362,7 @@ unsafe fn layout_controls(state: &NativePrograms) {
     let content_left = sidebar_width + margin;
     let content_width = (width - content_left - margin).max(420);
     let row_height = 30;
-    let status_height = 32;
+    let status_height = 54;
     let details_width = (content_width * 38 / 100).clamp(230, 340);
     let gutter = 18;
     let list_width = (content_width - details_width - gutter).max(220);
@@ -2365,33 +2373,13 @@ unsafe fn layout_controls(state: &NativePrograms) {
     MoveWindow(state.brand_name, 58, 18, 132, 32, 1);
     MoveWindow(state.nav_items[0], 10, 72, sidebar_width - 20, 38, 1);
     MoveWindow(state.nav_programs, 10, 110, sidebar_width - 20, 38, 1);
-    for (index, y) in [
-        148,
-        186,
-        224,
-        262,
-        300,
-        342,
-        368,
-        406,
-        444,
-        482,
-        520,
-        558,
-        596,
-        634,
-        672,
-        height - 48,
-    ]
-    .into_iter()
-    .enumerate()
-    {
+    for (index, y) in (0..12).map(|i| 148 + i * 38).enumerate() {
         MoveWindow(
             state.nav_items[index + 1],
             10,
             y,
             sidebar_width - 20,
-            if index == 5 { 20 } else { 38 },
+            if index == 3 { 20 } else { 38 },
             1,
         );
     }
@@ -2487,16 +2475,16 @@ unsafe fn layout_controls(state: &NativePrograms) {
         state.status,
         content_left,
         height - status_height,
-        content_width - 250,
-        status_height,
+        content_width,
+        24,
         1,
     );
     MoveWindow(
         state.footer,
-        content_left + content_width - 250,
-        height - status_height,
-        250,
-        status_height,
+        content_left,
+        height - 28,
+        content_width,
+        24,
         1,
     );
 }

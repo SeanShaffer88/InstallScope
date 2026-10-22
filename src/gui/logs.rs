@@ -343,10 +343,10 @@ impl App {
 
     fn print_log(&mut self, log: &InstallLog) {
         let path = std::env::temp_dir().join(format!(
-            "SetupScope-{}-print.html",
-            setupscope_core::util::safe_file_name(&log.name)
+            "SetupScope-{}-{}-print.html",
+            setupscope_core::util::safe_file_name(&log.name), setupscope_core::util::new_id()
         ));
-        match std::fs::write(&path, report::to_print_html(log)) {
+        match report::save_new_export(&path, report::to_print_html(log).as_bytes()) {
             Ok(()) => setupscope_core::platform::shell_open(&path.to_string_lossy()),
             Err(e) => self.set_status(e.to_string()),
         }
@@ -359,8 +359,10 @@ impl App {
             return;
         };
         // The list holds summaries; merge the full logs from disk.
-        let full = |l: &InstallLog| self.store.load_log(&l.id).unwrap_or_else(|_| l.clone());
-        let (fa, fb) = (full(&la), full(&lb));
+        let (fa, fb) = match (self.store.load_log(&la.id), self.store.load_log(&lb.id)) {
+            (Ok(a), Ok(b)) => (a, b),
+            _ => { self.set_status(t("Cannot merge: a full source log could not be read. Original logs are preserved; reload and review them.")); return; }
+        };
         let merged = setupscope_core::merge::merge_logs(&[&fa, &fb], "");
         match self.store.save_log(&merged) {
             Ok(()) => {
@@ -406,9 +408,9 @@ impl App {
             for u in content.encode_utf16() {
                 bytes.extend_from_slice(&u.to_le_bytes());
             }
-            std::fs::write(&path, bytes)
+            report::save_new_export(&path, &bytes)
         } else {
-            std::fs::write(&path, content)
+            report::save_new_export(&path, content.as_bytes())
         };
         match res {
             Ok(()) => {
@@ -442,9 +444,9 @@ impl App {
                     ),
                     &t("Search by log name, publisher, group or tag. The list below filters as you type."),
                 );
-                if self.focus_search {
+                if self.focus_search == Some(super::app::Tab::Logs) {
                     r.request_focus();
-                    self.focus_search = false;
+                    self.focus_search = None;
                 }
                 let mut groups: Vec<String> = self
                     .logs

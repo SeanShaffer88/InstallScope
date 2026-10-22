@@ -18,6 +18,10 @@ pub struct BackupsState {
 
 impl App {
     pub fn restore_backup(&mut self, id: &str) {
+        if self.backups.job.is_some() || self.file_job.is_some() {
+            self.set_status(t("Wait for the active backup or data operation to finish."));
+            return;
+        }
         let reg = self.reg.clone();
         let root = self.store.backups_dir();
         let id = id.to_string();
@@ -39,6 +43,10 @@ impl App {
     }
 
     pub fn delete_backup(&mut self, id: &str) {
+        if self.backups.job.is_some() || self.file_job.is_some() {
+            self.set_status(t("Wait for the active backup or data operation to finish."));
+            return;
+        }
         // A backup can be a large folder: delete it in the background.
         let (dir, id) = (self.store.backups_dir(), id.to_string());
         self.backups.list.retain(|b| b.id != id);
@@ -61,19 +69,19 @@ impl App {
             let mut undo = false;
             let mut keep = false;
             theme::card(ui, |ui| {
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new("⚠").color(theme::WARN));
                     ui.label(RichText::new(t("An earlier operation didn't finish")).strong());
                 });
                 small_muted(
                     ui,
                     tf(
-                        "{title}, started {created}, was interrupted, perhaps by a crash or a power cut. Part of it may already be done. Everything it changed so far is in its backup.",
+                        "{title}, started {created}, was interrupted, perhaps by a crash or a power cut. Part of it may already be done. Review the backup for recorded changes; incomplete or external changes may not be recoverable.",
                         &[("title", title.clone()), ("created", created.clone())],
                     ),
                 );
                 ui.add_space(4.0);
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     if super::a11y::explain(theme::primary_button(ui, t("Undo what was done")), &t("Undo everything this operation already changed, restoring it from the operation's backup.")).clicked() {
                         undo = true;
                     }
@@ -89,15 +97,19 @@ impl App {
             });
             ui.add_space(8.0);
             if undo {
-                self.restore_backup(&id);
+                self.ask("Restore interrupted operation?", if self.settings.backup_enabled() {
+                    t("Review the recorded changes before restoring. The current state is backed up first; unrecorded or external changes are outside this recovery.")
+                } else {
+                    t("Backups are off. Restoring replaces recorded current state without a safety backup and cannot be undone from a new backup.")
+                }, "Restore", Confirm::RestoreBackup(id.clone()));
             }
             if keep {
                 let root = self.store.backups_dir();
-                if let Err(e) = backup::mark_complete(&root, &id) {
-                    self.status = e.to_string();
-                }
-                if let Some(b) = self.backups.list.iter_mut().find(|b| b.id == id) {
-                    b.complete = true;
+                match backup::mark_complete(&root, &id) {
+                    Ok(()) => {
+                        if let Some(b) = self.backups.list.iter_mut().find(|b| b.id == id) { b.complete = true; }
+                    }
+                    Err(e) => self.set_status(format!("Could not dismiss interruption warning; receipt retained: {e:#}")),
                 }
             }
         }
@@ -116,7 +128,6 @@ impl App {
                     };
                     self.backups.results = Some(results);
                     self.programs.needs_refresh = true;
-                    self.startup.loaded = false;
                 }
                 Err(e) => self.status = e,
             }
@@ -150,7 +161,7 @@ impl App {
                 ui.add_space(10.0);
             }
             let total: u64 = self.backups.list.iter().map(|b| b.bytes()).sum();
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 muted(ui, tf("{n} backups", &[("n", self.backups.list.len().to_string())]));
                 muted(ui, format!("· {}", setupscope_core::model::human_size(total)));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -166,7 +177,7 @@ impl App {
             }
             if self.backups.list.is_empty() {
                 theme::card(ui, |ui| {
-                    muted(ui, t("No backups yet. Every removal SetupScope makes is backed up here first, unless you have turned backups off in Settings."));
+                    muted(ui, t("No backups yet. Supported SetupScope changes create recovery data here when backups are enabled. Vendor uninstalls and failed or unsupported backups can have limited recovery."));
                 });
                 return;
             }
@@ -175,9 +186,9 @@ impl App {
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                 for b in &self.backups.list {
                     theme::card(ui, |ui| {
-                        ui.horizontal(|ui| {
+                        ui.horizontal_wrapped(|ui| {
                             ui.vertical(|ui| {
-                                ui.horizontal(|ui| {
+                                ui.horizontal_wrapped(|ui| {
                                     ui.label(RichText::new(&b.title).strong());
                                     if b.restored {
                                         theme::badge(ui, t("Restored"), theme::OK);

@@ -1,0 +1,30 @@
+SetupScope local 1.0.0.0 candidate gates
+
+Implemented: five core tools; integrated dependency manager/export/recovery;
+compact task-specific layouts; singleton windows/app; current branding;
+source/dependency notices, inventory and local packaging.
+
+Passed: 485 core tests (6 ignored, including 5 invoked subprocess fixtures),
+43 GUI-entry tests, 3 console-entry tests and 3 CLI integration tests, Clippy with existing warnings,
+optimized x64 build; official metadata and real x64 bundle/review checks.
+
+Passed: 18 packaged console functional checks, saved-data preservation,
+GUI/console PE subsystem checks and package checksum verification.
+
+Passed: complete owned desktop inventory in all ten catalogs; exact placeholder
+and technical-invariant checks; isolated expanded compact layouts in eleven
+language choices. Earlier release-binary five-tool workflows and screenshots,
+CJK fonts, saved language, board return and app/tool singleton checks passed.
+Original evidence, vendor reviews, commands and CLI wording are preserved.
+Independent native-speaker review remains unverified. The final wording review
+was followed by automated multilingual layout checks, not another full live pass.
+
+Documented unverified limits (VM checks skipped at user request): clean Windows VM,
+actual screen-reader coverage, broad Windows/DPI matrix and real vendor
+installation/UAC/recovery. ARM64 runtime is outside the shipped x64 scope.
+No certificate/signing or clean-machine certification claim.
+
+Follow-up: independent second-agent review of 6,000 translations completed; 80
+wording fixes and integrity/layout reruns passed. Clean-host harness passed 12
+checks plus empty-module-path and tampered-hash cases. A real clean Windows VM
+and human native-speaker review remain unavailable; see CLEAN-MACHINE.md.

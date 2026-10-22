@@ -1,0 +1,11 @@
+{
+  "package": "gl_generator",
+  "version": "0.14.0",
+  "source_commit": "ea503e8d5fb6d73c6030e6191ce738cd3bf3433e",
+  "sources": [
+    {
+      "file": "workspace-LICENSE",
+      "url": "https://raw.githubusercontent.com/brendanzab/gl-rs/ea503e8d5fb6d73c6030e6191ce738cd3bf3433e/LICENSE"
+    }
+  ]
+}
