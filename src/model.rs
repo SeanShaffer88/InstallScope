@@ -1,4 +1,4 @@
-//! Core data types shared by every part of SetupSweep.
+//! Core data types shared by every part of SetupScope.
 //!
 //! Registry and file paths are compared case-insensitively (like Windows does),
 //! so every map is keyed by a *folded* (lower-cased) path while the entry itself
@@ -292,7 +292,7 @@ pub fn cmp_fold(a: &str, b: &str) -> std::cmp::Ordering {
         .cmp(b.chars().flat_map(char::to_lowercase))
 }
 
-/// A point-in-time capture of the parts of the system SetupSweep watches.
+/// A point-in-time capture of the parts of the system SetupScope watches.
 ///
 /// Stored as arenas: every path and value name lives in one text pool and
 /// every value's data in one byte pool, referenced by fixed-size records,
@@ -658,7 +658,12 @@ impl ChangeSet {
             dirs_added: self.files_added.iter().filter(|f| f.is_dir).count(),
             files_removed: self.files_removed.len(),
             files_modified: self.files_modified.len(),
-            bytes_added: self.files_added.iter().map(|f| f.size).sum(),
+            // Imported metadata can claim arbitrary sizes. Clamp the display
+            // total rather than overflowing or panicking while reviewing it.
+            bytes_added: self
+                .files_added
+                .iter()
+                .fold(0u64, |total, f| total.saturating_add(f.size)),
         }
     }
 }
@@ -679,7 +684,7 @@ pub struct ChangeStats {
 crate::json_struct!(ChangeStats, { keys_added, keys_removed, values_added, values_removed, values_modified, files_added, dirs_added, files_removed, files_modified, bytes_added });
 
 /// A saved record of everything one installation changed: the heart of a
-/// monitored program. Reverting it is how SetupSweep uninstalls precisely.
+/// monitored program. Reverting it is how SetupScope uninstalls precisely.
 #[derive(Clone, Debug, Default)]
 pub struct InstallLog {
     pub id: String,
@@ -761,6 +766,29 @@ mod tests {
     fn sizes() {
         assert_eq!(human_size(512), "512 B");
         assert_eq!(human_size(1536), "1.5 KB");
+    }
+
+    #[test]
+    fn imported_change_sizes_cannot_overflow_report_totals() {
+        let changes = ChangeSet {
+            files_added: vec![
+                FileEntry {
+                    path: "a".into(),
+                    is_dir: false,
+                    size: u64::MAX,
+                    mtime: 0,
+                },
+                FileEntry {
+                    path: "b".into(),
+                    is_dir: false,
+                    size: 1,
+                    mtime: 0,
+                },
+            ],
+            ..Default::default()
+        };
+        assert_eq!(changes.stats().bytes_added, u64::MAX);
+        assert_eq!(changes.stats().files_added, 2);
     }
 }
 

@@ -148,22 +148,46 @@ pub fn list() -> Result<Vec<RestorePoint>> {
 
 const SR_KEY: &str = "HKLM\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\SystemRestore";
 
-/// Create a restore point now. Windows normally allows only one every 24
-/// hours; SetupSweep lifts that limit for its own request and puts it back.
-pub fn create_restore_point(description: &str) -> Result<()> {
+/// A requested safety net must never silently disappear because rights are missing.
+pub fn preflight_restore_point(requested: bool, elevated: bool) -> Result<bool> {
+    if requested && !elevated {
+        return Err(anyhow!("A requested System Restore point requires administrator rights. Restart SetupScope as administrator, or explicitly clear 'Create a System Restore point first' to continue without one. Uninstall canceled."));
+    }
+    Ok(requested)
+}
+
+fn creation_script(description: &str) -> String {
     let safe: String = description
         .chars()
         .filter(|c| c.is_alphanumeric() || " -_.()".contains(*c))
-        .take(60)
+        .take(20)
         .collect();
-    let script = format!(
-        "$k='{key}'; $old=(Get-ItemProperty -Path \"Registry::$k\" -Name SystemRestorePointCreationFrequency -ErrorAction SilentlyContinue).SystemRestorePointCreationFrequency; \
-         New-ItemProperty -Path \"Registry::$k\" -Name SystemRestorePointCreationFrequency -Value 0 -PropertyType DWord -Force | Out-Null; \
-         try {{ Checkpoint-Computer -Description '{safe}' -RestorePointType 'MODIFY_SETTINGS' -ErrorAction Stop }} \
-         finally {{ if ($null -eq $old) {{ Remove-ItemProperty -Path \"Registry::$k\" -Name SystemRestorePointCreationFrequency -ErrorAction SilentlyContinue }} else {{ Set-ItemProperty -Path \"Registry::$k\" -Name SystemRestorePointCreationFrequency -Value $old }} }}",
+    format!(
+        "$ErrorActionPreference='Stop'; \
+         $before=@(Get-ComputerRestorePoint -ErrorAction Stop | Select-Object -ExpandProperty SequenceNumber); \
+         $k='Registry::{key}'; $name='SystemRestorePointCreationFrequency'; \
+         $props=Get-ItemProperty -LiteralPath $k -ErrorAction Stop; \
+         $property=$props.PSObject.Properties[$name]; $hadOld=$null -ne $property; $old=$null; \
+         if ($hadOld) {{ $old=$property.Value; if ($old -isnot [int] -and $old -isnot [uint32]) {{ throw 'Restore-point frequency is not a DWORD; it was left unchanged.' }} }}; \
+         $description='{safe} ['+[guid]::NewGuid().ToString('N')+']'; \
+         New-ItemProperty -LiteralPath $k -Name $name -Value 0 -PropertyType DWord -Force -ErrorAction Stop | Out-Null; \
+         try {{ \
+             Checkpoint-Computer -Description $description -RestorePointType 'MODIFY_SETTINGS' -ErrorAction Stop; \
+             $created=@(Get-ComputerRestorePoint -ErrorAction Stop | Where-Object {{ $_.SequenceNumber -notin $before -and $_.Description -ceq $description }}); \
+             if ($created.Count -ne 1) {{ throw 'Windows did not report the requested new restore point. Operation canceled.' }} \
+         }} finally {{ \
+             if ($hadOld) {{ Set-ItemProperty -LiteralPath $k -Name $name -Value $old -ErrorAction Stop }} \
+             else {{ Remove-ItemProperty -LiteralPath $k -Name $name -ErrorAction Stop }} \
+         }}",
         key = SR_KEY.replace("HKLM", "HKEY_LOCAL_MACHINE"),
-    );
-    powershell(&script)
+    )
+}
+
+/// Create and verify this request's uniquely named restore point. Temporarily
+/// lift the frequency limit, restoring its previous DWORD or absence on exit.
+pub fn create_restore_point(description: &str) -> Result<()> {
+    preflight_restore_point(true, crate::platform::is_elevated())?;
+    powershell(&creation_script(description))
         .map(|_| ())
         .map_err(|e| anyhow!("restore point failed: {e}"))
 }
@@ -304,8 +328,87 @@ mod tests {
     use super::*;
 
     #[test]
+    fn requested_restore_points_require_rights_but_explicit_opt_out_does_not() {
+        assert!(preflight_restore_point(true, false).is_err());
+        assert!(preflight_restore_point(true, true).unwrap());
+        assert!(!preflight_restore_point(false, false).unwrap());
+        assert!(!preflight_restore_point(false, true).unwrap());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn creation_script_verifies_new_points_and_restores_frequency_on_failure() {
+        // Run the production script in real Windows PowerShell with every
+        // system-changing/provider command replaced by an in-process fake.
+        // No real registry entry or restore point is read or changed.
+        let mocks = r#"
+function Get-ComputerRestorePoint {
+    [CmdletBinding()] param()
+    if ($script:mode -eq 'before-list-fails' -or ($script:mode -eq 'after-list-fails' -and $script:called)) { throw 'list failed' }
+    $script:points
+}
+function Get-ItemProperty {
+    [CmdletBinding()] param($LiteralPath)
+    if ($script:hadOld) { [pscustomobject]@{SystemRestorePointCreationFrequency=$script:initial} }
+    else { [pscustomobject]@{} }
+}
+function New-ItemProperty {
+    [CmdletBinding()] param($LiteralPath,$Name,$Value,$PropertyType,[switch]$Force)
+    if ($script:mode -eq 'write-fails') { throw 'write failed' }
+    $script:frequency=$Value
+}
+function Set-ItemProperty {
+    [CmdletBinding()] param($LiteralPath,$Name,$Value)
+    if ($script:mode -eq 'cleanup-fails') { throw 'cleanup failed' }
+    $script:frequency=$Value
+}
+function Remove-ItemProperty {
+    [CmdletBinding()] param($LiteralPath,$Name)
+    if ($script:mode -eq 'cleanup-fails') { throw 'cleanup failed' }
+    $script:frequency=$null
+}
+function Checkpoint-Computer {
+    [CmdletBinding()] param($Description,$RestorePointType)
+    $script:called=$true
+    if ($script:mode -eq 'checkpoint-fails') { throw 'creation failed' }
+    if ($script:mode -eq 'warning-only') { Write-Warning 'skipped'; return }
+    $id=8; $label=$Description
+    if ($script:mode -eq 'old-sequence') { $id=7 }
+    if ($script:mode -eq 'wrong-description') { $label='another request' }
+    $script:points += [pscustomobject]@{SequenceNumber=$id;Description=$label}
+}
+"#;
+        let production = creation_script("Before test ' $(throw 'injected')");
+        for had_old in [false, true] {
+            for mode in [
+                "success",
+                "before-list-fails",
+                "after-list-fails",
+                "write-fails",
+                "checkpoint-fails",
+                "warning-only",
+                "old-sequence",
+                "wrong-description",
+                "cleanup-fails",
+            ] {
+                let script = format!(
+                    "$script:mode='{mode}'; $script:hadOld=${had_old}; $script:initial=$null; if ($script:hadOld) {{ $script:initial=[int]1440 }}; $script:frequency=$script:initial; $script:called=$false; $script:points=@([pscustomobject]@{{SequenceNumber=7;Description='previous'}}); {mocks}\n $failed=$false; try {{ & {{ {production} }} }} catch {{ $failed=$true }}; if ($failed -ne ${should_fail}) {{ throw 'Incorrect success result' }}; if ($script:mode -ne 'cleanup-fails' -and $script:frequency -ne $script:initial) {{ throw 'Frequency was not restored' }}; if ($script:mode -in @('before-list-fails','write-fails') -and $script:called) {{ throw 'Creation ran after preflight failure' }}; 'verified'",
+                    should_fail = mode != "success",
+                );
+                let (code, out) = crate::platform::run_hidden(
+                    "powershell.exe",
+                    &["-NoProfile", "-NonInteractive", "-Command", &script],
+                )
+                .unwrap();
+                assert_eq!(code, 0, "mode={mode}, old={had_old}: {out}");
+                assert!(out.contains("verified"), "{out}");
+            }
+        }
+    }
+
+    #[test]
     fn parses_restore_points() {
-        let one = r#"{"SequenceNumber":7,"Description":"Before SetupSweep uninstall","CreationTime":"20261015083012.000000-000","RestorePointType":12}"#;
+        let one = r#"{"SequenceNumber":7,"Description":"Before SetupScope uninstall","CreationTime":"20261015083012.000000-000","RestorePointType":12}"#;
         let p = parse_points(one);
         assert_eq!(p.len(), 1);
         assert_eq!(p[0].created, "2026-10-15 08:30");

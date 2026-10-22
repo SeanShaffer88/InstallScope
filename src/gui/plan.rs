@@ -6,10 +6,10 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use setupsweep_core::backup::{ActionResult, BackupWriter};
-use setupsweep_core::i18n::{t, tf};
-use setupsweep_core::refcount::{annotate_plan, RefLabel, ReferenceIndex};
-use setupsweep_core::revert::{execute_plan, ExecOptions, Plan, Risk};
+use setupscope_core::backup::{ActionResult, BackupWriter};
+use setupscope_core::i18n::{t, tf};
+use setupscope_core::refcount::{annotate_plan, RefLabel, ReferenceIndex};
+use setupscope_core::revert::{execute_plan, ExecOptions, Plan, Risk};
 use std::collections::BTreeSet;
 
 pub struct RemovalFlow {
@@ -25,8 +25,8 @@ pub struct RemovalFlow {
     pub delete_logs: bool,
     /// Programs this flow is removing (for the status line).
     pub names: Vec<String>,
-    /// Items hidden because Simple mode doesn't offer them (None = not yet filtered).
-    pub hidden_for_safety: Option<usize>,
+    /// Apply conservative initial selections once; technical items remain visible.
+    pub safety_defaults_applied: bool,
     /// Undoing a trial install: the exact log, never trimmed for Simple mode.
     pub trial: bool,
     /// Whether backups were on for the current/last run, captured when the
@@ -43,7 +43,7 @@ pub struct RemovalFlow {
     pub results: Option<(Vec<ActionResult>, BackupOutcome)>,
     pub open: bool,
     /// Confidence per plan item, computed once.
-    pub scores: Vec<setupsweep_core::revert::Confidence>,
+    pub scores: Vec<setupscope_core::revert::Confidence>,
     /// Reference-count label per plan item, computed once (parallel to
     /// `plan.items`, like `scores`).
     pub ref_labels: Vec<RefLabel>,
@@ -69,7 +69,7 @@ impl RemovalFlow {
             logs_to_delete: Vec::new(),
             delete_logs: true,
             names: Vec::new(),
-            hidden_for_safety: None,
+            safety_defaults_applied: false,
             trial: false,
             backup_on: true,
             restore_point_created: false,
@@ -141,9 +141,9 @@ fn summary_lines(outcome: &BackupOutcome, restore_point: bool) -> Vec<String> {
     }];
     if restore_point {
         lines.push(if matches!(outcome, BackupOutcome::Written(_)) {
-            t("A restore point was also created before the uninstall; you can roll back system changes with it on the System Restore page.")
+            t("A restore point was also created before the uninstall; you can roll back system changes with it using Windows System Restore.")
         } else {
-            t("A restore point was created before the uninstall, so Windows can roll back system changes on the System Restore page. It cannot bring back deleted files.")
+            t("A restore point was created before the uninstall, so Windows can roll back system changes using Windows System Restore. It cannot bring back deleted files.")
         });
     }
     lines
@@ -171,7 +171,7 @@ pub fn plan_ui(ui: &mut egui::Ui, flow: &mut RemovalFlow) {
             .plan
             .items
             .iter()
-            .map(setupsweep_core::revert::confidence)
+            .map(setupscope_core::revert::confidence)
             .collect();
     }
     // Recompute reference labels the same way (e.g. after Simple mode
@@ -207,7 +207,7 @@ pub fn plan_ui(ui: &mut egui::Ui, flow: &mut RemovalFlow) {
         theme::badge(ui, tf("{n} careful", &[("n", red.to_string())]), theme::BAD);
         if super::a11y::explain(
             ui.small_button(t("Select only green")),
-            &t("Tick only the items SetupSweep is confident are safe to remove."),
+            &t("Tick only the items SetupScope is confident are safe to remove."),
         )
         .clicked()
         {
@@ -420,6 +420,9 @@ fn ref_auto_select(flow: &RemovalFlow, n: usize) -> bool {
 
 impl App {
     pub fn open_removal(&mut self, flow: RemovalFlow) {
+        if self.removal.is_some() {
+            self.set_status(t("Finish or close the existing removal review first. Its results are preserved.")); return;
+        }
         let mut flow = flow;
         // Label every item from the cross-program reference index: the
         // logs this flow removes own the removal, everything else counts
@@ -434,7 +437,6 @@ impl App {
     }
 
     pub fn ui_removal(&mut self, ctx: &egui::Context) {
-        let simple = !self.settings.advanced_mode;
         // The configuration the review stage discloses. The run itself
         // captures its own copy when it starts (see below), so progress
         // and summary text describe the run, not later setting changes.
@@ -449,15 +451,11 @@ impl App {
         let Some(flow) = &mut self.removal else {
             return;
         };
-        if simple
-            && !flow.trial
-            && flow.hidden_for_safety.is_none()
-            && flow.job.is_none()
-            && flow.results.is_none()
-        {
-            flow.hidden_for_safety = Some(setupsweep_core::revert::simplify(&mut flow.plan));
-            flow.offer_unlogged = false;
-            flow.remove_unlogged = false;
+        if !flow.safety_defaults_applied && !flow.trial && flow.job.is_none() && flow.results.is_none() {
+            for item in &mut flow.plan.items {
+                if setupscope_core::revert::risk(item) == Risk::Careful { item.selected = false; }
+            }
+            flow.safety_defaults_applied = true;
         }
         let mut start = false;
         let mut close = false;
@@ -517,15 +515,7 @@ impl App {
                 } else {
                     theme::warning_banner(ui, review_text(false, flow.restore_point_created));
                 }
-                if let Some(n) = flow.hidden_for_safety.filter(|n| *n > 0) {
-                    small_muted(
-                        ui,
-                        tf(
-                            "{n} items that need expert judgment (Windows folders, services, shared settings or uncertain matches) were left alone. Advanced mode shows them.",
-                            &[("n", n.to_string())],
-                        ),
-                    );
-                }
+                small_muted(ui, if flow.trial { "Trial rollback uses the recorded plan. Review selected items and recovery coverage before proceeding." } else { "All technical details are visible. Higher-risk items start unchecked; review ownership and recovery before selecting them." });
                 ui.separator();
                 ui.horizontal_wrapped(|ui| {
                     if flow.offer_unlogged {
@@ -588,7 +578,7 @@ impl App {
             let opts = ExecOptions {
                 remove_unlogged: flow.remove_unlogged,
                 dry_run: false,
-                use_recycle_bin: self.settings.use_recycle_bin && !simple,
+                use_recycle_bin: self.settings.use_recycle_bin,
                 restart_explorer: self.settings.restart_explorer,
                 close_programs: self.settings.close_programs,
             };
@@ -640,10 +630,10 @@ impl App {
                 // Appends its verdict rows to this same results surface; the
                 // backup above (or its absence) remains the Undo.
                 {
-                    use setupsweep_core::canary;
-                    use setupsweep_core::leftovers::DeepIndex;
-                    use setupsweep_core::platform::expand_env;
-                    use setupsweep_core::util::protected_dirs;
+                    use setupscope_core::canary;
+                    use setupscope_core::leftovers::DeepIndex;
+                    use setupscope_core::platform::expand_env;
+                    use setupscope_core::util::protected_dirs;
                     let ix = DeepIndex::build(reg.as_ref(), None);
                     let exists: &dyn Fn(&str) -> bool = &|p| std::path::Path::new(p).exists();
                     let verdict = canary::run_from_plan(

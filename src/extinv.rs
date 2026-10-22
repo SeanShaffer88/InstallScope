@@ -1,33 +1,10 @@
-//! Browser extension inventory (ROADMAP "Next").
-//!
-//! Lists every installed extension, grouped by browser and profile, for the
-//! Chromium family (Chrome, Edge, Brave, Vivaldi, Chromium, Opera) and the
-//! Firefox family (Firefox, LibreWolf, Waterfox, Floorp), and can disable an
-//! extension in a way that is fully reversible and never touches the rest of
-//! the profile.
-//!
-//! How disable/restore works (and why it is safe):
-//!
-//! - Chromium extensions live in `<profile>\Extensions\<id>\<version>\`.
-//!   Firefox-family add-ons live in `<profile>\extensions\<id>.xpi` (or an
-//!   unpacked `<id>\` folder). The only step both browser families honor
-//!   without editing their internal databases is "the files are not there":
-//!   on the next start the browser treats the extension as not installed.
-//! - So disabling *moves* the extension's folder/file into SetupSweep's
-//!   own data folder (`<data>\extinv\disabled\…`) — nothing is ever deleted —
-//!   and records the exact original path in `<data>\extinv\records.json`.
-//!   Restoring moves it back to exactly that path. The profile's other data
-//!   (bookmarks, history, settings) is never read for writing and never
-//!   modified.
-//! - Moves are refused unless the source sits inside the profile folder the
-//!   inventory found it in, the destination in the profile does not already
-//!   exist on restore, and the extension is not already in the requested
-//!   state. A user should close the browser first: a running browser may
-//!   re-create or lock files; the page says so before every action.
+//! Browser extension inventory and best-effort file holding/recovery.
+//! Recognized profile layouts may be incomplete. Close the browser before moves.
+//! Only same-volume renames are supported; sync, policy or repair may recreate
+//! files. A validated receipt and write-ahead journal protect recovery metadata;
+//! ambiguous interruptions stop further moves. Other profile files are not edited.
 
 use crate::json;
-use crate::json::ToJson;
-use anyhow::{anyhow, Context, Result};
 use std::path::{Path, PathBuf};
 
 /// Which browser family an extension (or a disabled record) belongs to.
@@ -47,7 +24,7 @@ impl Family {
 }
 
 /// One extension found on this PC (enabled, browser-disabled, or held by
-/// SetupSweep after a reversible disable).
+/// SetupScope after a reversible disable).
 #[derive(Clone, Debug)]
 pub struct InstalledExtension {
     /// Display name of the browser, e.g. "Chrome".
@@ -73,7 +50,7 @@ pub struct InstalledExtension {
     /// `Extensions\<id>` folder; for Firefox the `.xpi` file (or unpacked
     /// folder) under `extensions\`.
     pub source_path: PathBuf,
-    /// `Some` when SetupSweep holds this extension (it was disabled
+    /// `Some` when SetupScope holds this extension (it was disabled
     /// through this module); the record is the way back.
     pub held: Option<DisabledRecord>,
 }
@@ -92,7 +69,7 @@ pub struct DisabledRecord {
     pub version: String,
     /// Original location of the extension's folder/file.
     pub source_path: String,
-    /// Where it is held now, inside SetupSweep's data folder.
+    /// Where it is held now, inside SetupScope's data folder.
     pub held_path: String,
     /// When it was disabled (local time string, for display).
     pub moved_at: String,
@@ -102,7 +79,7 @@ crate::json_struct!(DisabledRecord, default, {
     source_path, held_path, moved_at
 });
 
-/// A browser SetupSweep knows how to locate profiles for.
+/// A browser SetupScope knows how to locate profiles for.
 struct BrowserDef {
     name: &'static str,
     family: Family,
@@ -203,7 +180,7 @@ const NON_PROFILE_DIRS: &[&str] = &[
     "ShaderCache",
 ];
 
-/// Inventory every extension on this PC, plus the ones SetupSweep is
+/// Inventory every extension on this PC, plus the ones SetupScope is
 /// holding. Never fails as a whole: an unreadable browser/profile just
 /// contributes nothing (or the on-disk fallback), per profile.
 pub fn discover(store_root: &Path) -> Vec<InstalledExtension> {
@@ -245,29 +222,22 @@ pub fn discover(store_root: &Path) -> Vec<InstalledExtension> {
     // Held extensions no longer appear in profile scans; list them from the
     // records so the user can always restore them.
     for rec in load_records(store_root) {
-        let dup = out.iter().any(|e| {
-            e.browser == rec.browser
-                && e.profile_dir == Path::new(&rec.profile_dir)
-                && e.id == rec.id
+        out.push(InstalledExtension {
+            browser: rec.browser.clone(),
+            family: if rec.family == "firefox" {
+                Family::Firefox
+            } else {
+                Family::Chromium
+            },
+            profile: rec.profile.clone(),
+            profile_dir: PathBuf::from(&rec.profile_dir),
+            id: rec.id.clone(),
+            name: rec.name.clone(),
+            version: rec.version.clone(),
+            enabled: None,
+            source_path: PathBuf::from(&rec.source_path),
+            held: Some(rec),
         });
-        if !dup {
-            out.push(InstalledExtension {
-                browser: rec.browser.clone(),
-                family: if rec.family == "firefox" {
-                    Family::Firefox
-                } else {
-                    Family::Chromium
-                },
-                profile: rec.profile.clone(),
-                profile_dir: PathBuf::from(&rec.profile_dir),
-                id: rec.id.clone(),
-                name: rec.name.clone(),
-                version: rec.version.clone(),
-                enabled: None,
-                source_path: PathBuf::from(&rec.source_path),
-                held: Some(rec),
-            });
-        }
     }
     out
 }
@@ -676,7 +646,7 @@ fn percent_decode(s: &str) -> String {
 // ---------------------------------------------------------------------------
 // Disable / restore bookkeeping
 
-/// The folder (under SetupSweep's data root) holding disabled extensions
+/// The folder (under SetupScope's data root) holding disabled extensions
 /// and the records file.
 pub fn extinv_dir(store_root: &Path) -> PathBuf {
     store_root.join("extinv")
@@ -686,175 +656,14 @@ pub fn records_path(store_root: &Path) -> PathBuf {
     extinv_dir(store_root).join("records.json")
 }
 
-/// All recorded disables. A missing or unreadable records file means "none"
-/// (a corrupt file must not break the inventory; each record is also
-/// recoverable by hand from the holding folder layout).
-pub fn load_records(store_root: &Path) -> Vec<DisabledRecord> {
-    let Ok(text) = std::fs::read_to_string(records_path(store_root)) else {
-        return Vec::new();
-    };
-    json::from_json_str::<Vec<DisabledRecord>>(&text).unwrap_or_default()
-}
+mod recovery;
+pub use recovery::{
+    disable, load_records, load_records_checked, reconcile, recovery_problem, restore,
+};
 
-fn save_records(store_root: &Path, records: &[DisabledRecord]) -> Result<()> {
-    let dir = extinv_dir(store_root);
-    std::fs::create_dir_all(&dir).with_context(|| format!("create {}", dir.display()))?;
-    let text = json::to_string_pretty(&json::Value::Array(
-        records.iter().map(|r| r.to_json()).collect(),
-    ));
-    let tmp = dir.join("records.json.tmp");
-    std::fs::write(&tmp, text).with_context(|| format!("write {}", tmp.display()))?;
-    std::fs::rename(&tmp, records_path(store_root))
-        .with_context(|| format!("replace {}", records_path(store_root).display()))?;
-    Ok(())
-}
-
-/// Disable `ext` reversibly: move its files into SetupSweep's holding
-/// area and record exactly what moved. Nothing is deleted.
-pub fn disable(store_root: &Path, ext: &InstalledExtension) -> Result<DisabledRecord> {
-    if ext.held.is_some() {
-        return Err(anyhow!("{} is already disabled", ext.name));
-    }
-    let src = &ext.source_path;
-    if !src.exists() {
-        return Err(anyhow!(
-            "the files for {} were not found at {}",
-            ext.name,
-            src.display()
-        ));
-    }
-    if !path_within(src, &ext.profile_dir) {
-        return Err(anyhow!(
-            "refusing to move {}: it is not inside the profile folder {}",
-            src.display(),
-            ext.profile_dir.display()
-        ));
-    }
-    let mut records = load_records(store_root);
-    if records.iter().any(|r| {
-        r.browser == ext.browser
-            && r.profile_dir == ext.profile_dir.to_string_lossy()
-            && r.id == ext.id
-    }) {
-        return Err(anyhow!("{} is already disabled", ext.name));
-    }
-    let file_name = src
-        .file_name()
-        .ok_or_else(|| anyhow!("{} has no file name", src.display()))?
-        .to_string_lossy()
-        .into_owned();
-    let held_dir = extinv_dir(store_root)
-        .join("disabled")
-        .join(crate::util::safe_file_name(&ext.browser))
-        .join(crate::util::safe_file_name(&ext.profile));
-    std::fs::create_dir_all(&held_dir).with_context(|| format!("create {}", held_dir.display()))?;
-    let held_path = held_dir.join(&file_name);
-    if held_path.exists() {
-        return Err(anyhow!(
-            "a held copy of {} already exists at {}",
-            ext.name,
-            held_path.display()
-        ));
-    }
-    move_any(src, &held_path)
-        .with_context(|| format!("move {} to {}", src.display(), held_path.display()))?;
-    let rec = DisabledRecord {
-        id: ext.id.clone(),
-        browser: ext.browser.clone(),
-        family: ext.family.label().to_string(),
-        profile: ext.profile.clone(),
-        profile_dir: ext.profile_dir.to_string_lossy().into_owned(),
-        name: ext.name.clone(),
-        version: ext.version.clone(),
-        source_path: src.to_string_lossy().into_owned(),
-        held_path: held_path.to_string_lossy().into_owned(),
-        moved_at: crate::util::now_string(),
-    };
-    records.push(rec.clone());
-    if let Err(e) = save_records(store_root, &records) {
-        // Roll the move back so the extension is never stranded unrecorded.
-        let _ = move_any(&held_path, src);
-        return Err(e);
-    }
-    Ok(rec)
-}
-
-/// Restore a previously disabled extension: move its files back to the
-/// exact recorded location and drop the record.
-pub fn restore(store_root: &Path, record: &DisabledRecord) -> Result<()> {
-    let held = Path::new(&record.held_path);
-    let dest = Path::new(&record.source_path);
-    if !held.exists() {
-        return Err(anyhow!(
-            "the held copy of {} was not found at {}",
-            record.name,
-            held.display()
-        ));
-    }
-    if dest.exists() {
-        return Err(anyhow!(
-            "{} is already present at {}; refusing to overwrite it",
-            record.name,
-            dest.display()
-        ));
-    }
-    if let Some(parent) = dest.parent() {
-        std::fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
-    }
-    move_any(held, dest)
-        .with_context(|| format!("move {} back to {}", held.display(), dest.display()))?;
-    let mut records = load_records(store_root);
-    records.retain(|r| r != record);
-    save_records(store_root, &records)
-}
-
-/// `true` when `child` is `parent` itself or lives underneath it
-/// (component-wise, so `C:\Prof` does not "contain" `C:\Profile`).
+/// Component-wise containment for inventory display; mutation guards are stricter.
 pub fn path_within(child: &Path, parent: &Path) -> bool {
     child == parent || child.starts_with(parent)
-}
-
-/// Move a file or folder, falling back to copy-then-remove across volumes.
-/// Links are never followed by the copy fallback: a link moves by rename
-/// only, so its target is never copied or deleted by mistake.
-fn move_any(src: &Path, dst: &Path) -> Result<()> {
-    match std::fs::rename(src, dst) {
-        Ok(()) => Ok(()),
-        Err(first) => {
-            if crate::util::is_link(src) {
-                return Err(first.into());
-            }
-            if src.is_dir() {
-                copy_dir(src, dst)?;
-                std::fs::remove_dir_all(src)?;
-            } else {
-                std::fs::copy(src, dst)?;
-                std::fs::remove_file(src)?;
-            }
-            Ok(())
-        }
-    }
-}
-
-fn copy_dir(src: &Path, dst: &Path) -> Result<()> {
-    std::fs::create_dir_all(dst)?;
-    for entry in std::fs::read_dir(src)? {
-        let entry = entry?;
-        let from = entry.path();
-        let to = dst.join(entry.file_name());
-        if crate::util::is_link(&from) {
-            return Err(anyhow!(
-                "refusing to copy the link {} across volumes",
-                from.display()
-            ));
-        }
-        if from.is_dir() {
-            copy_dir(&from, &to)?;
-        } else {
-            std::fs::copy(&from, &to)?;
-        }
-    }
-    Ok(())
 }
 
 #[cfg(test)]

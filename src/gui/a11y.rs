@@ -11,7 +11,7 @@ use egui::{
 };
 
 fn mode_id() -> Id {
-    Id::new("setupsweep_keyboard_mode")
+    Id::new("setupscope_keyboard_mode")
 }
 
 /// True while the user is navigating with the keyboard (the focus ring is
@@ -82,7 +82,7 @@ pub fn selectable(resp: &Response, label: &str, selected: bool) {
 }
 
 fn focus_explanation_id() -> Id {
-    Id::new("setupsweep_focus_explanation")
+    Id::new("setupscope_focus_explanation")
 }
 
 /// An explanation recorded by [`explain`] for the control that holds
@@ -116,6 +116,8 @@ struct FocusExplanation {
 /// also be visible page text or a confirmation — never let this helper
 /// be the only carrier.
 pub fn explain(resp: Response, text: &str) -> Response {
+    let translated=setupscope_core::i18n::t(text);
+    let text=translated.as_str();
     if text.is_empty() {
         return resp;
     }

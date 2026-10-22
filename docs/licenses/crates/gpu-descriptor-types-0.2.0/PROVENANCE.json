@@ -1,0 +1,11 @@
+{
+  "package": "gpu-descriptor-types",
+  "version": "0.2.0",
+  "source_commit": "9f2fb9546591322e7b77ee1e79385e01effd85e4",
+  "sources": [
+    {
+      "file": "workspace-COPYING",
+      "url": "https://raw.githubusercontent.com/zakarumych/gpu-descriptor/9f2fb9546591322e7b77ee1e79385e01effd85e4/COPYING"
+    }
+  ]
+}

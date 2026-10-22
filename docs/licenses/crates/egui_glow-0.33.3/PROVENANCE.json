@@ -1,0 +1,15 @@
+{
+  "package": "egui_glow",
+  "version": "0.33.3",
+  "source_commit": "44cdd653e2317d300fb8a6c9c36b03f23991e803",
+  "sources": [
+    {
+      "file": "workspace-LICENSE-MIT",
+      "url": "https://raw.githubusercontent.com/emilk/egui/44cdd653e2317d300fb8a6c9c36b03f23991e803/LICENSE-MIT"
+    },
+    {
+      "file": "workspace-LICENSE-APACHE",
+      "url": "https://raw.githubusercontent.com/emilk/egui/44cdd653e2317d300fb8a6c9c36b03f23991e803/LICENSE-APACHE"
+    }
+  ]
+}

@@ -1,19 +1,19 @@
 //! Command-line interface for scripting and IT use.
 
-use setupsweep_core::backup::{list_backups, restore_backup, BackupWriter};
-use setupsweep_core::model::{human_size, InstallLog};
-use setupsweep_core::platform::{self, Registry};
-use setupsweep_core::refcount::{annotate_plan, RefLabel, ReferenceIndex};
-use setupsweep_core::revert::{build_plan, execute_plan, ExecOptions};
-use setupsweep_core::revert::{residue, residue_markdown};
-use setupsweep_core::rewind::{
+use setupscope_core::backup::{list_backups, restore_backup, BackupWriter};
+use setupscope_core::model::{human_size, InstallLog};
+use setupscope_core::platform::{self, Registry};
+use setupscope_core::refcount::{annotate_plan, RefLabel, ReferenceIndex};
+use setupscope_core::revert::{build_plan, execute_plan, ExecOptions};
+use setupscope_core::revert::{residue, residue_markdown};
+use setupscope_core::rewind::{
     build_rewind_plan, execute_rewind, list_states, CaptureKind, CaptureScope, ContentStore,
 };
-use setupsweep_core::snapshot::{
+use setupscope_core::snapshot::{
     detect_program, diff, filter_changes, load_snapshot, save_snapshot, take_snapshot, Progress,
 };
-use setupsweep_core::store::Store;
-use setupsweep_core::{programs, report};
+use setupscope_core::store::Store;
+use setupscope_core::{programs, report};
 use std::io::IsTerminal;
 use std::path::PathBuf;
 
@@ -34,7 +34,7 @@ fn arg_value(args: &[String], flag: &str) -> Option<String> {
 enum CmdClass {
     /// Prints information only; never writes, never prompts.
     ReadOnly,
-    /// Writes SetupSweep data, files the user named, settings or
+    /// Writes SetupScope data, files the user named, settings or
     /// backed-up, one-step-reversible changes. Never prompts.
     Mutating,
     /// Removes, deletes, uninstalls or overwrites system state, or is
@@ -50,21 +50,10 @@ fn classify(cmd: &str, args: &[String]) -> CmdClass {
         "logs" | "programs" | "verify" | "orphans" | "check-clean" | "backups" => ReadOnly,
         // Writes snapshots, logs, packages, settings or bookkeeping.
         "snapshot" | "diff" | "monitor" | "tag" | "merge" | "export" | "repackage"
-        | "silent-package" | "learn-noise" | "add-program" | "history" | "slowdown" | "watch"
-        | "pa-capture" | "portable-build" | "schedule-clean" => Mutating,
+        | "silent-package" | "learn-noise" | "add-program" | "history" | "watch" | "pa-capture"
+        | "portable-build" => Mutating,
         "revert" | "uninstall" => {
             if has(args, "--dry-run") {
-                ReadOnly
-            } else {
-                Destructive
-            }
-        }
-        "clean" => {
-            if has(args, "--scheduled") {
-                // The Task Scheduler entry point: the schedule the user
-                // set is the standing instruction, so it never prompts.
-                Mutating
-            } else if has(args, "--list") || has(args, "--dry-run") {
                 ReadOnly
             } else {
                 Destructive
@@ -98,21 +87,6 @@ fn classify(cmd: &str, args: &[String]) -> CmdClass {
                 Mutating
             }
         }
-        "restore-point" | "restore-points" => match sub {
-            "delete" | "rollback" => Destructive,
-            "create" => Mutating,
-            _ => ReadOnly,
-        },
-        "startup" => match sub {
-            // Backed up, and the inverse subcommand undoes it.
-            "enable" | "disable" => Mutating,
-            _ => ReadOnly,
-        },
-        "gatekeeper" => match sub {
-            "remove" => Destructive,
-            "scan" | "allow" | "enable" | "disable" => Mutating,
-            _ => ReadOnly,
-        },
         _ => Mutating,
     }
 }
@@ -177,7 +151,7 @@ fn confirm_destructive(args: &[String], what: &str) -> bool {
             eprintln!(
                 "Refusing to run without confirmation: there is no interactive \
                  terminal to ask in. Review what this command does \
-                 (`setupsweep {} --help`), then re-run with --yes if you mean it.",
+                 (`setupscope {} --help`), then re-run with --yes if you mean it.",
                 args.first().map(String::as_str).unwrap_or("")
             );
             false
@@ -197,9 +171,9 @@ fn help_for(cmd: &str) -> Option<&'static str> {
         .map(|(_, text)| *text)
 }
 
-/// Help requested by this invocation, if any: `setupsweep <command>
+/// Help requested by this invocation, if any: `setupscope <command>
 /// --help` / `-h` (only before a `--` separator, whose right side
-/// belongs to another program), or `setupsweep help <command>`.
+/// belongs to another program), or `setupscope help <command>`.
 /// Checked before anything runs, so help never warns, prompts or
 /// touches the system — and a flag can no longer be mistaken for an
 /// argument (P1-24: `revert --help` used to be parsed as a log id).
@@ -223,9 +197,9 @@ fn requested_help(args: &[String]) -> Option<&'static str> {
 /// Find one program by name: exact (ignoring case) first, then a unique
 /// partial match.
 fn pick_program<'a>(
-    progs: &'a [setupsweep_core::programs::InstalledProgram],
+    progs: &'a [setupscope_core::programs::InstalledProgram],
     name: &str,
-) -> anyhow::Result<&'a setupsweep_core::programs::InstalledProgram> {
+) -> anyhow::Result<&'a setupscope_core::programs::InstalledProgram> {
     if let Some(p) = progs.iter().find(|p| p.name.eq_ignore_ascii_case(name)) {
         return Ok(p);
     }
@@ -247,24 +221,19 @@ fn pick_program<'a>(
     }
 }
 
-/// Where scheduled cleaning records what it freed.
-fn st_log_path() -> anyhow::Result<PathBuf> {
-    Ok(store()?.root.join("cleaning.log"))
-}
-
 fn has(args: &[String], flag: &str) -> bool {
     args.iter().any(|a| a == flag)
 }
 
-/// `setupsweep portable-build`: capture an installation and build a
+/// `setupscope portable-build`: capture an installation and build a
 /// PortableApps.com package.
 fn portable_build(args: &[String], reg: &dyn Registry) -> anyhow::Result<i32> {
-    use setupsweep_core::pafbuild::{self, AppDetails, Job};
+    use setupscope_core::pafbuild::{self, AppDetails, Job};
     let installer = args
         .get(1)
         .filter(|a| !a.starts_with("--"))
         .ok_or_else(|| {
-            anyhow::anyhow!("usage: setupsweep portable-build <installer> --name NAME")
+            anyhow::anyhow!("usage: setupscope portable-build <installer> --name NAME")
         })?;
     let installer =
         std::fs::canonicalize(installer).map_err(|e| anyhow::anyhow!("{installer}: {e}"))?;
@@ -315,7 +284,7 @@ fn portable_build(args: &[String], reg: &dyn Registry) -> anyhow::Result<i32> {
         let (log, pkg) = pafbuild::capture(&job, reg, &report, &ask, &Progress::default())?;
         st.save_log(&log)?;
         eprintln!(
-            "The installation was recorded as install log {}; remove it with: setupsweep revert {}",
+            "The installation was recorded as install log {}; remove it with: setupscope revert {}",
             log.id, log.id
         );
         for w in &pkg.warnings {
@@ -326,7 +295,7 @@ fn portable_build(args: &[String], reg: &dyn Registry) -> anyhow::Result<i32> {
         let work = st
             .root
             .join("builder")
-            .join(setupsweep_core::util::new_id());
+            .join(setupscope_core::util::new_id());
         pafbuild::start_sandbox(&job, &work)?;
         eprintln!("Windows Sandbox is starting. Follow the steps in the sandbox window.");
         let mut last = String::new();
@@ -352,7 +321,7 @@ fn portable_build(args: &[String], reg: &dyn Registry) -> anyhow::Result<i32> {
             eprintln!("note: {w}");
         }
         if let Ok(b) = std::fs::read(work.join("install-log.json")) {
-            if let Ok(log) = setupsweep_core::json::compat::from_slice::<InstallLog>(&b) {
+            if let Ok(log) = setupscope_core::json::compat::from_slice::<InstallLog>(&b) {
                 let _ = st.save_log(&log);
             }
         }
@@ -386,7 +355,7 @@ fn portable_build(args: &[String], reg: &dyn Registry) -> anyhow::Result<i32> {
 /// `--profile NAME` (any command): use a saved monitoring profile.
 static PROFILE: std::sync::OnceLock<String> = std::sync::OnceLock::new();
 
-fn load_settings(st: &Store) -> setupsweep_core::settings::Settings {
+fn load_settings(st: &Store) -> setupscope_core::settings::Settings {
     let mut s = st.load_settings();
     if let Some(p) = PROFILE.get() {
         if !s.use_profile(p) {
@@ -402,20 +371,20 @@ fn store() -> anyhow::Result<Store> {
 
 /// Fold the current install logs and read-only system inventories into
 /// Slowdown Detective history and save it. Cheap reads only — no snapshot.
-fn capture_history(st: &Store, reg: &dyn Registry) -> setupsweep_core::history::HistoryStore {
-    let mut h = setupsweep_core::history::HistoryStore::load(&st.root);
+fn capture_history(st: &Store, reg: &dyn Registry) -> setupscope_core::history::HistoryStore {
+    let mut h = setupscope_core::history::HistoryStore::load(&st.root);
     let logs = st.list_logs();
     let programs_now = programs::list_programs(reg, false);
-    let autostart = setupsweep_core::startup::list_startup(reg);
-    let services = setupsweep_core::startup::list_services(reg);
-    let tasks = setupsweep_core::startup::list_tasks();
+    let autostart = setupscope_core::startup::list_startup(reg);
+    let services = setupscope_core::startup::list_services(reg);
+    let tasks = setupscope_core::startup::list_tasks();
     h.capture_full(
         &logs,
         &programs_now,
         &autostart,
         &services,
         &tasks,
-        setupsweep_core::time::unix_now(),
+        setupscope_core::time::unix_now(),
     );
     if let Err(e) = h.save(&st.root) {
         eprintln!("warning: could not save the change history: {e}");
@@ -424,8 +393,8 @@ fn capture_history(st: &Store, reg: &dyn Registry) -> setupsweep_core::history::
 }
 
 /// One history event as a single display line.
-fn event_line(e: &setupsweep_core::history::HistoryEvent) -> String {
-    use setupsweep_core::history::HistoryEventKind as K;
+fn event_line(e: &setupscope_core::history::HistoryEvent) -> String {
+    use setupscope_core::history::HistoryEventKind as K;
     let mut s = format!("{}  {:<17} {}", e.date, e.kind.label(), e.subject);
     match e.kind {
         K::ProgramUpdated => s.push_str(&format!("  {} → {}", e.from_version, e.to_version)),
@@ -447,10 +416,10 @@ fn event_line(e: &setupsweep_core::history::HistoryEvent) -> String {
 }
 
 fn event_json(
-    e: &setupsweep_core::history::HistoryEvent,
+    e: &setupscope_core::history::HistoryEvent,
     measured_ms: Option<u64>,
-) -> setupsweep_core::json::Value {
-    setupsweep_core::json!({
+) -> setupscope_core::json::Value {
+    setupscope_core::json!({
         "date": e.date, "kind": format!("{:?}", e.kind), "subject": e.subject,
         "from_version": e.from_version, "to_version": e.to_version,
         "target": e.target, "detail": e.detail, "measured_ms": measured_ms,
@@ -461,7 +430,7 @@ fn save_new_log(
     store: &Store,
     name: &str,
     installer: &str,
-    mut changes: setupsweep_core::model::ChangeSet,
+    mut changes: setupscope_core::model::ChangeSet,
 ) -> anyhow::Result<InstallLog> {
     let settings = load_settings(store);
     filter_changes(
@@ -470,9 +439,9 @@ fn save_new_log(
         &settings.effective_file_exclusions(),
     );
     let mut log = InstallLog {
-        id: setupsweep_core::util::new_id(),
+        id: setupscope_core::util::new_id(),
         name: name.to_string(),
-        created: setupsweep_core::util::now_string(),
+        created: setupscope_core::util::now_string(),
         installer: installer.to_string(),
         ..Default::default()
     };
@@ -507,7 +476,7 @@ fn save_new_log(
 fn snapshot_now(
     reg: &dyn Registry,
     store: &Store,
-) -> anyhow::Result<setupsweep_core::model::Snapshot> {
+) -> anyhow::Result<setupscope_core::model::Snapshot> {
     let settings = load_settings(store);
     let p = Progress::default();
     eprintln!("Taking snapshot…");
@@ -528,8 +497,8 @@ fn snapshot_now(
     Ok(s)
 }
 
-fn log_summary_json(l: &InstallLog) -> setupsweep_core::json::Value {
-    setupsweep_core::json!({
+fn log_summary_json(l: &InstallLog) -> setupscope_core::json::Value {
+    setupscope_core::json!({
         "id": l.id,
         "name": l.name,
         "publisher": l.publisher,
@@ -550,7 +519,22 @@ pub fn run(args: Vec<String>) -> i32 {
     }
 }
 
+fn retired_command(cmd: &str) -> bool {
+    matches!(
+        cmd,
+        "clean"
+            | "schedule-clean"
+            | "startup"
+            | "gatekeeper"
+            | "slowdown"
+            | "restore-point"
+            | "restore-points"
+    )
+}
+
 fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
+    let requested = args.first().map(String::as_str).unwrap_or("--help");
+    anyhow::ensure!(!retired_command(requested), "This general PC-maintenance command was removed from the developer toolkit. Reviewed program leftovers, install monitoring and backup recovery remain available. Existing scheduled tasks and saved data were not deleted.");
     // Per-command help comes before everything else: it must not warn,
     // prompt or touch the system, and it exits 0.
     if let Some(help) = requested_help(&args) {
@@ -574,21 +558,21 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
         && gate_decision(has(&args, "--yes"), stdin_interactive()) == Gate::Refuse
     {
         eprintln!(
-            "`setupsweep {cmd}` changes this PC and cannot ask for confirmation \
+            "`setupscope {cmd}` changes this PC and cannot ask for confirmation \
              without an interactive terminal.\nNothing was changed. Run it in a \
              terminal to be asked, or add --yes in a script once you have reviewed \
-             what it will do (see `setupsweep {cmd} --help`)."
+             what it will do (see `setupscope {cmd} --help`)."
         );
         return Ok(1);
     }
     let reg = platform::system_registry();
     match cmd {
         "--help" | "-h" | "help" => println!("{HELP}"),
-        "--version" | "-V" => println!("SetupSweep {}", setupsweep_core::APP_VERSION),
+        "--version" | "-V" => println!("SetupScope {}", setupscope_core::APP_VERSION),
         "snapshot" => {
             let out = args
                 .get(1)
-                .ok_or_else(|| anyhow::anyhow!("usage: setupsweep snapshot <file.snap>"))?;
+                .ok_or_else(|| anyhow::anyhow!("usage: setupscope snapshot <file.snap>"))?;
             let st = store()?;
             let s = snapshot_now(reg.as_ref(), &st)?;
             save_snapshot(&PathBuf::from(out), &s)?;
@@ -597,7 +581,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
         "diff" => {
             let (a, b) = (args.get(1), args.get(2));
             let (Some(a), Some(b)) = (a, b) else {
-                anyhow::bail!("usage: setupsweep diff <before> <after>")
+                anyhow::bail!("usage: setupscope diff <before> <after>")
             };
             let before = load_snapshot(&PathBuf::from(a))?;
             let after = load_snapshot(&PathBuf::from(b))?;
@@ -606,7 +590,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             let mut log = save_new_log(&st, &name, "", diff(&before, &after))?;
             // Used by background monitoring (`watch`), which records here.
             if has(&args, "--auto") {
-                log.tags = vec![setupsweep_core::autowatch::TAG.to_string()];
+                log.tags = vec![setupscope_core::autowatch::TAG.to_string()];
                 log.notes = "Recorded automatically by background monitoring.".into();
                 st.save_log(&log)?;
                 eprintln!("Recorded {}", log.name);
@@ -617,7 +601,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
         }
         "monitor" => {
             let sep = args.iter().position(|a| a == "--").ok_or_else(|| {
-                anyhow::anyhow!("usage: setupsweep monitor [--name N] -- <installer> [args]")
+                anyhow::anyhow!("usage: setupscope monitor [--name N] -- <installer> [args]")
             })?;
             let installer: Vec<String> = args[sep + 1..].to_vec();
             if installer.is_empty() {
@@ -627,7 +611,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             let st = store()?;
             if let Some(p) = st.pending() {
                 anyhow::bail!(
-                    "monitoring of {} is already in progress; finish it in SetupSweep first",
+                    "monitoring of {} is already in progress; finish it in SetupScope first",
                     if p.name.is_empty() {
                         "an installation".to_string()
                     } else {
@@ -639,9 +623,9 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             // Marks the installation as monitored, so background monitoring
             // leaves it alone; cleared however this command ends.
             st.save_pending(
-                &setupsweep_core::store::PendingSession {
+                &setupscope_core::store::PendingSession {
                     name: name.clone(),
-                    started: setupsweep_core::util::now_string(),
+                    started: setupscope_core::util::now_string(),
                     installer: installer[0].clone(),
                     trial: false,
                 },
@@ -710,7 +694,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                     .iter()
                     .map(|l| {
                         let st = l.changes.stats();
-                        setupsweep_core::json!({
+                        setupscope_core::json!({
                             "id": l.id, "name": l.name, "publisher": l.publisher,
                             "version": l.version, "created": l.created,
                             "group": l.group, "tags": l.tags,
@@ -720,7 +704,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                     .collect();
                 println!(
                     "{}",
-                    setupsweep_core::json::compat::to_string_pretty(&items)?
+                    setupscope_core::json::compat::to_string_pretty(&items)?
                 );
             } else {
                 for l in &logs {
@@ -745,7 +729,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
         }
         "tag" => {
             let id = args.get(1).ok_or_else(|| {
-                anyhow::anyhow!("usage: setupsweep tag <log-id> [--group G] [--tags a,b]")
+                anyhow::anyhow!("usage: setupscope tag <log-id> [--group G] [--tags a,b]")
             })?;
             let st = store()?;
             let mut log = st.load_log(id)?;
@@ -753,7 +737,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 log.group = g.trim().to_string();
             }
             if let Some(t) = arg_value(&args, "--tags") {
-                log.tags = setupsweep_core::model::parse_tags(&t);
+                log.tags = setupscope_core::model::parse_tags(&t);
             }
             st.save_log(&log)?;
             println!(
@@ -770,7 +754,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 "export" => {
                     let out = args.get(2).ok_or_else(|| {
                         anyhow::anyhow!(
-                            "usage: setupsweep transfer export <out.setupsweep> <program>..."
+                            "usage: setupscope transfer export <out.setupscope> <program>..."
                         )
                     })?;
                     let wanted: Vec<String> = args
@@ -796,10 +780,10 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                         .map(|p| programs::log_for(&logs, p).map(|l| l.changes.clone()))
                         .collect();
                     let c =
-                        setupsweep_core::transfer::collect(&chosen, &changes, reg.as_ref(), &|s| {
+                        setupscope_core::transfer::collect(&chosen, &changes, reg.as_ref(), &|s| {
                             eprintln!("  {s}")
                         });
-                    let m = setupsweep_core::transfer::export(
+                    let m = setupscope_core::transfer::export(
                         &c,
                         reg.as_ref(),
                         &PathBuf::from(out),
@@ -818,13 +802,13 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 }
                 "check" | "import" => {
                     let pkg = PathBuf::from(args.get(2).ok_or_else(|| {
-                        anyhow::anyhow!("usage: setupsweep transfer check|import <package>")
+                        anyhow::anyhow!("usage: setupscope transfer check|import <package>")
                     })?);
-                    let m = setupsweep_core::transfer::read_manifest(&pkg)?;
-                    let c = setupsweep_core::transfer::check(
+                    let m = setupscope_core::transfer::read_manifest(&pkg)?;
+                    let c = setupscope_core::transfer::check(
                         &m,
                         reg.as_ref(),
-                        &setupsweep_core::transfer::Vars::current(),
+                        &setupscope_core::transfer::Vars::current(),
                     );
                     println!("From {} ({}), {}", m.computer, m.user, m.created);
                     for p in &m.programs {
@@ -849,7 +833,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                     let what = format!(
                         "This imports {} onto this PC: {} program(s) are written with \
                          their files and settings{}. A backup is taken first, so the \
-                         import can be undone with `setupsweep restore <backup-id>`.",
+                         import can be undone with `setupscope restore <backup-id>`.",
                         pkg.display(),
                         names.len(),
                         if has(&args, "--overwrite") {
@@ -865,7 +849,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                         &st.backups_dir(),
                         &format!("Transfer: {}", names.join(", ")),
                     )?;
-                    let res = setupsweep_core::transfer::restore(
+                    let res = setupscope_core::transfer::restore(
                         &pkg,
                         reg.as_ref(),
                         &mut bw,
@@ -877,10 +861,10 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                     for r in res.iter().filter(|r| !r.ok) {
                         eprintln!("failed: {} — {}", r.description, r.message);
                     }
-                    println!("Restored. Undo with: setupsweep restore {}", b.id);
+                    println!("Restored. Undo with: setupscope restore {}", b.id);
                     return Ok(if failed == 0 { 0 } else { 2 });
                 }
-                _ => anyhow::bail!("usage: setupsweep transfer export|check|import …"),
+                _ => anyhow::bail!("usage: setupscope transfer export|check|import …"),
             }
         }
         "uninstall" => {
@@ -909,7 +893,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 out
             };
             if names.is_empty() {
-                anyhow::bail!("name at least one program (see `setupsweep programs`)");
+                anyhow::bail!("name at least one program (see `setupscope programs`)");
             }
             let silent_mode = has(&args, "--silent");
             let dry = has(&args, "--dry-run");
@@ -920,7 +904,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                     "This uninstalls: {}. Each program's own uninstaller runs — what \
                      an uninstaller itself changes is not backed up and cannot be \
                      undone. Safe leftovers found afterwards are removed with a \
-                     backup (undo with `setupsweep restore <backup-id>`).",
+                     backup (undo with `setupscope restore <backup-id>`).",
                     names.join(", ")
                 );
                 if !confirm_destructive(&args, &what) {
@@ -942,9 +926,9 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                         continue;
                     }
                 };
-                let engine = setupsweep_core::silent::detect(&p);
+                let engine = setupscope_core::silent::detect(&p);
                 let cmd = if silent_mode {
-                    setupsweep_core::silent::silent_command(&p, engine)
+                    setupscope_core::silent::silent_command(&p, engine)
                 } else {
                     p.uninstall_command(false)
                 };
@@ -966,9 +950,9 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                     std::thread::sleep(std::time::Duration::from_secs(5));
                 }
                 let code = platform::spawn_command_line(&cmd)?.wait();
-                match setupsweep_core::silent::exit_meaning(engine, code) {
-                    setupsweep_core::silent::ExitMeaning::RebootRequired => reboot = true,
-                    setupsweep_core::silent::ExitMeaning::Success => {}
+                match setupscope_core::silent::exit_meaning(engine, code) {
+                    setupscope_core::silent::ExitMeaning::RebootRequired => reboot = true,
+                    setupscope_core::silent::ExitMeaning::Success => {}
                     m => {
                         eprintln!("  the uninstaller reported {m:?} (exit code {code})");
                     }
@@ -985,14 +969,14 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 if leftovers == "none" {
                     continue;
                 }
-                let mut plan = setupsweep_core::leftovers::find_leftovers(
+                let mut plan = setupscope_core::leftovers::find_leftovers(
                     &p,
                     reg.as_ref(),
-                    &setupsweep_core::leftovers::LeftoverScope::default(),
+                    &setupscope_core::leftovers::LeftoverScope::default(),
                 );
                 // Unattended: only items labelled Safe.
                 for i in &mut plan.items {
-                    if setupsweep_core::revert::risk(i) != setupsweep_core::revert::Risk::Safe {
+                    if setupscope_core::revert::risk(i) != setupscope_core::revert::Risk::Safe {
                         i.selected = false;
                     }
                 }
@@ -1007,7 +991,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 let b = w.finish()?;
                 let ok = results.iter().filter(|r| r.ok).count();
                 println!(
-                    "  removed {ok} leftovers (backup {}; restore with: setupsweep restore {})",
+                    "  removed {ok} leftovers (backup {}; restore with: setupscope restore {})",
                     b.id, b.id
                 );
                 if ok < results.len() {
@@ -1019,364 +1003,6 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             }
             return Ok(if failures > 0 { 2 } else { 0 });
         }
-        "clean" => {
-            let cats = setupsweep_core::cleaner::categories();
-            if has(&args, "--list") {
-                for c in &cats {
-                    let r = setupsweep_core::cleaner::scan(c);
-                    println!(
-                        "{:<20} {:>10}  {}{}",
-                        c.id,
-                        human_size(r.bytes),
-                        if c.default_on && !setupsweep_core::cleaner::is_advanced(c.id) {
-                            "default"
-                        } else {
-                            ""
-                        },
-                        if c.needs_admin {
-                            " (administrator)"
-                        } else {
-                            ""
-                        }
-                    );
-                }
-                return Ok(0);
-            }
-            let wanted: Vec<String> = match arg_value(&args, "--categories") {
-                Some(v) => v
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect(),
-                None => cats
-                    .iter()
-                    .filter(|c| c.default_on && !setupsweep_core::cleaner::is_advanced(c.id))
-                    .map(|c| c.id.to_string())
-                    .collect(),
-            };
-            let elevated = platform::is_elevated();
-            // The Cleaner page's protected list applies here too, so a
-            // protected path survives manual and scheduled cleans alike.
-            let protect = load_settings(&store()?).cleaner_protect;
-            if !has(&args, "--dry-run") && !has(&args, "--scheduled") {
-                let what = format!(
-                    "This permanently deletes junk files in these categories: {}. \
-                     Cleaned files are not backed up and SetupSweep cannot \
-                     restore them. Paths on the Cleaner page's Protected list \
-                     are kept.",
-                    wanted.join(", ")
-                );
-                if !confirm_destructive(&args, &what) {
-                    return Ok(1);
-                }
-            }
-            let mut total = 0u64;
-            for id in &wanted {
-                let Some(c) = cats.iter().find(|c| c.id == id) else {
-                    eprintln!("unknown category: {id} (see `setupsweep clean --list`)");
-                    continue;
-                };
-                if c.needs_admin && !elevated {
-                    eprintln!("{id}: skipped (needs administrator rights)");
-                    continue;
-                }
-                let scan = setupsweep_core::cleaner::scan_detailed(c, &protect);
-                let kept = scan.kept_totals();
-                if kept.files > 0 && !has(&args, "--scheduled") {
-                    println!(
-                        "{:<20} {:>10}  {} protected file(s) kept",
-                        id,
-                        human_size(kept.bytes),
-                        kept.files
-                    );
-                }
-                let r = if has(&args, "--dry-run") {
-                    scan.totals
-                } else {
-                    setupsweep_core::cleaner::clean_files(c, &scan.files)
-                };
-                total += r.bytes;
-                if !has(&args, "--scheduled") {
-                    println!("{:<20} {:>10}  {} files", id, human_size(r.bytes), r.files);
-                }
-            }
-            if has(&args, "--scheduled") {
-                // Leave a trace for the user in the data folder.
-                let line = format!(
-                    "{}  cleaned {}\n",
-                    setupsweep_core::util::now_string(),
-                    human_size(total)
-                );
-                let path = st_log_path()?;
-                let mut old = std::fs::read_to_string(&path).unwrap_or_default();
-                old.push_str(&line);
-                let keep: Vec<&str> = old.lines().rev().take(100).collect();
-                let text: String = keep.into_iter().rev().map(|l| format!("{l}\n")).collect();
-                let _ = std::fs::write(&path, text);
-            } else {
-                println!("Total: {}", human_size(total));
-            }
-        }
-        "schedule-clean" => {
-            let what = args.get(1).map(|s| s.as_str()).unwrap_or("");
-            if what == "off" {
-                setupsweep_core::schedule::remove()?;
-                println!("Automatic cleaning turned off.");
-                return Ok(0);
-            }
-            let freq = match what {
-                "daily" => setupsweep_core::schedule::Frequency::Daily,
-                "weekly" => setupsweep_core::schedule::Frequency::Weekly,
-                "monthly" => setupsweep_core::schedule::Frequency::Monthly,
-                _ => anyhow::bail!(
-                    "usage: setupsweep schedule-clean daily|weekly|monthly|off [--categories a,b]"
-                ),
-            };
-            let cats: Vec<String> = match arg_value(&args, "--categories") {
-                Some(v) => v
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty())
-                    .collect(),
-                None => setupsweep_core::cleaner::categories()
-                    .iter()
-                    .filter(|c| c.default_on && !setupsweep_core::cleaner::is_advanced(c.id))
-                    .map(|c| c.id.to_string())
-                    .collect(),
-            };
-            let refs: Vec<&str> = cats.iter().map(|s| s.as_str()).collect();
-            setupsweep_core::schedule::set(&refs, freq, platform::is_elevated())?;
-            println!("Junk will be cleaned {} ({}).", what, cats.join(", "));
-        }
-        "startup" => {
-            let entries = setupsweep_core::startup::list_startup(reg.as_ref());
-            match args.get(1).map(|s| s.as_str()) {
-                Some(op @ ("enable" | "disable")) => {
-                    let name = args
-                        .get(2)
-                        .ok_or_else(|| anyhow::anyhow!("name the startup program"))?;
-                    let e = entries
-                        .iter()
-                        .find(|e| e.name.eq_ignore_ascii_case(name))
-                        .ok_or_else(|| anyhow::anyhow!("no startup program called {name}"))?;
-                    if op == "disable" && setupsweep_core::startup::is_essential(e) {
-                        anyhow::bail!("{} is needed by Windows, security software or hardware and can't be disabled", e.name);
-                    }
-                    let st = store()?;
-                    let mut w = BackupWriter::new(
-                        &st.backups_dir(),
-                        &format!("Startup: {} {}", op, e.name),
-                    )?;
-                    setupsweep_core::startup::set_enabled(
-                        reg.as_ref(),
-                        e,
-                        op == "enable",
-                        Some(&mut w),
-                    )?;
-                    w.finish()?;
-                    println!("{} {}d.", e.name, op);
-                }
-                _ => {
-                    if has(&args, "--json") {
-                        let items: Vec<_> = entries
-                            .iter()
-                            .map(|e| setupsweep_core::json!({
-                                "name": e.name, "command": e.command, "location": e.location,
-                                "enabled": e.enabled, "all_users": e.all_users, "missing": e.missing,
-                            }))
-                            .collect();
-                        println!(
-                            "{}",
-                            setupsweep_core::json::compat::to_string_pretty(&items)?
-                        );
-                    } else {
-                        let boot = setupsweep_core::boot::read();
-                        if let Some(ms) = boot.as_ref().and_then(|b| b.last_boot_ms) {
-                            println!("Last startup took {:.0} s.", ms as f64 / 1000.0);
-                        }
-                        for e in &entries {
-                            let impact = boot
-                                .as_ref()
-                                .and_then(|b| b.impact_of(&e.command))
-                                .map(|i| {
-                                    format!("  [impact: {}, {} ms]", i.level().label(), i.avg_ms)
-                                })
-                                .unwrap_or_default();
-                            println!(
-                                "[{}] {}{}{impact}  {}",
-                                if e.enabled { "on " } else { "off" },
-                                e.name,
-                                if e.missing { " (missing)" } else { "" },
-                                e.command
-                            );
-                        }
-                    }
-                }
-            }
-        }
-        "gatekeeper" => {
-            // Autostart Gatekeeper: opt-in review queue for new autostart
-            // entries. Nothing here can block an installer or remove an
-            // entry the user has not explicitly decided on.
-            use setupsweep_core::gatekeeper::{self as gk, Attribution, ItemState, Queue};
-            let st = store()?;
-            let mut settings = load_settings(&st);
-            let sub = args.get(1).map(|s| s.as_str());
-            match sub {
-                None | Some("show") | Some("--json") => {
-                    let q = Queue::load(&st)?;
-                    if has(&args, "--json") {
-                        println!(
-                            "{}",
-                            setupsweep_core::json::compat::to_string_pretty(&q.items)?
-                        );
-                        return Ok(0);
-                    }
-                    println!(
-                        "Autostart Gatekeeper is {}.",
-                        if settings.gatekeeper_enabled {
-                            "on"
-                        } else {
-                            "off"
-                        }
-                    );
-                    if q.items.is_empty() {
-                        println!("The review queue is empty.");
-                    } else {
-                        for i in &q.items {
-                            let verdict = i
-                                .verdict
-                                .map(|v| format!(" — {}", v.label()))
-                                .unwrap_or_default();
-                            println!(
-                                "[{}] {} ({}) — {}{}",
-                                match i.state {
-                                    ItemState::Pending => " ? ",
-                                    ItemState::Allowed => " ok",
-                                    ItemState::Removed => "gone",
-                                },
-                                i.entry.name,
-                                i.entry.command,
-                                i.attribution.label(),
-                                verdict
-                            );
-                            println!(
-                                "      id {} · first seen {} · {}",
-                                i.id,
-                                i.first_seen,
-                                i.state.label()
-                            );
-                            for r in &i.verdict_reasons {
-                                println!("      {r}");
-                            }
-                            if let Attribution::Log { evidence, .. } = &i.attribution {
-                                println!("      evidence: {evidence}");
-                            }
-                            if !i.note.is_empty() {
-                                println!("      note: {}", i.note);
-                            }
-                        }
-                    }
-                    let n = q.pending().len();
-                    if n > 0 {
-                        println!(
-                            "{n} entr{} waiting for your decision: \
-                             `setupsweep gatekeeper allow <id>` keeps one, \
-                             `setupsweep gatekeeper remove <id>` removes it (backed up first).",
-                            if n == 1 { "y" } else { "ies" }
-                        );
-                    }
-                }
-                Some("scan") => {
-                    if !settings.gatekeeper_enabled {
-                        println!(
-                            "Autostart Gatekeeper is off, so nothing was scanned. \
-                             Turn it on with `setupsweep gatekeeper enable` or in Settings."
-                        );
-                        return Ok(0);
-                    }
-                    let mut q = Queue::load(&st)?;
-                    let current: Vec<gk::WatchedEntry> =
-                        setupsweep_core::startup::list_startup(reg.as_ref())
-                            .iter()
-                            .map(gk::WatchedEntry::from)
-                            .collect();
-                    let logs = st.list_logs();
-                    let summary = gk::run_scan(&mut q, &current, &logs);
-                    q.save(&st)?;
-                    println!(
-                        "Scan complete: {} new, {} changed, {} waiting for your decision.",
-                        summary.added.len(),
-                        summary.changed.len(),
-                        q.pending().len()
-                    );
-                }
-                Some("allow") => {
-                    let id = args.get(2).ok_or_else(|| {
-                        anyhow::anyhow!("usage: setupsweep gatekeeper allow <id>")
-                    })?;
-                    let mut q = Queue::load(&st)?;
-                    let item = q.allow(id)?;
-                    q.save(&st)?;
-                    println!(
-                        "Kept \"{}\": it stays as it is, and future scans will not ask about it again.",
-                        item.entry.name
-                    );
-                }
-                Some("remove") => {
-                    let id = args.get(2).ok_or_else(|| {
-                        anyhow::anyhow!("usage: setupsweep gatekeeper remove <id>")
-                    })?;
-                    let mut q = Queue::load(&st)?;
-                    let label = q
-                        .items
-                        .iter()
-                        .find(|i| i.id.as_str() == id.as_str())
-                        .map(|i| i.entry.name.clone())
-                        .unwrap_or_else(|| id.clone());
-                    let what = format!(
-                        "This removes the autostart entry \u{201c}{label}\u{201d}. \
-                         A backup is taken first, so it can be restored with \
-                         `setupsweep restore <backup-id>` (the id is printed \
-                         when it finishes)."
-                    );
-                    if !confirm_destructive(&args, &what) {
-                        return Ok(1);
-                    }
-                    let (item, backup_id) =
-                        gk::remove_entry(&mut q, id, reg.as_ref(), &st.backups_dir())?;
-                    q.save(&st)?;
-                    println!(
-                        "Removed \"{}\". Backup: {} (undo with: setupsweep restore {})",
-                        item.entry.name, backup_id, backup_id
-                    );
-                }
-                Some("enable") => {
-                    settings.gatekeeper_enabled = true;
-                    st.save_settings(&settings)?;
-                    println!(
-                        "Autostart Gatekeeper is on. New autostart entries will be \
-                         held in the review queue (`setupsweep gatekeeper`) instead \
-                         of going unnoticed. Nothing is blocked or removed without \
-                         your decision."
-                    );
-                }
-                Some("disable") => {
-                    settings.gatekeeper_enabled = false;
-                    st.save_settings(&settings)?;
-                    println!(
-                        "Autostart Gatekeeper is off. The queue and baseline were kept; \
-                         turn it back on any time to resume reviewing."
-                    );
-                }
-                Some(other) => {
-                    anyhow::bail!(
-                        "unknown gatekeeper command \"{other}\"; use: \
-                         gatekeeper [show|--json] | scan | allow <id> | remove <id> | enable | disable"
-                    );
-                }
-            }
-        }
         "watch" => {
             #[cfg(windows)]
             platform::windows::background_priority();
@@ -1384,7 +1010,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             let base_path = st.snapshots_dir().join("auto-baseline.snap");
             let after_path = st.snapshots_dir().join("auto-after.snap");
             let poll = std::time::Duration::from_secs(30);
-            // Snapshots and comparisons run in a short-lived copy of SetupSweep:
+            // Snapshots and comparisons run in a short-lived copy of SetupScope:
             // building a snapshot of every monitored place can take a
             // gigabyte or more, and this process stays running for days.
             // The memory goes back to Windows when the copy exits.
@@ -1421,7 +1047,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             let usage_every = std::time::Duration::from_secs(300);
             let rebaseline_every = std::time::Duration::from_secs(24 * 3600);
             let mut next_usage = std::time::Instant::now() + usage_every;
-            let mut keys = setupsweep_core::autowatch::uninstall_keys(reg.as_ref());
+            let mut keys = setupscope_core::autowatch::uninstall_keys(reg.as_ref());
             let mut base_time = std::time::Instant::now();
             let mut stale = false;
             loop {
@@ -1435,13 +1061,13 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 };
                 let event = watch.wait(Some(timeout))?;
                 if std::time::Instant::now() >= next_usage {
-                    setupsweep_core::usage::sample_and_save(&st.root, 290);
+                    setupscope_core::usage::sample_and_save(&st.root, 290);
                     next_usage = std::time::Instant::now() + usage_every;
                 }
                 // Manual monitoring records this installation itself.
                 if st.pending().is_some() {
                     stale = true;
-                    keys = setupsweep_core::autowatch::uninstall_keys(reg.as_ref());
+                    keys = setupscope_core::autowatch::uninstall_keys(reg.as_ref());
                     continue;
                 }
                 if event == platform::WatchEvent::Timeout
@@ -1450,8 +1076,8 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 {
                     continue;
                 }
-                let now = setupsweep_core::autowatch::uninstall_keys(reg.as_ref());
-                let new = setupsweep_core::autowatch::added(&keys, &now);
+                let now = setupscope_core::autowatch::uninstall_keys(reg.as_ref());
+                let new = setupscope_core::autowatch::added(&keys, &now);
                 if new.is_empty() {
                     if now != keys {
                         // Something was uninstalled: start from a fresh baseline.
@@ -1462,7 +1088,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                         && !platform::installer_busy()
                     {
                         take_baseline(&st)?;
-                        keys = setupsweep_core::autowatch::uninstall_keys(reg.as_ref());
+                        keys = setupscope_core::autowatch::uninstall_keys(reg.as_ref());
                         base_time = std::time::Instant::now();
                         stale = false;
                     }
@@ -1474,7 +1100,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 let mut last = now;
                 loop {
                     let ev = watch.wait(Some(std::time::Duration::from_secs(20)))?;
-                    let again = setupsweep_core::autowatch::uninstall_keys(reg.as_ref());
+                    let again = setupscope_core::autowatch::uninstall_keys(reg.as_ref());
                     let settled = ev == platform::WatchEvent::Timeout
                         && again == last
                         && !platform::installer_busy();
@@ -1498,23 +1124,23 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             // Installer Decrapifier on the command line.
             let id = args.get(1).ok_or_else(|| {
                 anyhow::anyhow!(
-                    "usage: setupsweep components <log-id> [--json] [--ask-model] [--strike]"
+                    "usage: setupscope components <log-id> [--json] [--ask-model] [--strike]"
                 )
             })?;
             let st = store()?;
             let mut log = st.load_log(id)?;
-            let ctx = setupsweep_core::decrap::context_for(&log);
-            let mut comps = setupsweep_core::decrap::components(
+            let ctx = setupscope_core::decrap::context_for(&log);
+            let mut comps = setupscope_core::decrap::components(
                 &log.changes,
                 &ctx,
-                &setupsweep_core::decrap::read_task_command,
+                &setupscope_core::decrap::read_task_command,
             );
             if has(&args, "--ask-model") {
                 let s = load_settings(&st);
                 if s.local_model_url.is_empty() {
                     anyhow::bail!("no local model is set (Settings > Installer Decrapifier)");
                 }
-                let n = setupsweep_core::llm::judge_unknowns(
+                let n = setupscope_core::llm::judge_unknowns(
                     &s.local_model_url,
                     &s.local_model_name,
                     &log.name,
@@ -1526,10 +1152,10 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             if has(&args, "--json") {
                 println!(
                     "{}",
-                    setupsweep_core::json::compat::to_string_pretty(&comps)?
+                    setupscope_core::json::compat::to_string_pretty(&comps)?
                 );
             } else {
-                println!("{}", setupsweep_core::decrap::summary(&log.name, &comps));
+                println!("{}", setupscope_core::decrap::summary(&log.name, &comps));
                 for c in &comps {
                     println!(
                         "[{}] {:<24} {} — {}",
@@ -1548,7 +1174,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 }
             }
             if has(&args, "--strike") {
-                let chosen: Vec<&setupsweep_core::decrap::Component> = comps
+                let chosen: Vec<&setupscope_core::decrap::Component> = comps
                     .iter()
                     .filter(|c| c.verdict.strike_by_default())
                     .collect();
@@ -1559,7 +1185,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                         "This strikes {} component(s) of {}: the services, tasks and \
                          autoruns judged as bloat are removed. A backup is taken \
                          first, so they can be restored with \
-                         `setupsweep restore <backup-id>`.",
+                         `setupscope restore <backup-id>`.",
                         chosen.len(),
                         log.name
                     );
@@ -1570,7 +1196,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                         &st.backups_dir(),
                         &format!("Strike background items of {}", log.name),
                     )?;
-                    let results = setupsweep_core::decrap::strike(
+                    let results = setupscope_core::decrap::strike(
                         &mut log,
                         &chosen,
                         reg.as_ref(),
@@ -1587,7 +1213,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                     }
                     st.save_log(&log)?;
                     println!(
-                        "Backup: {} (restore with: setupsweep restore {})",
+                        "Backup: {} (restore with: setupscope restore {})",
                         b.id, b.id
                     );
                     if results.iter().any(|r| !r.ok) {
@@ -1601,7 +1227,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             let h = capture_history(&st, reg.as_ref());
             let since = arg_value(&args, "--since");
             if let Some(s) = &since {
-                if setupsweep_core::time::Date::parse_ymd(s).is_none() {
+                if setupscope_core::time::Date::parse_ymd(s).is_none() {
                     anyhow::bail!("--since wants a date as YYYY-MM-DD, got {s}");
                 }
             }
@@ -1615,7 +1241,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 let items: Vec<_> = events.iter().map(|e| event_json(e, None)).collect();
                 println!(
                     "{}",
-                    setupsweep_core::json::compat::to_string_pretty(&items)?
+                    setupscope_core::json::compat::to_string_pretty(&items)?
                 );
             } else if events.is_empty() {
                 match h.started_date() {
@@ -1628,145 +1254,10 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 }
             }
         }
-        "slowdown" => {
-            use setupsweep_core::history::HistoryEventKind as K;
-            use setupsweep_core::time::Date;
-            let st = store()?;
-            let h = capture_history(&st, reg.as_ref());
-            let today = Date::today_local();
-            let to = match arg_value(&args, "--to") {
-                Some(s) => Date::parse_ymd(&s)
-                    .ok_or_else(|| anyhow::anyhow!("--to wants a date as YYYY-MM-DD, got {s}"))?,
-                None => today,
-            };
-            let from = match arg_value(&args, "--from") {
-                Some(s) => Date::parse_ymd(&s)
-                    .ok_or_else(|| anyhow::anyhow!("--from wants a date as YYYY-MM-DD, got {s}"))?,
-                None => today.add_days(-90),
-            };
-            if from > to {
-                anyhow::bail!("--from {from} is after --to {to}");
-            }
-            let rep = setupsweep_core::history::report(&h, from, to);
-
-            // Measurements, where Windows has them: boot diagnostics for
-            // autostart entries, the usage tracker's startup figures for
-            // programs still installed. Anything unmeasured stays unranked —
-            // it is never reported as zero impact.
-            let boot = setupsweep_core::boot::read();
-            let usage = setupsweep_core::usage::UsageData::gather(reg.as_ref(), &st.root);
-            let programs_now = programs::list_programs(reg.as_ref(), false);
-            let measured = |e: &setupsweep_core::history::HistoryEvent| -> Option<u64> {
-                if let Some(ms) = setupsweep_core::history::boot_impact_ms(e, boot.as_ref()) {
-                    return Some(ms);
-                }
-                if e.kind.is_program() {
-                    let p = programs_now.iter().find(|p| {
-                        setupsweep_core::model::fold(&p.name)
-                            == setupsweep_core::model::fold(&e.subject)
-                    })?;
-                    return usage.for_program(p).startup_ms;
-                }
-                None
-            };
-
-            if has(&args, "--json") {
-                let doc = setupsweep_core::json!({
-                    "from": from.to_string(), "to": to.to_string(),
-                    "history_started": rep.history_started,
-                    "total_events": rep.total_events,
-                    "measurements_available": boot.is_some(),
-                    "events": rep.events.iter().map(|e| event_json(e, measured(e))).collect::<Vec<_>>(),
-                });
-                println!("{}", setupsweep_core::json::compat::to_string_pretty(&doc)?);
-            } else {
-                println!("Slowdown Detective — changes from {from} to {to}");
-                match &rep.history_started {
-                    Some(d) => println!(
-                        "Recording since {d} · {} events recorded in all.",
-                        rep.total_events
-                    ),
-                    None => println!("Recording has not begun."),
-                }
-                if let Some(ms) = boot.as_ref().and_then(|b| b.last_boot_ms) {
-                    println!(
-                        "Last startup took {:.0} s (Windows boot diagnostics).",
-                        ms as f64 / 1000.0
-                    );
-                }
-                if rep.is_empty() {
-                    if rep.total_events == 0 {
-                        println!(
-                            "\nNot enough history yet: SetupSweep has only just begun \
-                             recording, so there is no earlier state to compare against. \
-                             Program, startup, service and scheduled-task changes from now on \
-                             will build the history this report needs."
-                        );
-                    } else {
-                        println!(
-                            "\nNothing changed between {from} and {to}. \
-                             {} events are recorded outside that window; widen it with --from/--to.",
-                            rep.total_events
-                        );
-                    }
-                } else {
-                    let mut ranked: Vec<(&setupsweep_core::history::HistoryEvent, u64)> =
-                        Vec::new();
-                    let mut rest: Vec<&setupsweep_core::history::HistoryEvent> = Vec::new();
-                    for e in &rep.events {
-                        match measured(e) {
-                            Some(ms) => ranked.push((e, ms)),
-                            None => rest.push(e),
-                        }
-                    }
-                    ranked.sort_by(|a, b| b.1.cmp(&a.1).then(b.0.date.cmp(&a.0.date)));
-                    if !ranked.is_empty() {
-                        println!(
-                            "\nRanked by measured startup impact (averages Windows measured):"
-                        );
-                        for (e, ms) in &ranked {
-                            println!("  [{:>6} ms] {}", ms, event_line(e));
-                        }
-                    } else if boot.is_none() {
-                        println!(
-                            "\nStartup-impact measurements are unavailable (Windows boot \
-                             diagnostics need administrator rights), so changes are ranked \
-                             by recency and count instead."
-                        );
-                    }
-                    if !rest.is_empty() {
-                        if !ranked.is_empty() {
-                            println!(
-                                "\nEverything else — no impact measurement exists for these, newest first:"
-                            );
-                        }
-                        for kind in [
-                            K::ProgramInstalled,
-                            K::ProgramUpdated,
-                            K::ProgramRemoved,
-                            K::AutostartAdded,
-                            K::AutostartRemoved,
-                            K::AutostartChanged,
-                        ] {
-                            let mut group: Vec<_> =
-                                rest.iter().filter(|e| e.kind == kind).collect();
-                            if group.is_empty() {
-                                continue;
-                            }
-                            group.reverse(); // newest first within the group
-                            println!("\n{} ({}):", kind.label(), group.len());
-                            for e in group {
-                                println!("  {}", event_line(e));
-                            }
-                        }
-                    }
-                }
-            }
-        }
         "check-clean" => {
             let id = args
                 .get(1)
-                .ok_or_else(|| anyhow::anyhow!("usage: setupsweep check-clean <log-id>"))?;
+                .ok_or_else(|| anyhow::anyhow!("usage: setupscope check-clean <log-id>"))?;
             let log = store()?.load_log(id)?;
             let left = residue(&log.changes, reg.as_ref());
             if left.items.is_empty() {
@@ -1777,21 +1268,21 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             return Ok(2);
         }
         "orphans" => {
-            let plan = setupsweep_core::orphans::scan_system(reg.as_ref());
+            let plan = setupscope_core::orphans::scan_system(reg.as_ref());
             if has(&args, "--json") {
                 let items: Vec<_> = plan
                     .items
                     .iter()
                     .map(|i| {
-                        setupsweep_core::json!({
+                        setupscope_core::json!({
                             "category": i.action.category(),
                             "kind": i.note,
                             "action": i.action.describe(),
-                            "risk": format!("{:?}", setupsweep_core::revert::risk(i)),
+                            "risk": format!("{:?}", setupscope_core::revert::risk(i)),
                         })
                     })
                     .collect();
-                println!("{}", setupsweep_core::json::Value::Array(items));
+                println!("{}", setupscope_core::json::Value::Array(items));
             } else if plan.items.is_empty() {
                 println!("No leftovers of removed programs found.");
             } else {
@@ -1807,11 +1298,11 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
         }
         "repackage" | "silent-package" => {
             let (Some(id), Some(dir)) = (args.get(1), args.get(2)) else {
-                anyhow::bail!("usage: setupsweep repackage <log-id> <folder> [--no-setup]")
+                anyhow::bail!("usage: setupscope repackage <log-id> <folder> [--no-setup]")
             };
             let st = store()?;
             let log = st.load_log(id)?;
-            let s = setupsweep_core::repackage::repackage(
+            let s = setupscope_core::repackage::repackage(
                 &log,
                 reg.as_ref(),
                 &PathBuf::from(dir),
@@ -1826,8 +1317,8 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 s.values
             );
             if !has(&args, "--no-setup") {
-                let tc = setupsweep_core::patools::ensure(&st.root, &|p| eprintln!("{p}…"))?;
-                let setup = setupsweep_core::patools::build_silent_setup(
+                let tc = setupscope_core::patools::ensure(&st.root, &|p| eprintln!("{p}…"))?;
+                let setup = setupscope_core::patools::build_silent_setup(
                     &tc,
                     &s.folder,
                     &log.name,
@@ -1844,7 +1335,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 .take_while(|a| !a.starts_with("--"))
                 .collect();
             if ids.len() < 2 {
-                anyhow::bail!("usage: setupsweep merge <log-id> <log-id>... [--name NAME]");
+                anyhow::bail!("usage: setupscope merge <log-id> <log-id>... [--name NAME]");
             }
             let st = store()?;
             let logs = ids
@@ -1852,7 +1343,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 .map(|id| st.load_log(id))
                 .collect::<anyhow::Result<Vec<_>>>()?;
             let refs: Vec<&InstallLog> = logs.iter().collect();
-            let merged = setupsweep_core::merge::merge_logs(
+            let merged = setupscope_core::merge::merge_logs(
                 &refs,
                 &arg_value(&args, "--name").unwrap_or_default(),
             );
@@ -1865,72 +1356,11 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 merged.name
             );
         }
-        "restore-point" | "restore-points" => {
-            use setupsweep_core::restore;
-            match args.get(1).map(String::as_str).unwrap_or("list") {
-                "list" => {
-                    let p = restore::protection();
-                    println!(
-                        "System Protection: {}",
-                        if p.enabled { "on" } else { "off" }
-                    );
-                    for r in restore::list()? {
-                        println!(
-                            "{:>5}  {}  {:<18}  {}",
-                            r.sequence,
-                            r.created,
-                            r.kind.label(),
-                            r.description
-                        );
-                    }
-                }
-                "create" => {
-                    let d = args
-                        .get(2)
-                        .cloned()
-                        .unwrap_or_else(|| "SetupSweep manual restore point".into());
-                    restore::create_restore_point(&d)?;
-                    println!("Created restore point: {d}");
-                }
-                "delete" => {
-                    let n: u32 = args.get(2).and_then(|x| x.parse().ok()).ok_or_else(|| {
-                        anyhow::anyhow!("usage: setupsweep restore-point delete <number> [--yes]")
-                    })?;
-                    let what = format!(
-                        "This deletes System Restore point {n} for good; Windows \
-                         can no longer roll back to it."
-                    );
-                    if !confirm_destructive(&args, &what) {
-                        return Ok(1);
-                    }
-                    restore::delete(n)?;
-                    println!("Deleted restore point {n}");
-                }
-                "rollback" => {
-                    let n: u32 = args.get(2).and_then(|x| x.parse().ok()).ok_or_else(|| {
-                        anyhow::anyhow!("usage: setupsweep restore-point rollback <number> --yes")
-                    })?;
-                    let what = format!(
-                        "Windows restarts right away and rolls system files and \
-                         settings back to restore point {n}. Programs installed \
-                         after that point may stop working; System Restore does \
-                         not touch your documents."
-                    );
-                    if !confirm_destructive(&args, &what) {
-                        return Ok(1);
-                    }
-                    restore::restore_to(n)?;
-                }
-                other => anyhow::bail!(
-                    "unknown restore-point action {other}: use list, create, delete or rollback"
-                ),
-            }
-        }
         "pa-capture" => {
             let job = args
                 .get(1)
-                .ok_or_else(|| anyhow::anyhow!("usage: setupsweep pa-capture <job.json>"))?;
-            setupsweep_core::pafbuild::run_job_file(std::path::Path::new(job))?;
+                .ok_or_else(|| anyhow::anyhow!("usage: setupscope pa-capture <job.json>"))?;
+            setupscope_core::pafbuild::run_job_file(std::path::Path::new(job))?;
         }
         "portable-build" => return portable_build(&args, reg.as_ref()),
         "learn-noise" => {
@@ -1944,7 +1374,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             let after = snapshot_now(reg.as_ref(), &st)?;
             let mut settings = load_settings(&st);
             let roots: Vec<String> = settings.file_roots.iter().map(|r| r.path.clone()).collect();
-            let l = setupsweep_core::noise::learn(
+            let l = setupscope_core::noise::learn(
                 &diff(&before, &after),
                 &roots,
                 &settings.registry_roots,
@@ -1954,7 +1384,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             if has(&args, "--json") {
                 println!(
                     "{}",
-                    setupsweep_core::json!({ "registry": l.registry, "files": l.files })
+                    setupscope_core::json!({ "registry": l.registry, "files": l.files })
                 );
             } else if l.is_empty() {
                 println!("Nothing changed on its own.");
@@ -1964,13 +1394,13 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 }
             }
             if has(&args, "--apply") && !l.is_empty() {
-                let date = setupsweep_core::time::DateTime::now_local().ymd();
-                setupsweep_core::noise::append_learned(
+                let date = setupscope_core::time::DateTime::now_local().ymd();
+                setupscope_core::noise::append_learned(
                     &mut settings.registry_exclusions,
                     &l.registry,
                     &date,
                 );
-                setupsweep_core::noise::append_learned(
+                setupscope_core::noise::append_learned(
                     &mut settings.file_exclusions,
                     &l.files,
                     &date,
@@ -1982,19 +1412,19 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
         "verify" => {
             let file = args
                 .get(1)
-                .ok_or_else(|| anyhow::anyhow!("usage: setupsweep verify <file>"))?;
-            let tr = setupsweep_core::trust::check_file(file);
+                .ok_or_else(|| anyhow::anyhow!("usage: setupscope verify <file>"))?;
+            let tr = setupscope_core::trust::check_file(file);
             match &tr {
-                setupsweep_core::trust::Trust::Signed { signer } => {
+                setupscope_core::trust::Trust::Signed { signer } => {
                     println!("Signed by {signer} (valid)")
                 }
-                setupsweep_core::trust::Trust::Invalid { signer, reason } => {
+                setupscope_core::trust::Trust::Invalid { signer, reason } => {
                     println!("Signature problem: {reason} {signer}")
                 }
                 other => println!("{}", other.label()),
             }
             return Ok(
-                if matches!(tr, setupsweep_core::trust::Trust::Signed { .. }) {
+                if matches!(tr, setupscope_core::trust::Trust::Signed { .. }) {
                     0
                 } else {
                     2
@@ -2004,29 +1434,29 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
         "programs" if has(&args, "--json") => {
             let list = programs::list_programs(reg.as_ref(), has(&args, "--all"));
             if has(&args, "--trust") {
-                let v: Vec<setupsweep_core::json::Value> = list
+                let v: Vec<setupscope_core::json::Value> = list
                     .iter()
                     .map(|p| {
-                        use setupsweep_core::json::ToJson;
+                        use setupscope_core::json::ToJson;
                         let mut j = p.to_json();
                         j.set(
                             "signature",
-                            setupsweep_core::trust::check_program(p, reg.as_ref()).to_json(),
+                            setupscope_core::trust::check_program(p, reg.as_ref()).to_json(),
                         );
                         j
                     })
                     .collect();
-                println!("{}", setupsweep_core::json::compat::to_string_pretty(&v)?);
+                println!("{}", setupscope_core::json::compat::to_string_pretty(&v)?);
             } else {
                 println!(
                     "{}",
-                    setupsweep_core::json::compat::to_string_pretty(&list)?
+                    setupscope_core::json::compat::to_string_pretty(&list)?
                 );
             }
         }
         "add-program" => {
             let path = args.get(1).ok_or_else(|| {
-                anyhow::anyhow!("usage: setupsweep add-program <folder|program.exe> [--name NAME]")
+                anyhow::anyhow!("usage: setupscope add-program <folder|program.exe> [--name NAME]")
             })?;
             let p = programs::add_manual(
                 &store()?.root,
@@ -2034,7 +1464,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 &arg_value(&args, "--name").unwrap_or_default(),
             )?;
             println!(
-                "Added {} ({}); uninstall it with: setupsweep uninstall \"{}\"",
+                "Added {} ({}); uninstall it with: setupscope uninstall \"{}\"",
                 p.name, p.install_location, p.name
             );
         }
@@ -2046,12 +1476,12 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             }
             for p in all {
                 if with_trust {
-                    let tr = setupsweep_core::trust::check_program(&p, reg.as_ref());
+                    let tr = setupscope_core::trust::check_program(&p, reg.as_ref());
                     let sig = match &tr {
-                        setupsweep_core::trust::Trust::Signed { signer } => {
+                        setupscope_core::trust::Trust::Signed { signer } => {
                             format!("signed: {signer}")
                         }
-                        setupsweep_core::trust::Trust::Invalid { reason, .. } => {
+                        setupscope_core::trust::Trust::Invalid { reason, .. } => {
                             format!("INVALID: {reason}")
                         }
                         other => other.label().to_lowercase(),
@@ -2065,8 +1495,8 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
         "revert" => {
             let id = args.get(1).ok_or_else(|| {
                 anyhow::anyhow!(
-                    "usage: setupsweep revert <log-id> [--dry-run] [--yes] \
-                     (see `setupsweep revert --help`)"
+                    "usage: setupscope revert <log-id> [--dry-run] [--yes] \
+                     (see `setupscope revert --help`)"
                 )
             })?;
             let st = store()?;
@@ -2110,7 +1540,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                          be undone."
                     } else {
                         " A backup is taken first, so it can be undone with \
-                         `setupsweep restore <backup-id>` (the id is printed \
+                         `setupscope restore <backup-id>` (the id is printed \
                          when it finishes)."
                     }
                 );
@@ -2141,7 +1571,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             if let Some(w) = writer {
                 let b = w.finish()?;
                 println!(
-                    "Backup: {} (restore with: setupsweep restore {})",
+                    "Backup: {} (restore with: setupscope restore {})",
                     b.id, b.id
                 );
             }
@@ -2154,7 +1584,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
         "rewind" => {
             let id = args.get(1).ok_or_else(|| {
                 anyhow::anyhow!(
-                    "usage: setupsweep rewind <log-id> --list | --capture | --to <state>"
+                    "usage: setupscope rewind <log-id> --list | --capture | --to <state>"
                 )
             })?;
             let st = store()?;
@@ -2248,7 +1678,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             }
             let Some(state) = arg_value(&args, "--to") else {
                 anyhow::bail!(
-                    "usage: setupsweep rewind <log-id> --list | --capture [--before] | --to <state> [--dry-run] [--yes]"
+                    "usage: setupscope rewind <log-id> --list | --capture [--before] | --to <state> [--dry-run] [--yes]"
                 );
             };
             let dry = has(&args, "--dry-run");
@@ -2304,7 +1734,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             }
             if let Some(b) = &outcome.backup_id {
                 println!(
-                    "Backup: {} (undo the rewind with: setupsweep restore {})",
+                    "Backup: {} (undo the rewind with: setupscope restore {})",
                     b, b
                 );
             }
@@ -2320,7 +1750,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
         "export" => {
             let (Some(id), Some(fmt), Some(out)) = (args.get(1), args.get(2), args.get(3)) else {
                 anyhow::bail!(
-                    "usage: setupsweep export <log-id> <html|json|reg|ps1|xml|portable> <output-file>"
+                    "usage: setupscope export <log-id> <html|json|reg|ps1|xml|portable> <output-file>"
                 )
             };
             let log = store()?.load_log(id)?;
@@ -2328,13 +1758,13 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
                 "html" => report::to_html(&log),
                 "reg" => report::to_reg_undo(&log),
                 "ps1" => report::to_ps1(&log),
-                "json" => setupsweep_core::json::compat::to_string_pretty(&log)?,
+                "json" => setupscope_core::json::compat::to_string_pretty(&log)?,
                 "xml" => report::to_xml(&log),
                 "portable" | "ini" => {
-                    setupsweep_core::portable::launcher_ini(
+                    setupscope_core::portable::launcher_ini(
                         &log.changes,
                         &log.name,
-                        &setupsweep_core::portable::Folders::current(),
+                        &setupscope_core::portable::Folders::current(),
                     )
                     .text
                 }
@@ -2353,7 +1783,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
         }
         "backups" => {
             let list = list_backups(&store()?.backups_dir());
-            let cut: Vec<String> = setupsweep_core::backup::interrupted(&list)
+            let cut: Vec<String> = setupscope_core::backup::interrupted(&list)
                 .iter()
                 .map(|b| b.id.clone())
                 .collect();
@@ -2374,7 +1804,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
             }
             if !cut.is_empty() {
                 eprintln!(
-                    "{} operation(s) were interrupted before finishing. Undo with `setupsweep restore <backup-id>`.",
+                    "{} operation(s) were interrupted before finishing. Undo with `setupscope restore <backup-id>`.",
                     cut.len()
                 );
             }
@@ -2382,7 +1812,7 @@ fn run_inner(args: Vec<String>) -> anyhow::Result<i32> {
         "restore" => {
             let id = args
                 .get(1)
-                .ok_or_else(|| anyhow::anyhow!("usage: setupsweep restore <backup-id> [--yes]"))?;
+                .ok_or_else(|| anyhow::anyhow!("usage: setupscope restore <backup-id> [--yes]"))?;
             let what = format!(
                 "This restores backup {id}: the files and registry settings it \
                  holds are put back, replacing what is on this PC now. The \

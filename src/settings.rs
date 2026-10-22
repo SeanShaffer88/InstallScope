@@ -30,7 +30,7 @@ pub struct Settings {
     pub registry_exclusions: Vec<String>,
     /// Glob patterns for file noise to ignore.
     pub file_exclusions: Vec<String>,
-    /// Also apply SetupSweep's built-in list of volatile locations (temporary
+    /// Also apply SetupScope's built-in list of volatile locations (temporary
     /// files, logs, browser and app caches).
     pub auto_exclusions: bool,
     /// Copy everything to a backup before deleting it.
@@ -60,6 +60,7 @@ pub struct Settings {
     /// Show Microsoft Store apps in the program list.
     pub show_store_apps: bool,
     /// Advanced mode shows technical details and developer tools.
+    /// Legacy safety-policy marker, retained for old settings/jobs; not an interface mode.
     pub advanced_mode: bool,
     /// Autostart Gatekeeper: watch for new autostart entries (Run keys and
     /// Startup folders) and hold them in a review queue, attributed to the
@@ -112,9 +113,19 @@ pub struct ScanProfile {
 }
 crate::json_struct!(ScanProfile, default, { name, registry_roots, file_roots, registry_exclusions, file_exclusions });
 
-/// In Simple mode the safety switches are locked to their safe values,
-/// whatever was chosen in Advanced mode.
+/// Developer settings; the retired mode flag is retained only for migration.
 impl Settings {
+    /// Preserve effective safeguards when upgrading a legacy basic-mode file.
+    pub fn retire_interface_modes(&mut self) {
+        if !self.advanced_mode {
+            self.backup_before_removal = true;
+            self.confirm_actions = true;
+            self.remove_unlogged_files = false;
+            self.show_system_components = false;
+        }
+        self.advanced_mode = true;
+    }
+
     /// Save the current scope as a profile (replacing one with that name).
     pub fn save_profile(&mut self, name: &str) {
         let name = name.trim();
@@ -189,8 +200,8 @@ impl Settings {
         self.confirm_actions || !self.advanced_mode
     }
     /// Whether an action must show its confirmation dialog. Actions flagged
-    /// `always_confirm` ask even when the user turned confirmations off in
-    /// Advanced mode (they are hard or impossible to undo, so the
+    /// `always_confirm` ask even when the user turned confirmations off
+    /// (they are hard or impossible to undo, so the
     /// confirmation setting must not silence them); every other action
     /// follows `confirm_enabled()`.
     pub fn must_confirm(&self, always_confirm: bool) -> bool {
@@ -225,7 +236,7 @@ impl Default for Settings {
             local_model_name: String::new(),
             show_system_components: false,
             show_store_apps: false,
-            advanced_mode: false,
+            advanced_mode: true,
             gatekeeper_enabled: false,
             gatekeeper_scan_after_install: false,
             high_contrast: false,
@@ -388,6 +399,17 @@ pub fn default_file_exclusions() -> Vec<String> {
 mod confirm_tests {
     use super::*;
 
+    #[test]
+    fn legacy_mode_upgrade_preserves_effective_safety() {
+        let mut old = Settings { advanced_mode: false, backup_before_removal: false, confirm_actions: false,
+            remove_unlogged_files: true, show_system_components: true, ..Settings::default() };
+        old.retire_interface_modes();
+        assert!(old.backup_enabled() && old.confirm_enabled());
+        assert!(!old.remove_unlogged_enabled() && !old.system_components_shown());
+        old.backup_before_removal = false;
+        old.retire_interface_modes();
+        assert!(!old.backup_enabled(), "migration must preserve explicit later choices");
+    }
     #[test]
     fn always_confirm_actions_ask_in_every_mode() {
         // Simple mode (the default): everything asks.

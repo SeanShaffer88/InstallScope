@@ -1,40 +1,24 @@
-# SetupSweep project guidance
+# SetupScope project guidance
 
 The Windows Desktop Software Project Policy below is the authoritative
 engineering and product-quality guidance for this repository. Apply it to
 planning, implementation, verification, and release work.
 
-## Confirmed SetupSweep decisions
+## Confirmed SetupScope decisions (current scope)
 
-- Project documentation must not mention competitor software, except software
-  that is actually included in SetupSweep (bundled components); the license
-  attributions for bundled components must always be kept.
-- Keep the product in Rust on `windows-sys`; do not substitute another
-  language, framework family, or runtime without the user's approval.
-- Serve everyday Windows users, power users, and developers: make ordinary
-  uninstalls understandable and reversible by default, while keeping deeper
-  controls and developer workflows available without burdening routine use.
-- The product goals are a reliable program uninstaller, install monitor,
-  PortableApps.com package creator, broad setup/archive compatibility, and a
-  developer sandbox. Treat “all formats” as a broad compatibility goal, not a
-  literal support claim: define and test explicit support tiers and reject
-  unsupported formats safely.
-- Replace the current `egui`/`eframe`/`wgpu` interface in measured phases with
-  a custom native Win32 UI. Preserve SetupSweep's established dark, black, and red
-  visual direction. Do not attempt a full rewrite in one change; retain working
-  workflows and verify each migrated slice before expanding it.
-- The Installer Decrapifier uses deterministic local rules by default and may
-  use an optional OpenAI-compatible model restricted to loopback. It acts on
-  an after-install review checklist; it must not block installers live.
-- The Disposable Runner belongs inside SetupSweep and uses hybrid restricted-token
-  containment plus a Job Object. Its per-run network toggle is on by default.
-- Continue to honor existing safety behavior: review and back up destructive
-  changes, use least privilege, and keep processing local unless the user
-  approves a specific networked capability.
-- Keep the user-provided debloat/privacy reference review in
-  `docs/REFERENCE-REVIEW.md` current. Treat projects and scripts there as
-  leads, not policy or compatibility authority; verify behavior against
-  current official Windows documentation and the target Windows builds.
+- SetupScope is a focused Windows developer toolkit with exactly five Workflow Board tools: Project Readiness, Build Troubleshooting, Environment Profiles, Ports And Processes, WSL And Containers.
+- Developer Dependencies is an explicitly authorized changing workflow inside Project Readiness: pinned official downloads, selected offline bundles, integrity/publisher checks and separately reviewed interactive vendor installation with receipts. Other readiness diagnostics remain read-only.
+- Authorized expansion (2026-10-22): native MSVC/Windows SDK/CMake/Ninja component and offline-layout review inside Dependencies; bounded desktop project declarations; separately reviewed build/test execution inside Build Troubleshooting with explicit executable/arguments, capped logs, timeout/cancellation and contained child lifetime. No automatic project execution. Vendor installation is distinct from contained build execution and has no automatic rollback.
+- Requirements, build prerequisites, PATH conflicts and version metadata are views within Project Readiness. Diagnostic export is integrated into readiness and troubleshooting. Reviewed environment changes retain their existing conflict-checked undo.
+- No sidebar, beginner/advanced mode, general PC management, installer monitoring/removal, debloat/privacy, browser extension management, migration, scratch/storage management, packaging or image/USB tools in the current executable. Do not reintroduce retired product surfaces without explicit authorization.
+- Preserve legacy saved data. Retained core/library and uncompiled legacy source are compatibility/archival code, not supported current application features. Do not delete user logs, backups, receipts, profiles or settings as part of streamlining.
+- Keep Rust, windows-sys, a black terminal theme with readable monospace typography and restrained red accents, compact task-specific independent tool windows with responsive controls and individual terminal identities/workflow cues, compact, non-maximized startup and one app instance / one window per tool, accessibility and least privilege. Native UI migration is deferred; the native-ui-preview feature currently uses the same focused shell.
+- Work locally unless the user requests publication. Preserve license attributions and the vendored accessibility fix. Do not mention competitor software in product documentation except actual bundled attributions.
+- Window navigation: opening/focusing a tool hides the main board; every tool (including Settings) has a top-right Workflow Board button that restores it without closing tools or interrupting work. Closing the last tool restores the board. Main header says Windows Software Development Toolkit; Settings sits at the far right.
+- Read-only observations must state their limits. No automatic builds, scripts, installs, repairs, process termination or uploads. Persistent environment edits require explicit review and recorded recovery.
+
+- Authorized CLI (2026-10-22): expose retained developer workflows through a console executable; preserve bounded diagnostics and explicit review/confirmation for execution, vendor install and persistent environment changes. Never reconnect the retired maintenance CLI.
+- Workflow Board: six cards in exactly three columns and two rows: five tools plus read-only System And OS. Language selection uses all ten catalogs with explicit English fallback. Each covers the owned desktop inventory; original evidence/commands/vendor reviews and CLI help retain their wording. Preserve exact placeholders and technical invariants; independent native-speaker review remains a documented limit.
 
 # Windows Desktop Software Project Policy
 
@@ -347,7 +331,7 @@ Core standards:
 
 Standing defaults (a project brief may override a specific default):
 
-- Product-family look: the black/red aesthetic matching SetupSweep is preferred, not mandatory.
+- Product-family look: the black/red aesthetic matching SetupScope is preferred, not mandatory.
 - Rust is the default for new projects and for new components where it fits; existing stacks are preserved — this is not a rewrite mandate.
 - Support as many Windows versions as makes sense for the project; consider Windows 10 support when feasible without materially extending development time. Never claim support that has not been verified.
 - Status and task reports include a Progress % and an ETA whenever they can be estimated responsibly.

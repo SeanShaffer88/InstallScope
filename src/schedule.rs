@@ -1,14 +1,14 @@
 //! Scheduled junk cleaning through Windows Task Scheduler.
 //!
-//! The task runs `SetupSweep.exe clean --scheduled --categories …` with the
-//! categories chosen when it was set up, so the schedule needs no SetupSweep
+//! The task runs `SetupScope.exe clean --scheduled --categories …` with the
+//! categories chosen when it was set up, so the schedule needs no SetupScope
 //! process running in the background.
 
 use crate::platform::run_hidden;
 use anyhow::{anyhow, Result};
 
-/// Task name in Task Scheduler (inside an "SetupSweep" folder).
-pub const TASK: &str = "SetupSweep\\Junk cleaning";
+/// Task name in Task Scheduler (inside an "SetupScope" folder).
+pub const TASK: &str = "SetupScope\\Junk cleaning";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Frequency {
@@ -127,7 +127,7 @@ mod tests {
     #[test]
     fn task_arguments() {
         let a = create_args(
-            "C:\\Tools\\SetupSweep.exe",
+            "C:\\Tools\\SetupScope.exe",
             &["user_temp", "crash_dumps"],
             Frequency::Weekly,
             false,
@@ -135,7 +135,7 @@ mod tests {
         assert!(a.contains(&"WEEKLY".to_string()));
         assert!(a.iter().any(|x| {
             x
-            == "\"C:\\Tools\\SetupSweep.exe\" clean --scheduled --categories user_temp,crash_dumps"
+            == "\"C:\\Tools\\SetupScope.exe\" clean --scheduled --categories user_temp,crash_dumps"
         }));
         assert!(!a.contains(&"HIGHEST".to_string()));
         let a = create_args("x.exe", &["user_temp"], Frequency::Monthly, true);
@@ -145,7 +145,7 @@ mod tests {
     #[test]
     fn reads_task_xml() {
         let xml = r#"<Task><Triggers><CalendarTrigger><ScheduleByWeek><WeeksInterval>1</WeeksInterval></ScheduleByWeek></CalendarTrigger></Triggers>
-<Actions><Exec><Command>"C:\SetupSweep.exe"</Command><Arguments>clean --scheduled --categories user_temp,shader_cache</Arguments></Exec></Actions></Task>"#;
+<Actions><Exec><Command>"C:\SetupScope.exe"</Command><Arguments>clean --scheduled --categories user_temp,shader_cache</Arguments></Exec></Actions></Task>"#;
         let (f, c) = parse_task_xml(xml).unwrap();
         assert_eq!(f, Frequency::Weekly);
         assert_eq!(c, vec!["user_temp", "shader_cache"]);

@@ -22,7 +22,7 @@ pub struct AutoEntry {
     pub location: String,
     /// The target is part of Windows (under the Windows folder).
     pub windows: bool,
-    /// How to remove it; None for entries SetupSweep only shows.
+    /// How to remove it; None for entries SetupScope only shows.
     pub removal: Option<Action>,
 }
 crate::json_struct!(AutoEntry, write_only, { kind, name, target, location, windows, removal });

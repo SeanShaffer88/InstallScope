@@ -1,30 +1,30 @@
 //! Embeds the icon, version information and application manifest into
-//! SetupSweep.exe when building for Windows.
+//! SetupScope.exe when building for Windows.
 
 fn main() {
-    println!("cargo:rerun-if-changed=assets/setupsweep.ico");
-    println!("cargo:rerun-if-changed=assets/setupsweep.manifest");
+    println!("cargo:rerun-if-changed=assets/setupscope.ico");
+    println!("cargo:rerun-if-changed=assets/setupscope.manifest");
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() != Ok("windows") {
         return;
     }
-    let version = env!("CARGO_PKG_VERSION");
+    let version = format!("{}.0", env!("CARGO_PKG_VERSION"));
     let mut res = winresource::WindowsResource::new();
-    res.set_icon("assets/setupsweep.ico")
-        .set_manifest_file("assets/setupsweep.manifest")
-        .set("ProductName", "SetupSweep")
+    res.set_icon("assets/setupscope.ico")
+        .set_manifest_file("assets/setupscope.manifest")
+        .set("ProductName", "SetupScope")
         .set(
             "FileDescription",
-            "SetupSweep – Open Source Install Monitor & Uninstaller",
+            "SetupScope – Windows Desktop Development Toolkit",
         )
         .set("CompanyName", "Sean Shaffer")
         .set(
             "LegalCopyright",
             "Copyright © 2026 Sean Shaffer. Licensed under the MIT License.",
         )
-        .set("OriginalFilename", "SetupSweep.exe")
-        .set("InternalName", "SetupSweep")
-        .set("ProductVersion", version)
-        .set("FileVersion", version);
+        .set("OriginalFilename", "SetupScope.exe")
+        .set("InternalName", "SetupScope")
+        .set("ProductVersion", &version)
+        .set("FileVersion", &version);
     if let Err(e) = res.compile() {
         panic!("failed to embed Windows resources: {e}");
     }

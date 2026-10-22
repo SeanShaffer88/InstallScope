@@ -379,7 +379,7 @@ pub fn is_elevated() -> bool {
     }
 }
 
-/// A process started by SetupSweep (installer, uninstaller, tool).
+/// A process started by SetupScope (installer, uninstaller, tool).
 pub struct ChildProcess {
     handle: HANDLE,
 }
@@ -510,7 +510,7 @@ pub fn shell_open(target: &str) {
     }
 }
 
-/// Restart SetupSweep elevated with the given arguments. Returns true if the new
+/// Restart SetupScope elevated with the given arguments. Returns true if the new
 /// process launched.
 pub fn relaunch_elevated(args: &[String]) -> bool {
     let exe = std::env::current_exe()
@@ -854,11 +854,16 @@ pub fn authenticode(path: &str) -> (i32, Option<String>) {
 }
 
 /// Read the signer's display name from a file's embedded signature.
-fn signer_name(wpath: &[u16]) -> Option<String> {
+fn signer_name(wpath: &[u16]) -> Option<String> { signer_attribute(wpath, false) }
+
+/// Embedded signing certificate organization; caller must also verify trust.
+pub fn authenticode_organization(path: &str) -> Option<String> { signer_attribute(&wide(path), true) }
+
+fn signer_attribute(wpath: &[u16], organization: bool) -> Option<String> {
     use windows_sys::Win32::Security::Cryptography::{
         CertCloseStore, CertFindCertificateInStore, CertFreeCertificateContext, CertGetNameStringW,
         CryptMsgClose, CryptMsgGetParam, CryptQueryObject, CERT_FIND_SUBJECT_CERT, CERT_INFO,
-        CERT_NAME_SIMPLE_DISPLAY_TYPE, CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,
+        CERT_NAME_SIMPLE_DISPLAY_TYPE, CERT_NAME_ATTR_TYPE, szOID_ORGANIZATION_NAME, CERT_QUERY_CONTENT_FLAG_PKCS7_SIGNED_EMBED,
         CERT_QUERY_FORMAT_FLAG_BINARY, CERT_QUERY_OBJECT_FILE, CMSG_SIGNER_INFO,
         CMSG_SIGNER_INFO_PARAM, PKCS_7_ASN_ENCODING, X509_ASN_ENCODING,
     };
@@ -893,7 +898,7 @@ fn signer_name(wpath: &[u16]) -> Option<String> {
             std::ptr::null_mut(),
             &mut size,
         ) != 0
-            && size > 0
+            && size > 0 && size <= 1024 * 1024
         {
             // u64 buffer keeps the struct properly aligned.
             let mut buf = vec![0u64; (size as usize).div_ceil(8)];
@@ -921,9 +926,9 @@ fn signer_name(wpath: &[u16]) -> Option<String> {
                     let mut out = [0u16; 256];
                     let n = CertGetNameStringW(
                         cert,
-                        CERT_NAME_SIMPLE_DISPLAY_TYPE,
+                        if organization {CERT_NAME_ATTR_TYPE}else{CERT_NAME_SIMPLE_DISPLAY_TYPE},
                         0,
-                        std::ptr::null(),
+                        if organization {szOID_ORGANIZATION_NAME.cast()}else{std::ptr::null()},
                         out.as_mut_ptr(),
                         out.len() as u32,
                     );
@@ -1264,7 +1269,7 @@ pub fn watch_folder(
 }
 
 /// Stop Windows showing "There is no disk in the drive" and similar
-/// dialogs when SetupSweep touches an empty card reader or removed drive.
+/// dialogs when SetupScope touches an empty card reader or removed drive.
 pub fn quiet_critical_errors() {
     #[link(name = "kernel32")]
     extern "system" {
@@ -1553,7 +1558,7 @@ pub fn close_programs(exes: &[&Path]) -> crate::locks::Closed {
     // Programs with a window are asked to close, so they can save. Console
     // and windowless ones are ended directly: the Restart Manager would
     // signal their whole console, which can include whoever started them
-    // (SetupSweep's own command line, a terminal).
+    // (SetupScope's own command line, a terminal).
     let mut procs: Vec<RM_UNIQUE_PROCESS> = Vec::new();
     let mut end_directly: Vec<u32> = Vec::new();
     let mut names: Vec<(u32, String)> = Vec::new();
@@ -2115,6 +2120,7 @@ impl WinRegistry {
                       sub_buf: &mut Vec<u16>,
                       data_buf: &mut Vec<u8>,
                       text: &mut String| {
+            if progress.cancelled() { return; }
             let (mut max_sub, mut max_name, mut max_data) = (0u32, 0u32, 0u32);
             unsafe {
                 RegQueryInfoKeyW(
@@ -2138,12 +2144,19 @@ impl WinRegistry {
             if name_buf.len() < max_name as usize + 1 {
                 name_buf.resize(max_name as usize + 1, 0);
             }
+            // Bounded regression captures reject oversized values before allocating
+            // their buffers. Existing unbounded capture behavior is preserved.
+            if progress.bounded_capture() && max_data > 8 * 1024 * 1024 {
+                progress.exceed_byte_limit(); return;
+            }
+            if !progress.reserve_capture_bytes(path.len() as u64 + 16) { return; }
             if data_buf.len() < max_data as usize {
                 data_buf.resize(max_data as usize, 0);
             }
             snap.begin_key(path);
             let mut i = 0u32;
             loop {
+                if progress.cancelled() { return; }
                 let mut nlen = name_buf.len() as u32;
                 let mut dlen = data_buf.len() as u32;
                 let mut kind = 0u32;
@@ -2164,15 +2177,21 @@ impl WinRegistry {
                     let n = (name_buf.len() * 2).max(nlen as usize + 1);
                     name_buf.resize(n, 0);
                     let d = (data_buf.len() * 2).max(dlen as usize);
+                    if progress.bounded_capture() && d > 8 * 1024 * 1024 {
+                        progress.exceed_byte_limit(); return;
+                    }
                     data_buf.resize(d, 0);
                     continue;
                 }
                 if rc != 0 {
+                    if rc != ERROR_NO_MORE_ITEMS { snap.warnings.push(format!("Could not enumerate values in {path} (Windows error {rc})")); }
                     break; // ERROR_NO_MORE_ITEMS or the key went away
                 }
                 text.clear();
                 push_utf16(text, &name_buf[..nlen as usize]);
+                if !progress.reserve_capture_bytes(text.len() as u64 + dlen as u64 + 20) { return; }
                 snap.push_value(text, kind, &data_buf[..dlen as usize]);
+                if progress.bounded_capture() { progress.tick(); }
                 i += 1;
             }
         };
@@ -2235,7 +2254,7 @@ impl WinRegistry {
                 continue;
             }
             if rc != 0 {
-                let _ = ERROR_NO_MORE_ITEMS;
+                if rc != ERROR_NO_MORE_ITEMS { snap.warnings.push(format!("Could not enumerate subkeys in {path} (Windows error {rc})")); }
                 stack.pop();
                 continue;
             }
@@ -2245,6 +2264,10 @@ impl WinRegistry {
             path.truncate(parent_len);
             path.push('\\');
             push_utf16(&mut path, &sub_buf[..slen as usize]);
+            if progress.bounded_capture() {
+                progress.tick();
+                if progress.cancelled() || !progress.reserve_capture_bytes(path.len() as u64 + 64) { return; }
+            }
             crate::util::fold_into(&path, &mut folded);
             if excl.matches_folded(&folded, &mut chars) {
                 continue;

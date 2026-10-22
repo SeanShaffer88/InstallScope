@@ -1,14 +1,12 @@
-//! SetupSweep core library: snapshots, diffs, precise uninstall plans, backups,
-//! leftover scanning, startup management, cleanup, and reports.
+//! SetupScope core: installation snapshots/diffs, reviewed uninstall/recovery,
+//! developer diagnostics and local project workflows.
 //!
 //! Copyright (C) 2026 Sean Shaffer
 //!
-//! This program is free software: you can redistribute it and/or modify it
-//! under the terms of the GNU General Public License as published by the Free
-//! Software Foundation, either version 3 of the License, or (at your option)
-//! any later version. See LICENSE for details.
+//! Licensed under the MIT License. See LICENSE for details.
 
 pub mod alternatives;
+pub mod windowidentify;
 pub mod autoruns;
 pub mod autowatch;
 pub mod backup;
@@ -20,6 +18,17 @@ pub mod cleanup_receipt;
 pub mod debloat;
 pub mod decrap;
 pub mod deflate;
+pub mod devcheck;
+pub mod dependencies;
+pub mod build_log;
+pub mod build_run;
+pub mod container_readiness;
+pub mod diagnostic_bundle;
+pub mod devversion;
+pub mod devinspect;
+pub mod envprofile;
+pub mod projectdoctor;
+pub mod regression;
 pub mod difftree;
 pub mod extinv;
 pub mod features;
@@ -54,6 +63,7 @@ pub mod revert;
 pub mod rewind;
 pub mod schedule;
 pub mod settings;
+pub mod setup_export;
 pub mod shell;
 pub mod shellext;
 pub mod silent;
@@ -61,6 +71,8 @@ pub mod slimmer;
 pub mod snapshot;
 pub mod startup;
 pub mod storage;
+pub mod storage_allocation;
+pub mod storage_baseline;
 pub mod store;
 pub mod time;
 pub mod transfer;
@@ -76,6 +88,9 @@ mod lock_tests;
 #[cfg(test)]
 mod stress_tests;
 
-pub const APP_NAME: &str = "SetupSweep";
+pub const APP_NAME: &str = "SetupScope";
 pub const APP_VERSION: &str = env!("CARGO_PKG_VERSION");
 pub const APP_AUTHOR: &str = "Sean Shaffer";
+
+pub mod scratch;
+pub mod project_readiness;

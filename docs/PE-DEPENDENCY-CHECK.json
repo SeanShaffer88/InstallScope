@@ -1,0 +1,53 @@
+{
+  "setupscope.exe": {
+    "direct_dll_imports": [
+      "kernel32.dll",
+      "user32.dll",
+      "ole32.dll",
+      "uiautomationcore.dll",
+      "oleaut32.dll",
+      "gdi32.dll",
+      "ntdll.dll",
+      "shlwapi.dll",
+      "shell32.dll",
+      "api-ms-win-core-synch-l1-2-0.dll",
+      "bcryptprimitives.dll",
+      "KERNEL32.dll",
+      "USER32.dll",
+      "SHELL32.dll",
+      "ADVAPI32.dll",
+      "imm32.dll",
+      "rstrtmgr.dll",
+      "iphlpapi.dll",
+      "version.dll",
+      "wintrust.dll",
+      "crypt32.dll",
+      "bcrypt.dll",
+      "winhttp.dll",
+      "dwmapi.dll",
+      "uxtheme.dll"
+    ],
+    "non_system_runtime_imports": false,
+    "limit": "Direct import inspection on this host; not clean-OS or transitive driver certification"
+  },
+  "setupscope-cli.exe": {
+    "direct_dll_imports": [
+      "api-ms-win-core-synch-l1-2-0.dll",
+      "bcryptprimitives.dll",
+      "KERNEL32.dll",
+      "advapi32.dll",
+      "rstrtmgr.dll",
+      "iphlpapi.dll",
+      "version.dll",
+      "ntdll.dll",
+      "bcrypt.dll",
+      "wintrust.dll",
+      "crypt32.dll",
+      "shell32.dll",
+      "winhttp.dll",
+      "user32.dll"
+    ],
+    "non_system_runtime_imports": false,
+    "limit": "Direct import inspection on this host; not clean-OS or transitive driver certification"
+  }
+}

@@ -1,0 +1,13 @@
+{
+  "package": "hexf-parse",
+  "version": "0.2.1",
+  "declared_license": "CC0-1.0",
+  "source_commit": "4225763d744183d720f575ae96d04161b4d08ea0",
+  "note": "Upstream tree has no separate license file. The Cargo declaration is preserved; standard full legal text retrieved from SPDX license-list-data.",
+  "sources": [
+    {
+      "file": "CC0-1.0.txt",
+      "url": "https://raw.githubusercontent.com/spdx/license-list-data/main/text/CC0-1.0.txt"
+    }
+  ]
+}

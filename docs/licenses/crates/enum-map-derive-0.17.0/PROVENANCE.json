@@ -1,0 +1,15 @@
+{
+  "package": "enum-map-derive",
+  "version": "0.17.0",
+  "source_commit": "2026968c30ad14d268f3d70c618a704e22a3b980",
+  "sources": [
+    {
+      "file": "crate-MIT.txt",
+      "url": "https://codeberg.org/sugar700/enum-map/raw/commit/2026968c30ad14d268f3d70c618a704e22a3b980/LICENSES/MIT.txt"
+    },
+    {
+      "file": "crate-Apache-2.0.txt",
+      "url": "https://codeberg.org/sugar700/enum-map/raw/commit/2026968c30ad14d268f3d70c618a704e22a3b980/LICENSES/Apache-2.0.txt"
+    }
+  ]
+}

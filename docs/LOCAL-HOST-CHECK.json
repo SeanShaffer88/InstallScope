@@ -1,0 +1,36 @@
+{
+  "Schema": 1,
+  "Version": "1.0.0.0",
+  "Passed": true,
+  "CheckedUtc": "2026-10-22T18:16:35.0117545Z",
+  "GuiRequested": false,
+  "GuiVerified": false,
+  "HostBuild": "10.0.26300.0",
+  "Checks": [
+    "Copied executable integrity: SetupScope.exe",
+    "Copied executable integrity: SetupScope-cli.exe",
+    "Version and loader without developer PATH",
+    "Console help",
+    "Eleven embedded language choices",
+    "System JSON",
+    "Offline pinned catalog",
+    "Passive project inspection without developer PATH",
+    "Read-only synthetic log; raw secret omitted",
+    "Structured failure",
+    "Retired command rejected",
+    "Fresh portable data only"
+  ],
+  "Executables": [
+    {
+      "Name": "SetupScope.exe",
+      "Hash": "6C7DE4FA8755EED9584D80D3209CBF4CB6C10436A35D08A7CC3850332A810504"
+    },
+    {
+      "Name": "SetupScope-cli.exe",
+      "Hash": "F2937B3E4CAD0E998C9E444AF169A0A295A75C3298628F3849315AC0E11F67D9"
+    }
+  ],
+  "Limit": "Per-process environment/profile isolation on the current OS. Not a VM, new user, clean OS, network sandbox, installation or screen-reader certification.",
+  "VMChecks": "Skipped at user request",
+  "AdditionalHarnessTests": "Empty inherited PSModulePath accepted; tampered executable hash rejected before execution"
+}

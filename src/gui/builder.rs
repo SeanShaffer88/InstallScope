@@ -6,13 +6,15 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use setupsweep_core::i18n::{t, tf};
-use setupsweep_core::model::{human_size, InstallLog};
-use setupsweep_core::pafbuild::{self, AppDetails, Compiled, InstallerKind, PaTools, Package};
-use setupsweep_core::platform;
+use setupscope_core::i18n::{t, tf};
+use setupscope_core::model::{human_size, InstallLog};
+use setupscope_core::pafbuild::{self, AppDetails, Compiled, InstallerKind, PaTools, Package};
+use setupscope_core::platform;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
+
+type CaptureInputs = (String, AppDetails, bool, bool, bool, String, String);
 
 #[derive(Default)]
 pub struct BuilderState {
@@ -41,14 +43,24 @@ pub struct BuilderState {
     /// The finished package (its folder) and the capture's install log.
     package: Option<(PathBuf, Package)>,
     log: Option<InstallLog>,
+    log_save_job: Option<Job<Result<(), String>>>,
+    log_save_error: Option<String>,
     on_this_pc: bool,
     compile_job: Option<Job<Result<Compiled, String>>>,
     compiled: Option<Compiled>,
     error: Option<String>,
     initialized: bool,
+    capture_reviewed: bool,
+    review_inputs: Option<CaptureInputs>,
 }
 
 impl BuilderState {
+    fn review_selection(&mut self, tools_dir: &str) {
+        let selection = (self.installer.clone(), self.details.clone(), self.silent,
+            self.include_defaults, self.use_sandbox, self.out_dir.clone(), tools_dir.to_owned());
+        if self.review_inputs.as_ref() != Some(&selection) { self.capture_reviewed = false; }
+        self.review_inputs = Some(selection);
+    }
     fn busy(&self) -> bool {
         self.capture_job.is_some()
             || self.work_dir.is_some()
@@ -85,13 +97,17 @@ impl App {
         self.builder.tools_job = Some(Job::spawn(ctx, move |_| {
             (
                 pafbuild::find_tools(&dir),
-                setupsweep_core::patools::find(&root).is_some(),
+                setupscope_core::patools::find(&root).is_some(),
             )
         }));
     }
 
     pub fn poll_builder(&mut self, ctx: &egui::Context) {
         let b = &mut self.builder;
+        if let Some(result) = b.log_save_job.as_ref().and_then(|j| j.poll()) {
+            b.log_save_job = None;
+            b.log_save_error = result.err();
+        }
         if let Some((tools, ready)) = b.tools_job.as_ref().and_then(|j| j.poll()) {
             b.tools_job = None;
             b.tools = Some(tools);
@@ -101,7 +117,7 @@ impl App {
             b.capture_job = None;
             match r {
                 Ok((log, pkg)) => {
-                    let _ = self.store.save_log(&log);
+                    self.builder.log_save_error = self.store.save_log(&log).err().map(|e| e.to_string());
                     self.builder.package = Some((PathBuf::from(&pkg.dir), pkg));
                     self.builder.log = Some(log);
                     self.reload_logs();
@@ -159,6 +175,7 @@ impl App {
                     if let Some(p) = &c.paf {
                         self.set_status(tf("Made {file}", &[("file", p.display().to_string())]));
                     }
+                    self.builder.toolchain_ready = setupscope_core::patools::find(&self.store.root).is_some();
                     self.builder.compiled = Some(c);
                 }
                 Err(e) => self.builder.error = Some(e),
@@ -187,15 +204,17 @@ impl App {
             .map_err(|e| e.to_string());
             r
         }));
-        self.builder.toolchain_ready = true;
     }
 
     fn start_capture(&mut self, ctx: &egui::Context) {
+        if self.builder.busy() || !self.builder.capture_reviewed { return; }
+        self.builder.capture_reviewed = false;
         self.settings.packager_name = self.builder.details.packager.clone();
         self.settings.portable_out_dir = self.builder.out_dir.clone();
         self.save_settings();
         let b = &mut self.builder;
         b.error = None;
+        b.log_save_error = None;
         b.package = None;
         b.log = None;
         b.compiled = None;
@@ -217,7 +236,7 @@ impl App {
                 .store
                 .root
                 .join("builder")
-                .join(setupsweep_core::util::new_id());
+                .join(setupscope_core::util::new_id());
             *b.stage.lock().unwrap() = t("Starting Windows Sandbox");
             match pafbuild::start_sandbox(&job, &work) {
                 Ok(()) => {
@@ -268,6 +287,16 @@ impl App {
                             theme::warning_banner(ui, e);
                             ui.add_space(6.0);
                         }
+                        if let Some(error) = self.builder.log_save_error.clone() {
+                            theme::warning_banner(ui, format!("The capture recovery log was not saved: {error}. In-memory evidence is retained; keep this session open and retry before relying on saved recovery."));
+                            if super::a11y::explain(ui.add_enabled(self.builder.log_save_job.is_none(), egui::Button::new("Retry Saving Recovery Log")), "Write the retained capture log into SetupScope data again. This does not rerun the installer or packaging.").clicked() {
+                                if let Some(log) = self.builder.log.clone() {
+                                    let store = self.store.clone();
+                                    self.builder.log_save_job = Some(Job::spawn(ctx, move |_| store.save_log(&log).map_err(|e| e.to_string())));
+                                }
+                            }
+                        }
+                        if self.builder.log_save_job.is_some() { ui.spinner(); ctx.request_repaint_after(std::time::Duration::from_millis(150)); }
                         if self.builder.busy() {
                             self.ui_builder_running(ui);
                         } else if self.builder.package.is_some() {
@@ -475,7 +504,7 @@ impl App {
             let available = self.builder.sandbox == Some(true);
             ui.add_enabled_ui(available, |ui| {
                 let sandbox_why = if available {
-                    t("The installer runs inside Windows Sandbox, a throwaway copy of Windows, and the package is collected from there. This PC's files and registry are never touched.")
+                    t("The installer runs in a separate Windows Sandbox guest. Explicitly shared host folders and package output remain accessible; this is not a guarantee against all host changes.")
                 } else {
                     t("Unavailable: Windows Sandbox isn't turned on (see below).")
                 };
@@ -483,7 +512,7 @@ impl App {
                     ui.radio_value(
                         &mut self.builder.use_sandbox,
                         true,
-                        t("In Windows Sandbox (recommended: this PC is never touched)"),
+                        t("In Windows Sandbox (separate guest; shared host folders remain accessible)"),
                     ),
                     &sandbox_why,
                 );
@@ -493,8 +522,8 @@ impl App {
                 self.builder.use_sandbox = false;
             }
             super::a11y::explain(
-                ui.radio_value(&mut self.builder.use_sandbox, false, t("On this PC (SetupSweep records the installation so you can remove it precisely afterwards)")),
-                &t("The installer runs on this PC while SetupSweep records the installation, so the program can be removed precisely afterwards. Starting needs Administrator rights."),
+                ui.radio_value(&mut self.builder.use_sandbox, false, t("On this PC (records observed changes; recovery is limited)")),
+                &t("The installer runs on this PC while SetupScope records the installation, so recorded changes can be reviewed afterwards; unrecorded changes are outside recovery. Starting needs Administrator rights."),
             );
             ui.add_space(4.0);
             super::a11y::explain(
@@ -504,7 +533,7 @@ impl App {
                 ),
                 &t("Keeps the settings the program has after its first run in the capture as the settings the package starts with."),
             );
-            small_muted(ui, t("SetupSweep first watches Windows for 30 seconds to learn what changes on its own, so it can leave that out."));
+            small_muted(ui, t("SetupScope first watches Windows for 30 seconds to learn what changes on its own, so it can leave that out."));
         });
         ui.add_space(8.0);
         theme::card(ui, |ui| {
@@ -536,13 +565,21 @@ impl App {
         let start_why = if !ok {
             t("Unavailable: choose an installer file above, give the program a name, and choose where to save the package first.")
         } else if !self.builder.use_sandbox && !self.elevated {
-            t("Unavailable: installing on this PC needs Administrator rights. Run SetupSweep as Administrator, or choose Windows Sandbox above.")
+            t("Unavailable: installing on this PC needs Administrator rights. Run SetupScope as Administrator, or choose Windows Sandbox above.")
         } else if self.builder.use_sandbox {
-            t("Starts the capture: the installer runs in Windows Sandbox, SetupSweep records what it installs, and the PortableApps.com package is built into the Save to folder.")
+            t("Starts the capture: the installer runs in Windows Sandbox, SetupScope records what it installs, and the PortableApps.com package is built into the Save to folder.")
         } else {
-            t("Starts the capture: the installer runs on this PC while SetupSweep records it, and the PortableApps.com package is built into the Save to folder.")
+            t("Starts the capture: the installer runs on this PC while SetupScope records it, and the PortableApps.com package is built into the Save to folder.")
         };
-        ui.add_enabled_ui(ok && (self.builder.use_sandbox || self.elevated), |ui| {
+        self.builder.review_selection(&self.settings.portableapps_dir);
+        theme::warning_banner(ui, if self.builder.use_sandbox {
+            "This runs the selected installer in a separate guest with shared host folders and writes a package. Verify the source and redistribution rights. Shared folders remain exposed."
+        } else {
+            "This runs the selected installer on this PC with SetupScope's privileges. Capture is incomplete evidence, not isolation or guaranteed undo. Use a disposable test machine for untrusted installers."
+        });
+        super::a11y::explain(ui.checkbox(&mut self.builder.capture_reviewed, t("I reviewed the installer, execution location, package output and toolchain requirements")),
+            "Required before capture. Packaging may download the official launcher source and build tools on first use; vendor installers may access the network. Configuration edits clear review. No action starts from this checkbox.");
+        ui.add_enabled_ui(ok && self.builder.capture_reviewed && (self.builder.use_sandbox || self.elevated), |ui| {
             if super::a11y::explain(
                 theme::primary_button(ui, format!("📦 {}", t("Start"))),
                 &start_why,
@@ -561,7 +598,7 @@ impl App {
         let tools = self.builder.tools.clone();
         ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new("✔").color(theme::OK));
-            ui.label(t("PortableApps.com Launcher: built in"));
+            ui.label(t("PortableApps.com Launcher toolchain"));
             small_muted(
                 ui,
                 if self.builder.toolchain_ready {
@@ -579,8 +616,8 @@ impl App {
                     small_muted(ui, p.display().to_string());
                 }
                 None => {
-                    ui.label(t("Installer: built in"));
-                    small_muted(ui, t("to publish on portableapps.com, install the official PortableApps.com Installer and SetupSweep uses it instead"));
+                    ui.label(t("Installer: SetupScope-generated fallback"));
+                    small_muted(ui, t("to publish on portableapps.com, install the official PortableApps.com Installer and SetupScope uses it instead"));
                 }
             }
         });
@@ -649,7 +686,7 @@ impl App {
                 ui.label(t("When the installation has finished, start the program once, set it up the way you want it to start, and close it."));
                 if super::a11y::explain(
                     theme::primary_button(ui, t("Done: take the second snapshot")),
-                    &t("Tells SetupSweep the installation is finished and the program is set up the way you want, so it takes the second snapshot and builds the package."),
+                    &t("Tells SetupScope the installation is finished and the program is set up the way you want, so it takes the second snapshot and builds the package."),
                 )
                 .clicked()
                 {
@@ -691,7 +728,7 @@ impl App {
             ui.add_space(6.0);
             ui.label(RichText::new(t("Portability check")).strong());
             for i in &pkg.portability.issues {
-                use setupsweep_core::portability::Severity;
+                use setupscope_core::portability::Severity;
                 let (icon, color) = match i.severity {
                     Severity::Problem => ("✖", theme::BAD),
                     Severity::Warning => ("⚠", theme::WARN),
@@ -755,7 +792,7 @@ impl App {
                     }
                 }
                 if super::a11y::explain(
-                    ui.button(t("Build another")),
+                    ui.add_enabled(self.builder.log_save_job.is_none() && self.builder.log_save_error.is_none(), egui::Button::new(t("Build another"))),
                     &t("Clears this result and goes back to the beginning to build another package. The finished package stays in its folder."),
                 )
                 .clicked()
@@ -774,14 +811,8 @@ impl App {
         let launcher_hdr = egui::CollapsingHeader::new(t("Launcher settings"))
             .default_open(true)
             .show(ui, |ui| {
-                let mut text = pkg.launcher_ini.clone();
                 super::a11y::explain(
-                    ui.add(
-                        egui::TextEdit::multiline(&mut text)
-                            .code_editor()
-                            .desired_width(f32::INFINITY)
-                            .interactive(true),
-                    ),
+                    ui.add(egui::Label::new(RichText::new(&pkg.launcher_ini).monospace()).selectable(true)),
                     &t("The Launcher settings generated for this package, shown for reading. To change them, use Edit Launcher settings above, then Compile."),
                 );
             });
@@ -789,5 +820,28 @@ impl App {
             launcher_hdr.header_response,
             &t("Show or hide the Launcher settings generated for this package."),
         );
+    }
+}
+
+#[cfg(test)]
+mod audit_tests {
+    use super::*;
+    #[test]
+    fn execution_review_invalidates_when_inputs_or_toolchain_change() {
+        let mut state = BuilderState::default();
+        state.review_selection("tools-a");
+        state.capture_reviewed = true;
+        state.review_selection("tools-a");
+        assert!(state.capture_reviewed);
+        state.use_sandbox = !state.use_sandbox;
+        state.review_selection("tools-a");
+        assert!(!state.capture_reviewed);
+        state.capture_reviewed = true;
+        state.review_selection("tools-b");
+        assert!(!state.capture_reviewed);
+        state.capture_reviewed = true;
+        state.out_dir = "changed-output".into();
+        state.review_selection("tools-b");
+        assert!(!state.capture_reviewed);
     }
 }

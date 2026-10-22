@@ -24,7 +24,7 @@
 //!   timestamp is when the change was *observed*, which is the honest claim.
 //!
 //! The very first capture only establishes the baseline and records no
-//! events: SetupSweep cannot know when the programs already present were
+//! events: SetupScope cannot know when the programs already present were
 //! installed, and inventing dates would poison every later report. The store
 //! remembers when capture began (`started`) so reports can say how far back
 //! the history honestly goes.
@@ -366,7 +366,7 @@ impl HistoryStore {
     }
 
     /// Save atomically (stage, then rename), like install logs. A file from
-    /// a newer version of SetupSweep is never overwritten.
+    /// a newer version of SetupScope is never overwritten.
     pub fn save(&self, root: &Path) -> Result<()> {
         if self.version > SCHEMA_VERSION {
             anyhow::bail!(

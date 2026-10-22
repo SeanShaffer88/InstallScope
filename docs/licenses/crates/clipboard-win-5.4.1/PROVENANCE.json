@@ -1,0 +1,11 @@
+{
+  "package": "clipboard-win",
+  "version": "5.4.1",
+  "source_commit": "3b27cf2bfd1adcfa6e0264eb51c1025ddaf0f342",
+  "sources": [
+    {
+      "file": "workspace-LICENSE",
+      "url": "https://raw.githubusercontent.com/DoumanAsh/clipboard-win/3b27cf2bfd1adcfa6e0264eb51c1025ddaf0f342/LICENSE"
+    }
+  ]
+}

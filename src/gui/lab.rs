@@ -6,11 +6,11 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use setupsweep_core::i18n::{t, tf};
-use setupsweep_core::model::InstallLog;
-use setupsweep_core::platform;
-use setupsweep_core::snapshot::{
-    detect_program, diff, filter_changes, load_snapshot, save_snapshot, take_snapshot,
+use setupscope_core::i18n::{t, tf};
+use setupscope_core::model::InstallLog;
+use setupscope_core::platform;
+use setupscope_core::snapshot::{
+    detect_program, diff, filter_changes, load_snapshot, save_new_snapshot, take_snapshot,
 };
 
 #[derive(Default)]
@@ -25,8 +25,8 @@ pub struct LabState {
     cmp_result: Option<InstallLog>,
     message: String,
     /// Quick compare: the "before" snapshot, kept in memory.
-    quick_before: Option<std::sync::Arc<setupsweep_core::model::Snapshot>>,
-    quick_job: Option<Job<Result<std::sync::Arc<setupsweep_core::model::Snapshot>, String>>>,
+    quick_before: Option<std::sync::Arc<setupscope_core::model::Snapshot>>,
+    quick_job: Option<Job<Result<std::sync::Arc<setupscope_core::model::Snapshot>, String>>>,
     tree: super::difftree_ui::TreeView,
     show_list: bool,
 }
@@ -94,7 +94,7 @@ impl App {
             } else {
                 t("Takes the 'after' snapshot now and lists everything that changed since the 'before' snapshot.")
             };
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.add_enabled_ui(!busy, |ui| {
                     let label = if self.lab.quick_before.is_some() {
                         format!("📷 {}", t("1. Snapshot again (start over)"))
@@ -137,9 +137,9 @@ impl App {
                                 &settings.effective_file_exclusions(),
                             );
                             let mut log = InstallLog {
-                                id: setupsweep_core::util::new_id(),
+                                id: setupscope_core::util::new_id(),
                                 name: format!("{} {}", t("Changes since"), before.created),
-                                created: setupsweep_core::util::now_string(),
+                                created: setupscope_core::util::now_string(),
                                 ..Default::default()
                             };
                             if let Some(d) = detect_program(&changes) {
@@ -192,7 +192,7 @@ impl App {
             } else {
                 t("Saves a snapshot of this PC's files and registry now, under the name above, so you can compare it with another snapshot later.")
             };
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 super::a11y::explain(
                     ui.add(
                         egui::TextEdit::singleline(&mut self.lab.snap_name)
@@ -211,10 +211,10 @@ impl App {
                         let name = if self.lab.snap_name.trim().is_empty() {
                             format!(
                                 "snapshot-{}",
-                                setupsweep_core::time::DateTime::now_local().compact()
+                                setupscope_core::time::DateTime::now_local().compact()
                             )
                         } else {
-                            setupsweep_core::util::safe_file_name(self.lab.snap_name.trim())
+                            setupscope_core::util::safe_file_name(self.lab.snap_name.trim())
                         };
                         let path = self.store.snapshots_dir().join(format!("{name}.snap"));
                         let reg = self.reg.clone();
@@ -222,7 +222,7 @@ impl App {
                         self.lab.snap_job = Some(Job::spawn(&self.ctx, move |pr| {
                             let s = take_snapshot(reg.as_ref(), &settings, pr)
                                 .map_err(|e| e.to_string())?;
-                            save_snapshot(&path, &s).map_err(|e| e.to_string())?;
+                            save_new_snapshot(&path, &s).map_err(|e| e.to_string())?;
                             Ok(name)
                         }));
                     }
@@ -247,7 +247,7 @@ impl App {
                     .map(|s| format!("{}  ({})", s.0, s.2))
                     .unwrap_or_else(|| t("Choose…"))
             };
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 let before_label = ui.label(t("Before"));
                 let combo_a = egui::ComboBox::from_id_salt("cmp_a")
                     .width(260.0)
@@ -294,7 +294,7 @@ impl App {
             } else {
                 t("Compares the Before and After snapshots and lists everything that changed between them.")
             };
-            ui.horizontal(|ui| {
+            ui.horizontal_wrapped(|ui| {
                 ui.add_enabled_ui(ready, |ui| {
                     if super::a11y::explain(theme::primary_button(ui, t("Compare")), &cmp_why)
                         .clicked()
@@ -313,9 +313,9 @@ impl App {
                                 &settings.effective_file_exclusions(),
                             );
                             let mut log = InstallLog {
-                                id: setupsweep_core::util::new_id(),
+                                id: setupscope_core::util::new_id(),
                                 name: format!("{} → {}", a.0, b.0),
-                                created: setupsweep_core::util::now_string(),
+                                created: setupscope_core::util::now_string(),
                                 ..Default::default()
                             };
                             if let Some(d) = detect_program(&changes) {
@@ -330,7 +330,7 @@ impl App {
                 });
                 if super::a11y::explain(
                     ui.button(t("Open snapshot folder")),
-                    &t("Opens the folder where SetupSweep saves snapshots, in File Explorer."),
+                    &t("Opens the folder where SetupScope saves snapshots, in File Explorer."),
                 )
                 .clicked()
                 {
@@ -347,7 +347,7 @@ impl App {
             let mut export_ini = false;
             theme::card(ui, |ui| {
                 let log = self.lab.cmp_result.as_mut().unwrap();
-                ui.horizontal(|ui| {
+                ui.horizontal_wrapped(|ui| {
                     ui.label(RichText::new(&log.name).strong());
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                         if super::a11y::explain(
@@ -378,14 +378,14 @@ impl App {
             });
             if export_ini {
                 let log = self.lab.cmp_result.as_ref().unwrap();
-                let r = setupsweep_core::portable::launcher_ini(
+                let r = setupscope_core::portable::launcher_ini(
                     &log.changes,
                     &log.name,
-                    &setupsweep_core::portable::Folders::current(),
+                    &setupscope_core::portable::Folders::current(),
                 );
-                let name = format!("{}.ini", setupsweep_core::util::safe_file_name(&log.name));
+                let name = format!("{}.ini", setupscope_core::util::safe_file_name(&log.name));
                 if let Some(p) = save_file(&t("Save Launcher settings"), &name, "INI", "ini") {
-                    self.lab.message = match std::fs::write(&p, r.text) {
+                    self.lab.message = match setupscope_core::report::save_new_export(&p, r.text.as_bytes()) {
                         Ok(()) => tf(
                             "Saved {path}: {dirs} folders, {files} files and {keys} registry keys to move.",
                             &[
@@ -395,17 +395,17 @@ impl App {
                                 ("keys", r.keys.to_string()),
                             ],
                         ),
-                        Err(e) => e.to_string(),
+                        Err(e) => format!("Export failed; existing files are preserved. Choose a new name: {e}"),
                     };
                 }
             }
             if save {
-                let log = self.lab.cmp_result.take().unwrap();
+                let log = self.lab.cmp_result.as_ref().unwrap().clone();
                 match self.store.save_log(&log) {
                     Ok(()) => {
                         self.reload_logs();
                         self.lab.message =
-                            tf("Saved install log for {name}", &[("name", log.name)]);
+                            tf("Saved install log for {name}", &[("name", log.name.clone())]);
                     }
                     Err(e) => self.lab.message = e.to_string(),
                 }

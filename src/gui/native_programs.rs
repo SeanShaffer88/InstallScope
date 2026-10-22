@@ -2,14 +2,14 @@
 //! the release default until native workflows are ready to replace it.
 
 use anyhow::{anyhow, Context, Result};
-use setupsweep_core::backup::{ActionResult, BackupWriter};
-use setupsweep_core::i18n::{self, t, tf};
-use setupsweep_core::leftovers::{self, LeftoverScope};
-use setupsweep_core::model::InstallLog;
-use setupsweep_core::platform::{self, Registry};
-use setupsweep_core::programs::{self, InstalledProgram};
-use setupsweep_core::revert::{self, ExecOptions, Plan};
-use setupsweep_core::store::Store;
+use setupscope_core::backup::{ActionResult, BackupWriter};
+use setupscope_core::i18n::{self, t, tf};
+use setupscope_core::leftovers::{self, LeftoverScope};
+use setupscope_core::model::InstallLog;
+use setupscope_core::platform::{self, Registry};
+use setupscope_core::programs::{self, InstalledProgram};
+use setupscope_core::revert::{self, ExecOptions, Plan};
+use setupscope_core::store::Store;
 use std::ffi::c_void;
 use std::sync::{mpsc, Arc};
 use std::time::Instant;
@@ -36,7 +36,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     SetMenuInfo, SetTimer, SetWindowLongPtrW, SetWindowTextW, ShowWindow, TranslateMessage,
     WindowFromPoint, CREATESTRUCTW, CW_USEDEFAULT, GA_ROOT, GWLP_USERDATA, HMENU, IDC_ARROW,
     IDC_CROSS, LBS_EXTENDEDSEL, LBS_HASSTRINGS, LBS_NOTIFY, LBS_OWNERDRAWFIXED, LB_ADDSTRING,
-    LB_GETCURSEL, LB_GETSELCOUNT, LB_GETSELITEMS, LB_RESETCONTENT, LB_SETCURSEL,
+    LB_GETCURSEL, LB_GETSELCOUNT, LB_GETSELITEMS, LB_RESETCONTENT, LB_SETCURSEL, MB_DEFBUTTON2,
     MB_ICONINFORMATION, MB_ICONWARNING, MB_YESNO, MENUINFO, MF_GRAYED, MF_OWNERDRAW, MF_POPUP,
     MF_STRING, MIM_APPLYTOSUBMENUS, MIM_BACKGROUND, MSG, SW_HIDE, SW_SHOW, WM_CANCELMODE,
     WM_CAPTURECHANGED, WM_CLOSE, WM_COMMAND, WM_CREATE, WM_DESTROY, WM_DRAWITEM, WM_ERASEBKGND,
@@ -45,7 +45,7 @@ use windows_sys::Win32::UI::WindowsAndMessaging::{
     WS_VSCROLL,
 };
 
-const CLASS_NAME: &str = "SetupSweepNativeProgramsPreview";
+const CLASS_NAME: &str = "SetupScopeNativeProgramsPreview";
 const WINDOW_WIDTH: i32 = 1000;
 const WINDOW_HEIGHT: i32 = 680;
 const ID_SEARCH: u16 = 101;
@@ -87,6 +87,7 @@ const TIMER_UNINSTALL: usize = 1;
 const SEARCH_CHANGED: u16 = 0x0300;
 const LIST_SELECTION_CHANGED: u16 = 1;
 const BUTTON_CLICKED: u16 = 0;
+const CONFIRM_FLAGS: u32 = MB_YESNO | MB_ICONWARNING | MB_DEFBUTTON2;
 const ES_AUTOHSCROLL: u32 = 0x0080;
 const ES_AUTOVSCROLL: u32 = 0x0040;
 const ES_LEFT: u32 = 0;
@@ -138,7 +139,7 @@ struct NativePrograms {
     brand_mark: HWND,
     brand_name: HWND,
     nav_programs: HWND,
-    nav_items: [HWND; 17],
+    nav_items: [HWND; 13],
     page_title: HWND,
     page_subtitle: HWND,
     list_heading: HWND,
@@ -253,10 +254,7 @@ impl NativePrograms {
             Ok(Ok(programs)) => {
                 self.programs = programs;
                 self.filter_programs();
-                self.set_status(&tf(
-                    "{n} programs",
-                    &[("n", self.programs.len().to_string())],
-                ));
+                self.set_status(&t("Program inventory refreshed."));
                 true
             }
             Ok(Err(error)) => {
@@ -418,7 +416,7 @@ impl NativePrograms {
 
     fn remove_manual_program(&mut self, program: InstalledProgram) {
         let prompt = tf(
-            "Remove {name} from SetupSweep's program list? Its files and settings will not be deleted.",
+            "Remove {name} from SetupScope's program list? Its files and settings will not be deleted.",
             &[("name", program.name.clone())],
         );
         let confirmed = unsafe {
@@ -426,7 +424,7 @@ impl NativePrograms {
                 self.hwnd,
                 wide(&prompt).as_ptr(),
                 wide("Remove from list").as_ptr(),
-                MB_YESNO | MB_ICONWARNING,
+                CONFIRM_FLAGS,
             ) == 6
         };
         if !confirmed {
@@ -435,7 +433,7 @@ impl NativePrograms {
         match programs::remove_manual(&self.store_root, &program.key) {
             Ok(()) => {
                 self.set_status(&tf(
-                    "Removed {name} from SetupSweep's list. No files were deleted.",
+                    "Removed {name} from SetupScope's list. No files were deleted.",
                     &[("name", program.name)],
                 ));
                 self.request_refresh();
@@ -451,7 +449,7 @@ impl NativePrograms {
     fn uninstall_command(&self, program: &InstalledProgram) -> Result<Option<String>, String> {
         if program.source == programs::Source::Manual {
             return Err(t(
-                "Manually added entries are analysis-only. Remove them from SetupSweep's list instead.",
+                "Manually added entries are analysis-only. Remove them from SetupScope's list instead.",
             ));
         }
         if program.no_remove {
@@ -494,6 +492,9 @@ impl NativePrograms {
         if self.restore_point_receiver.is_some() {
             return;
         }
+        let Some(restore_point) = self.preflight_restore_point() else {
+            return;
+        };
         for program in &selected {
             if let Err(error) = self.uninstall_command(program) {
                 let message = format!("{}: {error}", program.name);
@@ -502,16 +503,22 @@ impl NativePrograms {
                 return;
             }
         }
-        let prompt = tf(
-            "Uninstall {n} selected programs one at a time? SetupSweep will show a separate leftover review after each program. Nothing is removed until you review that program's findings.",
+        let mut prompt = tf(
+            "Uninstall {n} selected programs one at a time? Each vendor uninstaller or Windows Store removal changes the PC before SetupScope shows a separate leftover review. SetupScope's backups cover its own cleanup, not the vendor's uninstall. A restore point is an additional safety net, not guaranteed recovery. Continue?",
             &[("n", selected.len().to_string())],
         );
+        prompt.push_str("\r\n\r\n");
+        prompt.push_str(&t(if restore_point {
+            "One restore point will be created and verified before the batch starts. Failure cancels the batch."
+        } else {
+            "No System Restore point will be created."
+        }));
         let confirmed = unsafe {
             windows_sys::Win32::UI::WindowsAndMessaging::MessageBoxW(
                 self.hwnd,
                 wide(&prompt).as_ptr(),
                 wide("Confirm batch uninstall").as_ptr(),
-                MB_YESNO | MB_ICONWARNING,
+                CONFIRM_FLAGS,
             ) == 6
         };
         if !confirmed {
@@ -521,7 +528,7 @@ impl NativePrograms {
         self.batch_completed = 0;
         self.batch_queue = selected;
         self.batch_active = true;
-        if self.create_restore_point && self.elevated {
+        if restore_point {
             self.begin_restore_point(PendingUninstall::Batch);
         } else {
             self.launch_next_batch_program();
@@ -662,6 +669,9 @@ impl NativePrograms {
         if self.restore_point_receiver.is_some() {
             return;
         }
+        let Some(restore_point) = self.preflight_restore_point() else {
+            return;
+        };
         let command = match self.uninstall_command(&program) {
             Ok(command) => command,
             Err(error) => {
@@ -670,29 +680,35 @@ impl NativePrograms {
                 return;
             }
         };
-        let prompt = if program.source == programs::Source::Store {
+        let mut prompt = if program.source == programs::Source::Store {
             tf(
-                "SetupSweep will ask Windows to uninstall {name} for this user. Any leftover cleanup will be presented for review afterward.\r\n\r\nContinue?",
+                "SetupScope will ask Windows to uninstall {name} for this user before showing a leftover review. SetupScope's backups cover its own cleanup, not restoring the removed application. A restore point is an additional safety net, not guaranteed recovery.\r\n\r\nContinue?",
                 &[("name", program.name.clone())],
             )
         } else {
             tf(
-                "SetupSweep will start {name}'s own uninstaller. Any leftover cleanup will be presented for review afterward.\r\n\r\nContinue?",
+                "SetupScope will start {name}'s own uninstaller before showing a leftover review. SetupScope's backups cover its own cleanup, not the vendor's uninstall. A restore point is an additional safety net, not guaranteed recovery.\r\n\r\nContinue?",
                 &[("name", program.name.clone())],
             )
         };
+        prompt.push_str("\r\n\r\n");
+        prompt.push_str(&t(if restore_point {
+            "A restore point will be created and verified before removal starts. Failure cancels the uninstall."
+        } else {
+            "No System Restore point will be created."
+        }));
         let confirmed = unsafe {
             windows_sys::Win32::UI::WindowsAndMessaging::MessageBoxW(
                 self.hwnd,
                 wide(&prompt).as_ptr(),
                 wide("Confirm uninstall").as_ptr(),
-                MB_YESNO | MB_ICONWARNING,
+                CONFIRM_FLAGS,
             ) == 6
         };
         if !confirmed {
             return;
         }
-        if self.create_restore_point && self.elevated {
+        if restore_point {
             self.begin_restore_point(PendingUninstall::Single { program, command });
             return;
         }
@@ -751,7 +767,7 @@ impl NativePrograms {
                     self.view = View::Programs;
                     self.layout_controls();
                     return Err(anyhow!(
-                        "The uninstaller started, but SetupSweep could not monitor it ({error}). Check whether it completed before trying again."
+                        "The uninstaller started, but SetupScope could not monitor it ({error}). Check whether it completed before trying again."
                     ));
                 }
                 self.set_status(&tf(
@@ -772,6 +788,21 @@ impl NativePrograms {
         self.create_restore_point = checked != 0;
     }
 
+    fn preflight_restore_point(&self) -> Option<bool> {
+        match setupscope_core::restore::preflight_restore_point(
+            self.create_restore_point,
+            self.elevated,
+        ) {
+            Ok(requested) => Some(requested),
+            Err(error) => {
+                let message = t(&error.to_string());
+                self.set_status(&message);
+                show_error(self.hwnd, &message);
+                None
+            }
+        }
+    }
+
     /// Create the pre-uninstall restore point on a background thread (the
     /// same work the full interface's wizard does before it starts), then
     /// continue with `pending`. Runs at most once per uninstall or batch.
@@ -785,7 +816,7 @@ impl NativePrograms {
         self.restore_point_receiver = Some(rx);
         std::thread::spawn(move || {
             let result =
-                setupsweep_core::restore::create_restore_point("Before SetupSweep uninstall")
+                setupscope_core::restore::create_restore_point("Before SetupScope uninstall")
                     .map_err(|error| format!("{error:#}"));
             let _ = tx.send(result);
             unsafe {
@@ -920,7 +951,7 @@ impl NativePrograms {
             self.view = View::Programs;
             self.layout_controls();
             let error = tf(
-                "{name} is still registered; SetupSweep did not scan or remove leftovers.",
+                "{name} is still registered; SetupScope did not scan or remove leftovers.",
                 &[("name", program.name)],
             );
             self.set_status(&error);
@@ -995,7 +1026,7 @@ impl NativePrograms {
         self.plan_receiver = Some(rx);
         std::thread::spawn(move || {
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                let mut plan = setupsweep_core::orphans::scan_system(registry.as_ref());
+                let mut plan = setupscope_core::orphans::scan_system(registry.as_ref());
                 plan.info.push(t(
                     "Uninstall registrations are proposed only when both the install folder and every registered uninstaller are missing. MSI, hidden, protected, and Windows-owned entries are excluded.",
                 ));
@@ -1166,7 +1197,7 @@ impl NativePrograms {
             return;
         }
         let prompt = tf(
-            "Remove {n} selected items? SetupSweep will back them up first when backups are enabled.",
+            "Remove {n} selected items? SetupScope will back them up first when backups are enabled.",
             &[("n", count.to_string())],
         );
         let confirmed = unsafe {
@@ -1174,7 +1205,7 @@ impl NativePrograms {
                 self.hwnd,
                 wide(&prompt).as_ptr(),
                 wide("Confirm leftover removal").as_ptr(),
-                MB_YESNO | MB_ICONWARNING,
+                CONFIRM_FLAGS,
             ) == 6
         };
         if !confirmed {
@@ -1258,7 +1289,7 @@ impl NativePrograms {
                         if self.backup_enabled {
                             String::new()
                         } else {
-                            t("Backups were disabled in SetupSweep settings.")
+                            t("Backups were disabled in SetupScope settings.")
                         }
                     });
                 let backup_warning = backup_error
@@ -1386,7 +1417,7 @@ impl NativePrograms {
             );
             EnableWindow(
                 self.restore_point_check,
-                i32::from(self.view == View::Programs && self.elevated),
+                i32::from(self.view == View::Programs),
             );
         }
         unsafe { layout_controls(self) };
@@ -1423,7 +1454,7 @@ fn build_native_removal_plan(
         let hidden = revert::simplify(&mut plan);
         if hidden > 0 {
             plan.info.push(tf(
-                "{n} higher-risk or uncertain items were left out of this Simple-mode review. Use the full interface's Advanced mode to inspect them.",
+                "{n} higher-risk or uncertain items were left out of this legacy review. Inspect the complete plan in the developer interface.",
                 &[("n", hidden.to_string())],
             ));
         }
@@ -1457,24 +1488,7 @@ fn find_program_for_image<'a>(
     programs: &'a [InstalledProgram],
     image_path: &std::path::Path,
 ) -> Option<&'a InstalledProgram> {
-    let image = normalize_windows_path(&image_path.to_string_lossy());
-    let mut matches = programs.iter().filter(|program| {
-        let location = normalize_windows_path(&program.install_location);
-        !location.is_empty()
-            && image
-                .strip_prefix(&location)
-                .is_some_and(|suffix| suffix.is_empty() || suffix.starts_with('\\'))
-    });
-    let first = matches.next()?;
-    matches.next().is_none().then_some(first)
-}
-
-fn normalize_windows_path(path: &str) -> String {
-    path.trim()
-        .trim_matches('"')
-        .replace('/', "\\")
-        .trim_end_matches('\\')
-        .to_lowercase()
+    setupscope_core::windowidentify::unique_program(programs, &image_path.to_string_lossy())
 }
 
 fn process_image_path(process_id: u32) -> Result<std::path::PathBuf> {
@@ -1541,11 +1555,11 @@ unsafe fn draw_menu_label(state: &NativePrograms, draw: &DRAWITEMSTRUCT) {
 pub fn run(install_target: Option<String>, _launch_args: Vec<String>) -> Result<()> {
     if install_target.is_some() {
         return Err(anyhow!(
-            "The native Programs preview does not yet support Explorer's Install with SetupSweep action. Build without --features native-ui-preview to use the complete interface."
+            "The native Programs preview does not yet support Explorer's Install with SetupScope action. Build without --features native-ui-preview to use the complete interface."
         ));
     }
 
-    let store = Store::open().context("Could not open SetupSweep's data folder")?;
+    let store = Store::open().context("Could not open SetupScope's data folder")?;
     let settings = store.load_settings();
     i18n::set_language(&settings.language);
     let registry: Arc<dyn Registry> = Arc::from(platform::system_registry());
@@ -1554,7 +1568,7 @@ pub fn run(install_target: Option<String>, _launch_args: Vec<String>) -> Result<
         brand_mark: std::ptr::null_mut(),
         brand_name: std::ptr::null_mut(),
         nav_programs: std::ptr::null_mut(),
-        nav_items: [std::ptr::null_mut(); 17],
+        nav_items: [std::ptr::null_mut(); 13],
         page_title: std::ptr::null_mut(),
         page_subtitle: std::ptr::null_mut(),
         list_heading: std::ptr::null_mut(),
@@ -1661,7 +1675,7 @@ pub fn run(install_target: Option<String>, _launch_args: Vec<String>) -> Result<
     }
 
     let class_name = wide(CLASS_NAME);
-    let title = wide(&format!("SetupSweep - {}", t("Programs preview")));
+    let title = wide(&format!("SetupScope - {}", t("Programs preview")));
     let class = WNDCLASSW {
         style: 0,
         lpfnWndProc: Some(window_proc),
@@ -1701,7 +1715,7 @@ pub fn run(install_target: Option<String>, _launch_args: Vec<String>) -> Result<
     }
     unsafe { install_menu(hwnd, state.brushes[1])? };
     unsafe {
-        ShowWindow(hwnd, SW_SHOW);
+        ShowWindow(hwnd, windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWMAXIMIZED);
         UpdateWindow(hwnd);
     }
     platform::apply_window_style(COLOR_ACCENT, true);
@@ -1771,7 +1785,7 @@ unsafe fn install_menu(hwnd: HWND, background: HBRUSH) -> Result<()> {
     append_item(
         help,
         ID_MENU_ABOUT as usize,
-        &t("About SetupSweep"),
+        &t("About SetupScope"),
         MF_STRING,
     )?;
     append_menu_label(menu, file, ID_MENU_LABEL_FILE)?;
@@ -1860,8 +1874,8 @@ unsafe extern "system" fn window_proc(
                 (ID_MENU_ABOUT, _) => show_info(
                     hwnd,
                     &format!(
-                        "SetupSweep {}\r\nWindows Install, Uninstall & Developer Tools",
-                        setupsweep_core::APP_VERSION
+                        "SetupScope {}\r\nWindows Install, Uninstall & Developer Tools",
+                        setupscope_core::APP_VERSION
                     ),
                 ),
                 (ID_SEARCH, SEARCH_CHANGED) if state.view == View::Programs => {
@@ -2107,7 +2121,7 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
 
     const SS_OWNERDRAW: u32 = 0x000D;
     state.brand_mark = create("STATIC", "E", SS_OWNERDRAW, 0, ID_BRAND_MARK);
-    state.brand_name = create("STATIC", "SetupSweep", SS_OWNERDRAW, 0, ID_BRAND_NAME);
+    state.brand_name = create("STATIC", "SetupScope", SS_OWNERDRAW, 0, ID_BRAND_NAME);
     state.nav_programs = create(
         "BUTTON",
         "□   Programs",
@@ -2120,10 +2134,7 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
         "📡   Monitor",
         "📋   Install Logs",
         "💾   Backups",
-        "🚀   Startup",
-        "🗑   Cleaner",
         "Utilities",
-        "⏪   System Restore",
         "📸   Snapshots",
         "🎒   PortableApps Forge",
         "📦   Setup Package Creator (Planned)",
@@ -2131,7 +2142,6 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
         "💿   Temporary Scratch Disk (Planned)",
         "🗂   VSS Viewer (Planned)",
         "🛡   Bloatware Shield",
-        "☰   Right-Click Menu",
         "⚙   Settings",
     ];
     for (index, label) in nav_labels.iter().enumerate() {
@@ -2162,9 +2172,9 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
     state.footer = create(
         "STATIC",
         &format!(
-            "SetupSweep {} · © {}",
-            setupsweep_core::APP_VERSION,
-            setupsweep_core::APP_AUTHOR
+            "{} · SetupScope {}",
+            super::system_info::summary(),
+            setupscope_core::APP_VERSION
         ),
         0x000D,
         0,
@@ -2219,7 +2229,9 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
         if state.create_restore_point { 1 } else { 0 },
         0,
     );
-    EnableWindow(state.restore_point_check, i32::from(state.elevated));
+    // Keep an explicit opt-out available without elevation; preflight blocks
+    // requested restore points instead of silently dropping the safety net.
+    EnableWindow(state.restore_point_check, 1);
     state.toggle_item = create(
         "BUTTON",
         &t("Toggle selection"),
@@ -2279,10 +2291,6 @@ unsafe fn create_controls(state: &mut NativePrograms) -> Result<()> {
         state.nav_items[10],
         state.nav_items[11],
         state.nav_items[12],
-        state.nav_items[13],
-        state.nav_items[14],
-        state.nav_items[15],
-        state.nav_items[16],
         state.page_title,
         state.page_subtitle,
         state.list_heading,
@@ -2354,7 +2362,7 @@ unsafe fn layout_controls(state: &NativePrograms) {
     let content_left = sidebar_width + margin;
     let content_width = (width - content_left - margin).max(420);
     let row_height = 30;
-    let status_height = 32;
+    let status_height = 54;
     let details_width = (content_width * 38 / 100).clamp(230, 340);
     let gutter = 18;
     let list_width = (content_width - details_width - gutter).max(220);
@@ -2365,33 +2373,13 @@ unsafe fn layout_controls(state: &NativePrograms) {
     MoveWindow(state.brand_name, 58, 18, 132, 32, 1);
     MoveWindow(state.nav_items[0], 10, 72, sidebar_width - 20, 38, 1);
     MoveWindow(state.nav_programs, 10, 110, sidebar_width - 20, 38, 1);
-    for (index, y) in [
-        148,
-        186,
-        224,
-        262,
-        300,
-        342,
-        368,
-        406,
-        444,
-        482,
-        520,
-        558,
-        596,
-        634,
-        672,
-        height - 48,
-    ]
-    .into_iter()
-    .enumerate()
-    {
+    for (index, y) in (0..12).map(|i| 148 + i * 38).enumerate() {
         MoveWindow(
             state.nav_items[index + 1],
             10,
             y,
             sidebar_width - 20,
-            if index == 5 { 20 } else { 38 },
+            if index == 3 { 20 } else { 38 },
             1,
         );
     }
@@ -2487,16 +2475,16 @@ unsafe fn layout_controls(state: &NativePrograms) {
         state.status,
         content_left,
         height - status_height,
-        content_width - 250,
-        status_height,
+        content_width,
+        24,
         1,
     );
     MoveWindow(
         state.footer,
-        content_left + content_width - 250,
-        height - status_height,
-        250,
-        status_height,
+        content_left,
+        height - 28,
+        content_width,
+        24,
         1,
     );
 }
@@ -2629,7 +2617,7 @@ unsafe fn draw_program_row(state: &NativePrograms, draw: &DRAWITEMSTRUCT) {
         program.version.clone(),
         program.install_date.clone(),
         (program.size_kb > 0)
-            .then(|| setupsweep_core::model::human_size(program.size_kb.saturating_mul(1024)))
+            .then(|| setupscope_core::model::human_size(program.size_kb.saturating_mul(1024)))
             .unwrap_or_default(),
     ];
     let positions = [0.0_f32, 0.30, 0.52, 0.73, 0.88];
@@ -2688,7 +2676,7 @@ unsafe fn draw_text_row(state: &NativePrograms, draw: &DRAWITEMSTRUCT) {
 
 fn show_error(hwnd: HWND, message: &str) {
     use windows_sys::Win32::UI::WindowsAndMessaging::{MessageBoxW, MB_ICONERROR, MB_OK};
-    let title = wide("SetupSweep");
+    let title = wide("SetupScope");
     unsafe {
         MessageBoxW(
             hwnd,
@@ -2705,7 +2693,7 @@ fn show_info(hwnd: HWND, message: &str) {
         MessageBoxW(
             hwnd,
             wide(message).as_ptr(),
-            wide("About SetupSweep").as_ptr(),
+            wide("About SetupScope").as_ptr(),
             MB_OK | MB_ICONINFORMATION,
         )
     };
@@ -2714,9 +2702,9 @@ fn show_info(hwnd: HWND, message: &str) {
 #[cfg(test)]
 mod tests {
     use super::{build_native_removal_plan, filter_programs, find_program_for_image};
-    use setupsweep_core::model::{ChangeSet, InstallLog, KeyData};
-    use setupsweep_core::platform::{MemRegistry, Registry};
-    use setupsweep_core::programs::InstalledProgram;
+    use setupscope_core::model::{ChangeSet, InstallLog, KeyData};
+    use setupscope_core::platform::{MemRegistry, Registry};
+    use setupscope_core::programs::InstalledProgram;
 
     fn program(name: &str, publisher: &str) -> InstalledProgram {
         InstalledProgram {
@@ -2798,7 +2786,7 @@ mod tests {
         let plan = build_native_removal_plan(&program, &logs, &registry, false);
 
         assert!(plan.items.iter().any(|item| {
-            matches!(&item.action, setupsweep_core::revert::Action::DeleteKey { path } if path == key)
+            matches!(&item.action, setupscope_core::revert::Action::DeleteKey { path } if path == key)
                 && item.selected
         }));
         assert!(!registry.exists(&program.key));

@@ -2,8 +2,8 @@
 
 use super::theme;
 use egui::RichText;
-use setupsweep_core::backup::ActionResult;
-use setupsweep_core::i18n::{t, tf};
+use setupscope_core::backup::ActionResult;
+use setupscope_core::i18n::{t, tf};
 use std::path::PathBuf;
 
 pub fn muted(ui: &mut egui::Ui, text: impl Into<String>) -> egui::Response {
@@ -39,32 +39,32 @@ pub fn job_progress(ui: &mut egui::Ui, phase: &str, count: u64) {
 pub fn pick_file(title: &str, filter_name: &str, exts: &[&str]) -> Option<PathBuf> {
     #[cfg(windows)]
     {
-        super::filedialog::pick_file(title, filter_name, exts)
+        super::filedialog::pick_file(&t(title), &t(filter_name), exts)
     }
     #[cfg(not(windows))]
     {
-        // Demo/testing builds: SETUPSWEEP_DEMO_OPEN names the file to "pick".
+        // Demo/testing builds: SETUPSCOPE_DEMO_OPEN names the file to "pick".
         let _ = (title, filter_name, exts);
-        std::env::var_os("SETUPSWEEP_DEMO_OPEN").map(PathBuf::from)
+        std::env::var_os("SETUPSCOPE_DEMO_OPEN").map(PathBuf::from)
     }
 }
 
 pub fn pick_folder(title: &str) -> Option<PathBuf> {
     #[cfg(windows)]
     {
-        super::filedialog::pick_folder(title)
+        super::filedialog::pick_folder(&t(title))
     }
     #[cfg(not(windows))]
     {
         let _ = title;
-        std::env::var_os("SETUPSWEEP_DEMO").map(|_| std::env::temp_dir())
+        std::env::var_os("SETUPSCOPE_DEMO").map(|_| std::env::temp_dir())
     }
 }
 
 pub fn save_file(title: &str, default_name: &str, filter_name: &str, ext: &str) -> Option<PathBuf> {
     #[cfg(windows)]
     {
-        super::filedialog::save_file(title, default_name, filter_name, ext)
+        super::filedialog::save_file(&t(title), default_name, &t(filter_name), ext)
     }
     #[cfg(not(windows))]
     {
@@ -168,4 +168,29 @@ pub fn spinner(ui: &mut egui::Ui) -> egui::Response {
             .request_repaint_after(std::time::Duration::from_millis(66));
     }
     resp
+}
+
+/// Keep full scope guidance accessible without crowding compact tool controls.
+pub fn scope_note(ui: &mut egui::Ui, summary: &str, details: &str) {
+    ui.label(t(summary));
+    collapsing_header(ui,t("Scope And Limits")).id_salt(summary).show(ui, |ui| {
+        ui.add(egui::Label::new(t(details)).wrap());
+    });
+}
+
+/// A section heading that wraps inside compact translated tool windows.
+pub fn collapsing_header(ui: &egui::Ui, label: impl Into<egui::WidgetText>) -> egui::CollapsingHeader {
+    // egui's stock header forces Extend even when the shared style wraps.
+    let width=(ui.available_width()-ui.spacing().indent-ui.spacing().button_padding.x*2.).max(32.);
+    let galley=label.into().into_galley(ui,Some(egui::TextWrapMode::Wrap),width,egui::TextStyle::Button);
+    let header=egui::CollapsingHeader::new(galley);
+    // Exercise every configuration section in the isolated layout subprocess.
+    #[cfg(test)]
+    let header=header.default_open(std::env::var_os("SETUPSCOPE_LAYOUT_LOCALE").is_some());
+    header
+}
+
+/// Deliberate primary action with the shared red terminal accent.
+pub fn action_button(ui: &mut egui::Ui, enabled: bool, label: &str) -> egui::Response {
+    ui.add_enabled(enabled,egui::Button::new(egui::RichText::new(t(label)).strong().color(egui::Color32::WHITE)).fill(theme::ACCENT).stroke(egui::Stroke::NONE))
 }

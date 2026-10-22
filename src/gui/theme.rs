@@ -1,4 +1,4 @@
-//! SetupSweep's look: the Command Deck theme — a dense operational status
+//! SetupScope's look: the Command Deck theme — a dense operational status
 //! board on a pure black/red identity. Palette: window #000000, sidebar
 //! #050505, cards #101010, hairline rules #242424; primary red #6B0700 is
 //! reserved for the primary action, attention rules and the selected nav
@@ -48,7 +48,8 @@ pub fn apply(ctx: &egui::Context, high_contrast: bool) {
     v.window_fill = PANEL;
     v.panel_fill = BG;
     v.faint_bg_color = Color32::from_rgb(0x0A, 0x0A, 0x0A);
-    v.extreme_bg_color = Color32::from_rgb(0x00, 0x00, 0x00);
+    v.extreme_bg_color = WIDGET;
+    v.text_edit_bg_color = Some(WIDGET);
     v.code_bg_color = Color32::from_rgb(0x10, 0x10, 0x10);
     v.hyperlink_color = ACCENT_TEXT;
     v.selection.bg_fill = ACCENT_DIM;
@@ -73,13 +74,14 @@ pub fn apply(ctx: &egui::Context, high_contrast: bool) {
         spread: 0,
         color: Color32::from_black_alpha(120),
     };
-    let r = CornerRadius::same(6);
+    let r = CornerRadius::same(3);
     v.widgets.noninteractive.bg_fill = PANEL;
     v.widgets.noninteractive.weak_bg_fill = PANEL;
     v.widgets.noninteractive.bg_stroke = Stroke::new(1.0_f32, LINE);
     v.widgets.noninteractive.corner_radius = r;
     v.widgets.inactive.bg_fill = WIDGET;
     v.widgets.inactive.weak_bg_fill = WIDGET;
+    v.widgets.inactive.bg_stroke = Stroke::new(1.0_f32, Color32::from_rgb(0x60, 0x60, 0x60));
     v.widgets.inactive.corner_radius = r;
     v.widgets.hovered.bg_fill = HOVER;
     v.widgets.hovered.weak_bg_fill = HOVER;
@@ -105,26 +107,28 @@ pub fn apply(ctx: &egui::Context, high_contrast: bool) {
     ctx.set_visuals_of(egui::Theme::Dark, v);
 
     ctx.style_mut_of(egui::Theme::Dark, |s| {
-        s.spacing.item_spacing = egui::vec2(8.0, 6.0);
-        s.spacing.interact_size.y = 26.0;
-        s.spacing.button_padding = egui::vec2(12.0, 5.0);
+        // Translated labels can be substantially longer than their English key.
+        s.wrap_mode = Some(egui::TextWrapMode::Wrap);
+        s.spacing.item_spacing = egui::vec2(8.0, 5.0);
+        s.spacing.interact_size.y = 28.0;
+        s.spacing.button_padding = egui::vec2(10.0, 5.0);
         // Short, smooth transitions (collapsing sections, hover fades).
         s.animation_time = if animations_enabled() { 0.12 } else { 0.0 };
         s.scroll_animation = egui::style::ScrollAnimation::duration(0.15);
         s.text_styles
-            .insert(egui::TextStyle::Body, egui::FontId::proportional(14.0));
+            .insert(egui::TextStyle::Body, egui::FontId::monospace(14.0));
         s.text_styles
-            .insert(egui::TextStyle::Button, egui::FontId::proportional(14.0));
+            .insert(egui::TextStyle::Button, egui::FontId::monospace(14.0));
         s.text_styles
-            .insert(egui::TextStyle::Heading, egui::FontId::proportional(18.0));
+            .insert(egui::TextStyle::Heading, egui::FontId::monospace(20.0));
         s.text_styles.insert(
             egui::TextStyle::Name("Title".into()),
-            egui::FontId::proportional(24.0),
+            egui::FontId::monospace(26.0),
         );
         s.text_styles
-            .insert(egui::TextStyle::Small, egui::FontId::proportional(12.0));
+            .insert(egui::TextStyle::Small, egui::FontId::monospace(12.0));
         s.text_styles
-            .insert(egui::TextStyle::Monospace, egui::FontId::monospace(13.0));
+            .insert(egui::TextStyle::Monospace, egui::FontId::monospace(14.0));
     });
 }
 
@@ -132,7 +136,7 @@ pub fn apply(ctx: &egui::Context, high_contrast: bool) {
 pub fn primary_button(ui: &mut egui::Ui, text: impl Into<String>) -> egui::Response {
     ui.add(
         egui::Button::new(
-            egui::RichText::new(text.into())
+            egui::RichText::new(setupscope_core::i18n::t(&text.into()))
                 .color(Color32::WHITE)
                 .strong(),
         )
@@ -151,7 +155,7 @@ pub fn wide_button(ui: &mut egui::Ui, text: impl Into<String>, enabled: bool) ->
     } else {
         (WIDGET, MUTED)
     };
-    let button = egui::Button::new(egui::RichText::new(text.into()).color(color).strong())
+    let button = egui::Button::new(egui::RichText::new(setupscope_core::i18n::t(&text.into())).color(color).strong())
         .fill(fill)
         .stroke(Stroke::NONE)
         .corner_radius(CornerRadius::same(18));
@@ -164,8 +168,8 @@ pub fn wide_button(ui: &mut egui::Ui, text: impl Into<String>, enabled: bool) ->
 pub fn card<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     egui::Frame::new()
         .fill(CARD)
-        .corner_radius(CornerRadius::same(12))
-        .inner_margin(egui::Margin::same(16))
+        .corner_radius(CornerRadius::same(4))
+        .inner_margin(egui::Margin::same(10))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             add(ui)
@@ -180,7 +184,7 @@ pub fn deck_panel<R>(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui) -> R) ->
         .fill(CARD)
         .stroke(Stroke::new(1.0_f32, LINE))
         .corner_radius(CornerRadius::same(6))
-        .inner_margin(egui::Margin::same(16))
+        .inner_margin(egui::Margin::same(10))
         .show(ui, |ui| {
             ui.set_width(ui.available_width());
             add(ui)
@@ -211,7 +215,7 @@ pub fn warning_banner(ui: &mut egui::Ui, text: impl Into<String>) {
             ui.horizontal_wrapped(|ui| {
                 ui.label(egui::RichText::new("⚠").color(ACCENT_TEXT));
                 ui.label(
-                    egui::RichText::new(text.into())
+                    egui::RichText::new(setupscope_core::i18n::t(&text.into()))
                         .color(Color32::from_rgb(0xF2, 0xB8, 0xAE))
                         .strong(),
                 );
@@ -222,9 +226,9 @@ pub fn warning_banner(ui: &mut egui::Ui, text: impl Into<String>) {
 /// Page title at the top of the content area.
 pub fn page_title(ui: &mut egui::Ui, title: &str, subtitle: &str) {
     ui.add_space(6.0);
-    ui.label(egui::RichText::new(title).text_style(egui::TextStyle::Name("Title".into())));
+    ui.label(egui::RichText::new(setupscope_core::i18n::t(title)).text_style(egui::TextStyle::Name("Title".into())));
     if !subtitle.is_empty() {
-        ui.label(egui::RichText::new(subtitle).color(MUTED));
+        ui.label(egui::RichText::new(setupscope_core::i18n::t(subtitle)).color(MUTED));
     }
     ui.add_space(8.0);
 }
@@ -234,7 +238,7 @@ pub fn page_title(ui: &mut egui::Ui, title: &str, subtitle: &str) {
 /// effects); animations are skipped when it is off.
 pub fn animations_enabled() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(setupsweep_core::platform::animations_enabled)
+    *ON.get_or_init(setupscope_core::platform::animations_enabled)
 }
 
 pub fn nav_item_with_hint(
@@ -246,7 +250,7 @@ pub fn nav_item_with_hint(
     hint: Option<&str>,
 ) -> egui::Response {
     let (rect, resp) =
-        ui.allocate_exact_size(egui::vec2(ui.available_width(), 38.0), egui::Sense::click());
+        ui.allocate_exact_size(egui::vec2(ui.available_width(), 42.0), egui::Sense::click());
     let accessible_label =
         hint.map_or_else(|| label.to_string(), |hint| format!("{label}. {hint}"));
     super::a11y::selectable(&resp, &accessible_label, selected);
@@ -287,7 +291,7 @@ pub fn nav_item_with_hint(
         egui::pos2(rect.left() + 54.0, rect.center().y),
         egui::Align2::LEFT_CENTER,
         label,
-        egui::FontId::proportional(14.0),
+        egui::FontId::monospace(14.0),
         if selected { Color32::WHITE } else { TEXT },
     );
     if let Some(b) = badge {
@@ -330,10 +334,10 @@ pub fn badge(ui: &mut egui::Ui, text: impl Into<String>, color: Color32) {
 /// Frame for the main content area of a page.
 pub fn content_frame() -> egui::Frame {
     egui::Frame::new().fill(BG).inner_margin(egui::Margin {
-        left: 18,
-        right: 18,
-        top: 4,
-        bottom: 12,
+        left: 24,
+        right: 24,
+        top: 8,
+        bottom: 20,
     })
 }
 

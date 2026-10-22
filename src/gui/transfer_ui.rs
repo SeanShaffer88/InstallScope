@@ -5,11 +5,11 @@ use super::theme;
 use super::widgets::*;
 use super::Job;
 use egui::RichText;
-use setupsweep_core::backup::{ActionResult, BackupWriter};
-use setupsweep_core::i18n::{t, tf};
-use setupsweep_core::model::human_size;
-use setupsweep_core::programs::InstalledProgram;
-use setupsweep_core::transfer::{self, Check, Collected, Manifest};
+use setupscope_core::backup::{ActionResult, BackupWriter};
+use setupscope_core::i18n::{t, tf};
+use setupscope_core::model::human_size;
+use setupscope_core::programs::InstalledProgram;
+use setupscope_core::transfer::{self, Check, Collected, Manifest};
 use std::path::PathBuf;
 
 type RestoreOutcome = Result<(Vec<ActionResult>, Option<String>), String>;
@@ -52,6 +52,7 @@ fn warnings(ui: &mut egui::Ui, list: &[String], color: egui::Color32) {
 impl App {
     /// Start collecting what belongs to these programs.
     pub fn start_transfer_export(&mut self, programs: Vec<InstalledProgram>) {
+        if self.transfer.is_some() { self.set_status("Finish or close the existing transfer review first."); return; }
         if programs.is_empty() {
             return;
         }
@@ -75,9 +76,10 @@ impl App {
 
     /// Ask for a package and check it against this PC.
     pub fn start_transfer_import(&mut self) {
+        if self.transfer.is_some() { self.set_status("Finish or close the existing transfer review first."); return; }
         let Some(path) = pick_file(
             &t("Restore programs from a transfer package"),
-            "SetupSweep transfer package",
+            "SetupScope transfer package",
             &[transfer::EXTENSION],
         ) else {
             return;
@@ -153,7 +155,7 @@ impl App {
                                 ui.label(RichText::new(format!("✔ {}", t("Package saved."))).color(theme::OK).strong());
                                 small_muted(ui, path.display().to_string());
                                 ui.add_space(6.0);
-                                small_muted(ui, t("Copy it to the other PC, open SetupSweep there and choose File > Restore programs from a package."));
+                                small_muted(ui, t("Copy it to the other PC, open SetupScope there and choose File > Restore programs from a package."));
                                 ui.add_space(8.0);
                                 ui.horizontal(|ui| {
                                     if super::a11y::explain(
@@ -162,7 +164,7 @@ impl App {
                                     )
                                     .clicked()
                                     {
-                                        setupsweep_core::platform::reveal(&path.to_string_lossy());
+                                        setupscope_core::platform::reveal(&path.to_string_lossy());
                                     }
                                     if super::a11y::explain(
                                         theme::primary_button(ui, t("Close")),
@@ -236,10 +238,10 @@ impl App {
                         {
                             let default = format!(
                                 "{}.{}",
-                                setupsweep_core::util::safe_file_name(&if names.len() == 1 { names[0].clone() } else { tf("{n} programs", &[("n", names.len().to_string())]) }),
+                                setupscope_core::util::safe_file_name(&if names.len() == 1 { names[0].clone() } else { tf("{n} programs", &[("n", names.len().to_string())]) }),
                                 transfer::EXTENSION
                             );
-                            if let Some(path) = save_file(&t("Save transfer package"), &default, "SetupSweep transfer package", transfer::EXTENSION) {
+                            if let Some(path) = save_file(&t("Save transfer package"), &default, "SetupScope transfer package", transfer::EXTENSION) {
                                 let c2 = c.clone();
                                 let reg2 = reg.clone();
                                 *write_job = Some(Job::spawn(ui.ctx(), move |pr| {
@@ -297,7 +299,7 @@ impl App {
                                 });
                                 if backup.is_some() {
                                     ui.add_space(6.0);
-                                    small_muted(ui, t("Changed your mind? The whole transfer can be undone from the Backups page."));
+                                    small_muted(ui, t("Review recorded transfer recovery in Backups. External changes and unrecorded application state are outside this recovery."));
                                 }
                             }
                             Err(e) => theme::warning_banner(ui, e.clone()),
@@ -371,18 +373,18 @@ impl App {
                     }
                     let blocked = !c.problems.is_empty() || (c.needs_admin && !elevated);
                     let restore_why = if !c.problems.is_empty() {
-                        t("Unavailable: the problems listed above must be sorted out first; SetupSweep won't restore a package that failed its checks.")
+                        t("Unavailable: the problems listed above must be sorted out first; SetupScope won't restore a package that failed its checks.")
                     } else if c.needs_admin && !elevated {
-                        t("Unavailable: run SetupSweep as Administrator to restore these programs.")
+                        t("Unavailable: run SetupScope as Administrator to restore these programs.")
                     } else {
-                        t("Writes the programs' files, settings and registry entries onto this PC. Everything written is recorded, so the transfer can be undone from the Backups page.")
+                        t("Writes the programs' files, settings and registry entries onto this PC. Recorded changes have recovery data in Backups; review partial failures and coverage before relying on undo.")
                     };
                     if c.needs_admin && !elevated {
                         ui.add_space(6.0);
-                        theme::warning_banner(ui, t("Run SetupSweep as Administrator to restore these programs (they go into Program Files and the machine-wide registry)."));
+                        theme::warning_banner(ui, t("Run SetupScope as Administrator to restore these programs (they go into Program Files and the machine-wide registry)."));
                     }
                     ui.add_space(6.0);
-                    small_muted(ui, t("Everything SetupSweep writes is recorded, so the transfer can be undone from the Backups page."));
+                    small_muted(ui, t("Recorded transfer changes are backed up before replacement. Review failures and recovery coverage in Backups; external application state is outside this transfer."));
                     ui.add_space(8.0);
                     ui.horizontal(|ui| {
                         if super::a11y::explain(

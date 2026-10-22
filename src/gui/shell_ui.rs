@@ -8,8 +8,8 @@ use super::widgets::*;
 use super::Job;
 use egui::RichText;
 use egui_extras::{Column, TableBuilder};
-use setupsweep_core::i18n::{t, tf};
-use setupsweep_core::shellext::{self, Kind, MenuEntry};
+use setupscope_core::i18n::{t, tf};
+use setupscope_core::shellext::{self, Kind, MenuEntry};
 
 #[derive(Clone, Copy, PartialEq, Eq, Default)]
 pub enum ShellView {
@@ -25,7 +25,7 @@ pub struct ShellState {
     pub loaded: bool,
     pub entries: Option<Vec<MenuEntry>>,
     pub job: Option<Job<Vec<MenuEntry>>>,
-    pub deep_job: Option<Job<setupsweep_core::revert::Plan>>,
+    pub deep_job: Option<Job<setupscope_core::revert::Plan>>,
     pub view: ShellView,
     pub filter: String,
 }
@@ -86,7 +86,7 @@ impl App {
         };
         let machine = self.elevated;
         let mut w = if self.settings.backup_enabled() {
-            match setupsweep_core::backup::BackupWriter::new(&self.store.backups_dir(), &title) {
+            match setupscope_core::backup::BackupWriter::new(&self.store.backups_dir(), &title) {
                 Ok(writer) => Some(writer),
                 Err(error) => {
                     self.set_status(format!(
@@ -201,7 +201,7 @@ impl App {
                     .clicked()
                     {
                         let reg = self.reg.clone();
-                        self.shell.deep_job = Some(Job::spawn(ctx, move |_| setupsweep_core::orphans::scan_system(reg.as_ref())));
+                        self.shell.deep_job = Some(Job::spawn(ctx, move |_| setupscope_core::orphans::scan_system(reg.as_ref())));
                     }
                     if broken > 0 && super::a11y::explain(
                         theme::primary_button(ui, tf("Remove {n} broken…", &[("n", broken.to_string())])),

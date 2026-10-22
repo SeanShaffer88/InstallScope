@@ -1,5 +1,5 @@
 //! Small helpers: command-line splitting, glob matching, IDs, and the safety
-//! rails that stop SetupSweep from ever touching critical system locations.
+//! rails that stop SetupScope from ever touching critical system locations.
 
 use crate::model::fold;
 use crate::platform::{expand_env, normalize_reg_path};
@@ -19,6 +19,24 @@ pub fn new_id() -> String {
         crate::time::DateTime::now_local().compact(),
         n % 1000
     )
+}
+
+/// Validate an opaque local record ID before using it as a path component.
+pub fn validate_local_id(id: &str) -> anyhow::Result<()> {
+    let reserved = [
+        "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8",
+        "COM9", "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+    ];
+    anyhow::ensure!(
+        !id.is_empty()
+            && id.len() <= 128
+            && id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'-' | b'_'))
+            && !reserved.iter().any(|r| id.eq_ignore_ascii_case(r)),
+        "Invalid local record ID; select an existing record from the local list"
+    );
+    Ok(())
 }
 
 /// Make a string safe to use as a file name.
@@ -265,7 +283,7 @@ fn norm_file(p: &str) -> String {
     lexical_path(p)
 }
 
-/// Folders SetupSweep must never delete as a whole, whatever a log or heuristic
+/// Folders SetupScope must never delete as a whole, whatever a log or heuristic
 /// says. Files *inside* them may still be removed individually. An entry
 /// ending in `\*` also protects every folder directly inside it.
 pub fn protected_dirs() -> Vec<String> {
@@ -816,7 +834,7 @@ mod tests {
 
     #[test]
     fn links_are_removed_without_touching_their_target() {
-        let base = std::env::temp_dir().join(format!("setupsweep-link-{}", std::process::id()));
+        let base = std::env::temp_dir().join(format!("setupscope-link-{}", std::process::id()));
         let target = base.join("target");
         std::fs::create_dir_all(&target).unwrap();
         std::fs::write(target.join("keep.txt"), "keep").unwrap();
@@ -969,7 +987,7 @@ pub fn tempdir() -> std::io::Result<TestDir> {
     let base = std::env::temp_dir();
     loop {
         let p = base.join(format!(
-            "setupsweep-test-{}-{}-{}",
+            "setupscope-test-{}-{}-{}",
             std::process::id(),
             N.fetch_add(1, Ordering::Relaxed),
             crate::time::unix_now()
