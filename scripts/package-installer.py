@@ -9,6 +9,7 @@ import subprocess
 import sys
 import tempfile
 import zipfile
+import re
 
 
 def quoted(value):
@@ -32,16 +33,26 @@ def main():
                 raise ValueError('Duplicate ZIP entries')
             manifest = bundle.read('SetupScope/SHA256SUMS.txt').decode('utf-8-sig')
             expected = {}
+            folded = set()
             for line in manifest.splitlines():
                 if not line.strip():
                     continue
                 digest, relative = line.split('  ', 1)
                 path = PurePosixPath(relative)
-                if (path.is_absolute() or '..' in path.parts or '\\' in relative
-                        or ':' in relative or path.parts[0].lower() == 'setupscopedata'
-                        or relative in expected):
+                if (not path.parts or path.is_absolute() or '..' in path.parts or '\\' in relative
+                        or any(c in relative for c in ':"$\r\n\0<>|?*')
+                        or any(p.endswith((' ', '.')) for p in path.parts)
+                        or path.parts[0].lower() == 'setupscopedata'
+                        or relative.lower() in folded
+                        or relative.lower() in {'install-files.nsh', 'uninstall-files.nsh',
+                                                'setupscope.install-owner', 'uninstall.exe'}
+                        or not re.fullmatch('[0-9a-fA-F]{64}', digest)):
                     raise ValueError('Unsafe or duplicate manifest entry')
                 expected[relative] = digest
+                folded.add(relative.lower())
+            if len(expected) > 5000 or sum(bundle.getinfo('SetupScope/' + n).file_size
+                                          for n in expected) > 512 * 1024 * 1024:
+                raise ValueError('Installer payload exceeds build bounds')
             for relative, digest in expected.items():
                 data = bundle.read('SetupScope/' + relative)
                 if hashlib.sha256(data).hexdigest() != digest:
