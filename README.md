@@ -6,6 +6,8 @@ A compact Windows desktop developer toolkit. Five purpose-built tools help you i
 
 **1.0.0.0 local release package · Windows 11 x64 · MIT · No account · No telemetry**
 
+[Download SetupScope 1.0.0.0](https://github.com/SeanShaffer88/SetupScope/releases/tag/v1.0.0.0) · [Validation and known limits](docs/RELEASE-VALIDATION.md)
+
 ## Start here
 
 Unpack the portable folder into a writable local location and run **SetupScope.exe**. The application itself needs Windows, not a separate .NET runtime, Python installation or Visual C++ Redistributable. The MSVC C runtime is statically linked. A compatible Windows graphics driver is required. Developer toolchain installers are optional downloads selected inside the application; their payloads are not included by default.
