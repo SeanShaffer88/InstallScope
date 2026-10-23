@@ -22,10 +22,12 @@ impl Tab {
  fn owner(self)->Self {match self {Self::Doctor|Self::Developer|Self::Bundle|Self::Dependencies=>Self::ProjectReadiness,other=>other}}
  fn title(self)-> &'static str {NAVIGATION.iter().find(|(t,_,_,_)|*t==self.owner()).map(|(_,_,s,_)|*s).unwrap_or("Settings")}
 }
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum StatusKind {Info, Error}
 pub struct App {
  pub store:Store, pub settings:Settings, pub devcheck:super::devcheck_ui::DevCheckState,
  pub readiness:super::project_readiness_ui::ReadinessState, pub tool_windows:Vec<Tab>,
- readiness_page:Tab, status:String, pub(super) system_info:super::system_info::SystemInfo, board_hidden:bool,
+ readiness_page:Tab, status:String, status_kind:StatusKind, pub(super) system_info:super::system_info::SystemInfo, board_hidden:bool,
 }
 impl App {
  pub fn new(cc:&eframe::CreationContext<'_>,_:Option<String>,_:Vec<String>)->anyhow::Result<Self> {
@@ -34,9 +36,10 @@ impl App {
   setupscope_core::i18n::set_language(&settings.language);
   theme::apply(&cc.egui_ctx,settings.high_contrast);
   cc.egui_ctx.set_zoom_factor(settings.zoom.clamp(0.75,2.));
-  Ok(Self {store,settings,devcheck:Default::default(),readiness:Default::default(),tool_windows:vec![],readiness_page:Tab::ProjectReadiness,status:String::new(),system_info:Default::default(),board_hidden:false})
+  Ok(Self {store,settings,devcheck:Default::default(),readiness:Default::default(),tool_windows:vec![],readiness_page:Tab::ProjectReadiness,status:String::new(),status_kind:StatusKind::Info,system_info:Default::default(),board_hidden:false})
  }
- pub fn set_status(&mut self,text:impl Into<String>) {self.status=text.into();}
+ pub fn set_status(&mut self,text:impl Into<String>) {self.status=text.into();self.status_kind=StatusKind::Info;}
+ pub fn set_error_status(&mut self,text:impl Into<String>) {self.status=text.into();self.status_kind=StatusKind::Error;}
  pub fn open_tool(&mut self,ctx:&egui::Context,tab:Tab) {
   let owner=tab.owner();
   if owner==Tab::ProjectReadiness && (!self.tool_windows.contains(&owner) || tab!=Tab::ProjectReadiness) {self.readiness_page=tab;}
@@ -71,7 +74,7 @@ impl App {
       let accepted=if matches!(page,Tab::Doctor|Tab::Developer|Tab::Bundle) {
        self.readiness.current_project_evidence().map(|report| self.devcheck.accept_project_evidence(report)).unwrap_or(true)
       } else {true};
-      if accepted {self.readiness_page=page;} else {self.status="A linked diagnostic is running; finish or cancel it before replacing its evidence.".into();}
+      if accepted {self.readiness_page=page;} else {self.set_error_status("A linked diagnostic is running; finish or cancel it before replacing its evidence.");}
      }
     }
    });}
@@ -93,7 +96,7 @@ impl App {
     let mut changed=language_changed;
     changed|=ui.checkbox(&mut self.settings.high_contrast,setupscope_core::i18n::t("High Contrast")).changed();
     changed|=ui.add(egui::Slider::new(&mut self.settings.zoom,0.75..=2.).text(setupscope_core::i18n::t("Interface Scale"))).changed();
-    if changed {theme::apply(ctx,self.settings.high_contrast);ctx.set_zoom_factor(self.settings.zoom);if let Err(e)=self.store.save_settings(&self.settings){self.status=format!("Could not save appearance: {e}");}}
+    if changed {theme::apply(ctx,self.settings.high_contrast);ctx.set_zoom_factor(self.settings.zoom);if let Err(e)=self.store.save_settings(&self.settings){self.set_error_status(format!("Could not save appearance: {e}"));}}
     ui.separator(); ui.label(setupscope_core::i18n::t("Diagnostics are local. Downloads require explicit action; installation requires a separate review. Nothing uploads."));
     ui.label(setupscope_core::i18n::t("Saved settings, profiles and recovery records remain in your data folder. Review exported files and receipts before sharing."));
     ui.label(setupscope_core::i18n::t(&format!("Data Folder: {}",self.store.root.display())));
@@ -117,7 +120,7 @@ impl eframe::App for App {
  fn update(&mut self,ctx:&egui::Context,_:&mut eframe::Frame) {
   super::a11y::track_input_mode(ctx);
   self.ui_main_header(ctx);
-  let status_panel=egui::TopBottomPanel::bottom("system_status").show(ctx,|ui| {ui.small(self.system_info.localized_summary());if !self.status.is_empty(){ui.label(setupscope_core::i18n::t(&self.status));}});
+  let status_panel=egui::TopBottomPanel::bottom("system_status").show(ctx,|ui| {ui.small(self.system_info.localized_summary());if !self.status.is_empty(){if self.status_kind==StatusKind::Error {ui.label(egui::RichText::new(format!("✖ {}",setupscope_core::i18n::t(&self.status))).color(theme::BAD));}else{ui.label(setupscope_core::i18n::t(&self.status));}}});
   ctx.data_mut(|d|d.insert_temp(egui::Id::new("board_status_height"),status_panel.response.rect.height()));
   self.ui_dashboard(ctx);
   tool_window::fit_content(ctx,Tab::Dashboard);
@@ -149,7 +152,7 @@ impl eframe::App for App {
   };
   setupscope_core::i18n::set_language(&locale);
   let root=std::env::temp_dir().join(format!("localized-layout-{}",setupscope_core::util::new_id()));
-  let mut app=App{store:Store::at(&root).unwrap(),settings:Settings::default(),devcheck:Default::default(),readiness:Default::default(),tool_windows:vec![],readiness_page:Tab::ProjectReadiness,status:String::new(),system_info:Default::default(),board_hidden:false};
+  let mut app=App{store:Store::at(&root).unwrap(),settings:Settings::default(),devcheck:Default::default(),readiness:Default::default(),tool_windows:vec![],readiness_page:Tab::ProjectReadiness,status:String::new(),status_kind:StatusKind::Info,system_info:Default::default(),board_hidden:false};
   for tab in NAVIGATION.iter().map(|(tab,_,_,_)|*tab).chain([Tab::Doctor,Tab::Developer,Tab::Bundle,Tab::Dependencies,Tab::Settings]) {
    app.readiness_page=tab;
    for width in [tool_window::design(tab).minimum[0],tool_window::design(tab).size[0]] {
@@ -173,7 +176,7 @@ impl eframe::App for App {
  }
  #[test] fn dashboard_has_three_columns_and_two_rows_with_system_card(){
   let root=std::env::temp_dir().join(format!("board-grid-{}",setupscope_core::util::new_id()));
-  let mut app=App{store:Store::at(&root).unwrap(),settings:Settings::default(),devcheck:Default::default(),readiness:Default::default(),tool_windows:vec![],readiness_page:Tab::ProjectReadiness,status:String::new(),system_info:Default::default(),board_hidden:false};
+  let mut app=App{store:Store::at(&root).unwrap(),settings:Settings::default(),devcheck:Default::default(),readiness:Default::default(),tool_windows:vec![],readiness_page:Tab::ProjectReadiness,status:String::new(),status_kind:StatusKind::Info,system_info:Default::default(),board_hidden:false};
   for width in [740.,960.] {
    let ctx=egui::Context::default();theme::apply(&ctx,false);let mut output=None;
    for _ in 0..2 {output=Some(ctx.run(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(width,900.))),..Default::default()},|ctx|app.ui_dashboard(ctx)));}
@@ -192,7 +195,7 @@ impl eframe::App for App {
  #[test] fn repeated_open_reuses_tool_and_detail_window() {
   let root=std::env::temp_dir().join(format!("tool-singleton-{}",setupscope_core::util::new_id()));
   let ctx=egui::Context::default();
-  let mut app=App{store:Store::at(&root).unwrap(),settings:Settings::default(),devcheck:Default::default(),readiness:Default::default(),tool_windows:vec![],readiness_page:Tab::ProjectReadiness,status:String::new(),system_info:Default::default(),board_hidden:false};
+  let mut app=App{store:Store::at(&root).unwrap(),settings:Settings::default(),devcheck:Default::default(),readiness:Default::default(),tool_windows:vec![],readiness_page:Tab::ProjectReadiness,status:String::new(),status_kind:StatusKind::Info,system_info:Default::default(),board_hidden:false};
   for &(t,_,_,_) in NAVIGATION {app.open_tool(&ctx,t);app.open_tool(&ctx,t);}
   app.open_tool(&ctx,Tab::Doctor);app.open_tool(&ctx,Tab::Developer);app.open_tool(&ctx,Tab::Bundle);
   assert_eq!(app.tool_windows.len(),5);
@@ -203,7 +206,7 @@ impl eframe::App for App {
  }
  #[test] fn compact_tool_controls_fit_minimum_window_widths() {
   let root=std::env::temp_dir().join(format!("tool-widths-{}",setupscope_core::util::new_id()));
-  let mut app=App{store:Store::at(&root).unwrap(),settings:Settings::default(),devcheck:Default::default(),readiness:Default::default(),tool_windows:vec![],readiness_page:Tab::ProjectReadiness,status:String::new(),system_info:Default::default(),board_hidden:false};
+  let mut app=App{store:Store::at(&root).unwrap(),settings:Settings::default(),devcheck:Default::default(),readiness:Default::default(),tool_windows:vec![],readiness_page:Tab::ProjectReadiness,status:String::new(),status_kind:StatusKind::Info,system_info:Default::default(),board_hidden:false};
   for tab in NAVIGATION.iter().map(|(tab,_,_,_)|*tab).chain([Tab::Doctor,Tab::Developer,Tab::Bundle,Tab::Dependencies,Tab::Settings]) {
    app.readiness_page=tab;
    let ctx=egui::Context::default();ctx.enable_accesskit();theme::apply(&ctx,false);
@@ -223,7 +226,7 @@ impl eframe::App for App {
  }
  #[test] fn focusing_readiness_preserves_dependency_review_context() {
   let root=std::env::temp_dir().join(format!("dependency-focus-{}",setupscope_core::util::new_id()));
-  let mut app=App{store:Store::at(&root).unwrap(),settings:Settings::default(),devcheck:Default::default(),readiness:Default::default(),tool_windows:vec![],readiness_page:Tab::ProjectReadiness,status:String::new(),system_info:Default::default(),board_hidden:false};
+  let mut app=App{store:Store::at(&root).unwrap(),settings:Settings::default(),devcheck:Default::default(),readiness:Default::default(),tool_windows:vec![],readiness_page:Tab::ProjectReadiness,status:String::new(),status_kind:StatusKind::Info,system_info:Default::default(),board_hidden:false};
   let ctx=egui::Context::default();app.open_tool(&ctx,Tab::Dependencies);app.open_tool(&ctx,Tab::ProjectReadiness);
   assert_eq!(app.readiness_page,Tab::Dependencies);assert_eq!(app.tool_windows,vec![Tab::ProjectReadiness]);
   drop(app);std::fs::remove_dir_all(root).unwrap();
@@ -231,7 +234,7 @@ impl eframe::App for App {
  #[test] fn diagnostic_details_share_readiness_window() {for t in [Tab::Doctor,Tab::Developer,Tab::Bundle,Tab::Dependencies]{assert_eq!(t.owner(),Tab::ProjectReadiness);}}
  #[test] fn board_returns_without_closing_tools_and_last_close_restores_it() {
   let root=std::env::temp_dir().join(format!("board-navigation-{}",setupscope_core::util::new_id()));
-  let mut app=App{store:Store::at(&root).unwrap(),settings:Settings::default(),devcheck:Default::default(),readiness:Default::default(),tool_windows:vec![],readiness_page:Tab::ProjectReadiness,status:String::new(),system_info:Default::default(),board_hidden:false};
+  let mut app=App{store:Store::at(&root).unwrap(),settings:Settings::default(),devcheck:Default::default(),readiness:Default::default(),tool_windows:vec![],readiness_page:Tab::ProjectReadiness,status:String::new(),status_kind:StatusKind::Info,system_info:Default::default(),board_hidden:false};
   let ctx=egui::Context::default();
   app.open_tool(&ctx,Tab::ProjectReadiness);assert!(app.board_hidden);
   app.show_board(&ctx);assert!(!app.board_hidden);assert_eq!(app.tool_windows,vec![Tab::ProjectReadiness]);
@@ -244,7 +247,7 @@ impl eframe::App for App {
  }
  #[test] fn main_header_names_the_toolkit_and_settings_stays_at_right() {
   let root=std::env::temp_dir().join(format!("board-header-{}",setupscope_core::util::new_id()));
-  let mut app=App{store:Store::at(&root).unwrap(),settings:Settings::default(),devcheck:Default::default(),readiness:Default::default(),tool_windows:vec![],readiness_page:Tab::ProjectReadiness,status:String::new(),system_info:Default::default(),board_hidden:false};
+  let mut app=App{store:Store::at(&root).unwrap(),settings:Settings::default(),devcheck:Default::default(),readiness:Default::default(),tool_windows:vec![],readiness_page:Tab::ProjectReadiness,status:String::new(),status_kind:StatusKind::Info,system_info:Default::default(),board_hidden:false};
   for width in [440.,600.] {
    let ctx=egui::Context::default();theme::apply(&ctx,false);let mut output=None;
    for _ in 0..2 {output=Some(ctx.run(egui::RawInput{screen_rect:Some(egui::Rect::from_min_size(egui::Pos2::ZERO,egui::vec2(width,630.))),..Default::default()},|ctx|app.ui_main_header(ctx)));}
@@ -258,7 +261,7 @@ impl eframe::App for App {
  }
  #[test] fn alternating_tool_headers_do_not_clip_readiness_navigation() {
   let root=std::env::temp_dir().join(format!("tool-headers-{}",setupscope_core::util::new_id()));
-  let mut app=App{store:Store::at(&root).unwrap(),settings:Settings::default(),devcheck:Default::default(),readiness:Default::default(),tool_windows:vec![],readiness_page:Tab::ProjectReadiness,status:String::new(),system_info:Default::default(),board_hidden:false};
+  let mut app=App{store:Store::at(&root).unwrap(),settings:Settings::default(),devcheck:Default::default(),readiness:Default::default(),tool_windows:vec![],readiness_page:Tab::ProjectReadiness,status:String::new(),status_kind:StatusKind::Info,system_info:Default::default(),board_hidden:false};
   let ctx=egui::Context::default();theme::apply(&ctx,false);
   for i in 0..8 {
    let tab=if i%2==0 {Tab::BuildLog}else{Tab::ProjectReadiness};
