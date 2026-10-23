@@ -9,6 +9,7 @@ pub struct BundleState {
     preview: Option<String>,
     reviewed: bool,
     status: String,
+    status_error: bool,
 }
 impl Default for BundleState {
     fn default() -> Self {
@@ -21,6 +22,7 @@ impl Default for BundleState {
             preview: None,
             reviewed: false,
             status: String::new(),
+            status_error: false,
         }
     }
 }
@@ -35,6 +37,7 @@ impl BundleState {
             self.preview = None;
             self.reviewed = false;
             self.status.clear();
+            self.status_error = false;
         }
         if a11y::explain(
             ui.button(setupscope_core::i18n::t("Generate redacted preview")),
@@ -47,10 +50,12 @@ impl BundleState {
                 Ok(text) => {
                     self.preview = Some(text);
                     self.status.clear();
+                    self.status_error = false;
                 }
                 Err(e) => {
                     self.preview = None;
-                    self.status = e.to_string();
+                    self.status = format!("Could not generate the preview: {e}");
+                    self.status_error = true;
                 }
             }
         }
@@ -65,13 +70,19 @@ impl BundleState {
             a11y::explain(ui.checkbox(&mut self.reviewed, setupscope_core::i18n::t("I reviewed this exact preview for sharing")), "Review remains tied to this generated snapshot; changing sections or generating another preview clears it.");
             if a11y::explain(ui.add_enabled(self.reviewed, egui::Button::new(setupscope_core::i18n::t("Save new diagnostic bundle…"))), "Save exactly the preview as a new JSON file. Existing files are never overwritten; no upload occurs.").clicked() {
                 if let Some(path) = widgets::save_file("Save redacted diagnostic bundle", "SetupScope-diagnostics.json", "JSON", "json") {
-                    self.status = match diagnostic_bundle::export(&path, text) {
-                        Ok(()) => "Saved locally. Nothing uploaded.".into(),
-                        Err(e) => format!("Save failed: {e:#}. Choose a new filename and an accessible folder."),
+                    let (status, status_error) = match diagnostic_bundle::export(&path, text) {
+                        Ok(()) => ("Saved locally. Nothing uploaded.".into(), false),
+                        Err(e) => (format!("Save failed: {e:#}. Choose a new filename and an accessible folder."), true),
                     };
+                    self.status = status;
+                    self.status_error = status_error;
                 }
             }
         }
-        ui.label(setupscope_core::i18n::t(&self.status));
+        if self.status_error {
+            ui.label(egui::RichText::new(format!("✖ {}", setupscope_core::i18n::t(&self.status))).color(super::theme::BAD));
+        } else {
+            ui.label(setupscope_core::i18n::t(&self.status));
+        }
     }
 }

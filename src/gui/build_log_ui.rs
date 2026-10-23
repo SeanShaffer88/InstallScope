@@ -90,7 +90,7 @@ impl BuildLogState {
                 .request_repaint_after(std::time::Duration::from_millis(150));
         }
         if let Some(error) = &self.error {
-            ui.label(setupscope_core::i18n::t(&format!("{error} Previous report, if any, is retained.")));
+            ui.colored_label(super::theme::BAD, setupscope_core::i18n::t(&format!("✖ {error} Previous report, if any, is retained.")));
         }
         if let Some(report) = &self.report {
             if self.report_path.as_deref() != Some(self.path.as_str()) {

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Failures are no longer styled like ordinary status messages: errors show with a ✖ in the error colour, and error messages say what could not be done.
+
 ## 1.0.0.0 — local release package
 
 - Six-card 3×2 board with passive System And OS information and top-right tool return buttons.

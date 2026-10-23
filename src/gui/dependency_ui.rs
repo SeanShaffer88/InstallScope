@@ -24,6 +24,7 @@ pub struct DependencyState {
     job: Option<Job<Result<Outcome, String>>>,
     installing: bool,
     status: String,
+    status_error: bool,
     receipts: Vec<Receipt>,
 }
 impl Default for DependencyState {
@@ -47,6 +48,7 @@ impl Default for DependencyState {
             job: None,
             installing: false,
             status: String::new(),
+            status_error: false,
             receipts: vec![],
         }
     }
@@ -75,6 +77,7 @@ impl DependencyState {
             work(p).map_err(|e| format!("{e:#}"))
         }));
         self.status.clear();
+        self.status_error = false;
     }
     fn preset(&mut self, packages: &[dependencies::Package]) {
         self.selected.clear();
@@ -101,18 +104,20 @@ impl DependencyState {
             self.job = None;
             self.installing = false;
             match done {
-                Ok(Outcome::Message(s)) => self.status = s,
+                Ok(Outcome::Message(s)) => { self.status = s; self.status_error = false; }
                 Ok(Outcome::Review(r)) => {
                     self.review = Some(r);
                     self.reviewed = false;
                     self.status =
                         "Review prepared from verified local installer. Nothing launched.".into();
+                    self.status_error = false;
                 }
                 Ok(Outcome::Receipts(r)) => {
                     self.receipts = r;
                     self.status="Loaded local installation receipts. Unknown/pending outcomes require vendor inspection before retry.".into();
+                    self.status_error = false;
                 }
-                Err(e) => self.status = format!("Stopped: {e}"),
+                Err(e) => { self.status = format!("Stopped: {e}"); self.status_error = true; }
             };
         }
         let catalog = match dependencies::catalog() {
@@ -206,7 +211,11 @@ impl DependencyState {
         }
         if !self.status.is_empty() {
             ui.separator();
-            ui.add(egui::Label::new(setupscope_core::i18n::t(&self.status)).wrap().selectable(true));
+            if self.status_error {
+                ui.add(egui::Label::new(egui::RichText::new(format!("✖ {}", setupscope_core::i18n::t(&self.status))).color(super::theme::BAD)).wrap().selectable(true));
+            } else {
+                ui.add(egui::Label::new(setupscope_core::i18n::t(&self.status)).wrap().selectable(true));
+            }
         }
     }
 }

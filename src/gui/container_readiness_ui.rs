@@ -48,7 +48,7 @@ impl ContainerState {
                 .request_repaint_after(std::time::Duration::from_millis(150));
         }
         if let Some(error) = &self.error {
-            ui.label(setupscope_core::i18n::t(error));
+            ui.colored_label(super::theme::BAD, setupscope_core::i18n::t(&format!("✖ {error}")));
         }
         if let Some(text) = &self.text {
             if a11y::explain(ui.button(setupscope_core::i18n::t("Copy host readiness report (contains local paths)")), "Explicit clipboard copy is unredacted. Review before sharing; diagnostic bundles do not include this report.").clicked() { ui.ctx().copy_text(text.clone()); }
