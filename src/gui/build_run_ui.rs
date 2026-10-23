@@ -16,6 +16,8 @@ pub struct RunState {
     acknowledged: bool,
     job: Option<Job<Result<ResultValue, String>>>,
     status: String,
+    status_error: bool,
+    status_context: &'static str,
     last_log: Option<PathBuf>,
 }
 impl Default for RunState {
@@ -31,6 +33,8 @@ impl Default for RunState {
             acknowledged: false,
             job: None,
             status: String::new(),
+            status_error: false,
+            status_context: "",
             last_log: None,
         }
     }
@@ -55,6 +59,7 @@ impl RunState {
         self.review = None;
         self.acknowledged = false;
         self.status = "Inputs changed or review discarded; prepare a fresh execution review.".into();
+        self.status_error = false;
     }
     fn request(&self) -> Request {
         Request {
@@ -76,6 +81,7 @@ impl RunState {
             work(p).map_err(|e| format!("{e:#}"))
         }));
         self.status.clear();
+        self.status_error = false;
     }
     pub(super) fn ui(&mut self, ui: &mut egui::Ui, root: &Path) -> Option<PathBuf> {
         if self.logs.is_empty() {
@@ -88,12 +94,14 @@ impl RunState {
                     self.review = Some(r);
                     self.acknowledged = false;
                     self.status = "Review ready. Nothing executed.".into();
+                    self.status_error = false;
                 }
                 Ok(ResultValue::Run(r)) => {
                     self.status = r.summary;
+                    self.status_error = false;
                     self.last_log = Some(r.log);
                 }
-                Err(e) => self.status = e,
+                Err(e) => { self.status = format!("{}: {e}", self.status_context); self.status_error = true; }
             }
         }
         let mut selected_log = None;
@@ -117,19 +125,19 @@ impl RunState {
                 changed|=ui.add(egui::TextEdit::multiline(&mut self.arguments).desired_rows(3).desired_width(ui.available_width()).char_limit(16000)).labelled_by(id).on_hover_text(setupscope_core::i18n::t("Do not add shell quotes. Spaces stay within the argument. Blank lines represent an empty argument. No pipes, substitutions or shell operators are interpreted by SetupScope; the chosen executable interprets its own arguments.")).changed();
                 ui.horizontal(|ui|{let id=ui.label(setupscope_core::i18n::t("Timeout (Seconds)")).id;changed|=ui.add(egui::DragValue::new(&mut self.timeout).range(1..=7200)).labelled_by(id).on_hover_text(setupscope_core::i18n::t("At the deadline, stop the contained process tree. Does not undo changes. Maximum two hours.")).changed();});
                 if changed{self.invalidate();}
-                if a11y::explain(ui.button(setupscope_core::i18n::t("Prepare Execution Review")),"Validate local paths and hold the selected executable. Nothing executes until separate acknowledgment and Run.").clicked(){self.invalidate();let request=self.request();self.start(ui.ctx(),move|_|build_run::review(request).map(ResultValue::Review));}
+                if a11y::explain(ui.button(setupscope_core::i18n::t("Prepare Execution Review")),"Validate local paths and hold the selected executable. Nothing executes until separate acknowledgment and Run.").clicked(){self.invalidate();self.status_context = "Could not prepare the execution review";let request=self.request();self.start(ui.ctx(),move|_|build_run::review(request).map(ResultValue::Review));}
                 if let Some(review)=&self.review {
                     ui.small(setupscope_core::i18n::t("Original Review: Commands, Paths And Vendor Evidence Are Preserved"));
                     egui::ScrollArea::vertical().id_salt("run_review").max_height(160.).show(ui,|ui|{ui.add(egui::Label::new(review.text()).wrap().selectable(true));});
                     ui.checkbox(&mut self.acknowledged,setupscope_core::i18n::t("I Reviewed The Code, Tool, Arguments And Side Effects")).on_hover_text(setupscope_core::i18n::t("Authorizes only this reviewed run. Any input change clears approval. This is not a sandbox."));
                     ui.horizontal_wrapped(|ui|{
-                        if ui.add_enabled(self.acknowledged,egui::Button::new(setupscope_core::i18n::t("Run Reviewed Command"))).on_hover_text(setupscope_core::i18n::t("Executes now with your current privileges. Writes a local log and may modify project files or access the network.")).clicked(){let review=self.review.take().expect("review shown");self.acknowledged=false;self.start(ui.ctx(),move|p|build_run::run(review,true,p).map(ResultValue::Run));}
+                        if ui.add_enabled(self.acknowledged,egui::Button::new(setupscope_core::i18n::t("Run Reviewed Command"))).on_hover_text(setupscope_core::i18n::t("Executes now with your current privileges. Writes a local log and may modify project files or access the network.")).clicked(){let review=self.review.take().expect("review shown");self.acknowledged=false;self.status_context = "Could not run the reviewed command";self.start(ui.ctx(),move|p|build_run::run(review,true,p).map(ResultValue::Run));}
                         if ui.button(setupscope_core::i18n::t("Discard Review")).on_hover_text(setupscope_core::i18n::t("Release the held executable without running.")).clicked(){self.invalidate();}
                     });
                 }
             });
             if let Some(job)=&self.job{ui.spinner();if ui.button(setupscope_core::i18n::t("Cancel Pending / Running Work")).on_hover_text(setupscope_core::i18n::t("Cancels preparation or stops the contained build process tree. Already completed side effects remain.")).clicked(){job.cancel();}ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));}
-            if !self.status.is_empty(){ui.add(egui::Label::new(setupscope_core::i18n::t(&self.status)).wrap().selectable(true));}
+            if !self.status.is_empty(){if self.status_error {ui.add(egui::Label::new(egui::RichText::new(format!("✖ {}", setupscope_core::i18n::t(&self.status))).color(super::theme::BAD)).wrap().selectable(true));} else {ui.add(egui::Label::new(setupscope_core::i18n::t(&self.status)).wrap().selectable(true));}}
             if let Some(log)=&self.last_log{if ui.button(setupscope_core::i18n::t("Use Captured Log For Triage")).on_hover_text(setupscope_core::i18n::t("Select the last captured log in saved-log triage. Inspection remains a separate explicit action. Logs can contain secrets.")).clicked(){selected_log=Some(log.clone());}}
         });
         selected_log
