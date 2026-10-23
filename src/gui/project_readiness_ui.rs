@@ -207,7 +207,7 @@ impl App {
             if accepted {
                 self.open_tool(ctx, route(destination));
             } else {
-                self.set_status("A linked diagnostic is still running. Finish or cancel it explicitly before replacing its evidence.");
+                self.set_error_status("A linked diagnostic is still running. Finish or cancel it explicitly before replacing its evidence.");
             }
         }
     }
