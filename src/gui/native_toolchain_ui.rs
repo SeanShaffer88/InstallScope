@@ -20,6 +20,8 @@ pub struct NativeState {
     job: Option<Job<Result<Value, String>>>,
     launching: bool,
     status: String,
+    status_error: bool,
+    status_context: &'static str,
 }
 impl Default for NativeState {
     fn default() -> Self {
@@ -38,6 +40,8 @@ impl Default for NativeState {
             job: None,
             launching: false,
             status: String::new(),
+            status_error: false,
+            status_context: "",
         }
     }
 }
@@ -53,6 +57,7 @@ impl NativeState {
         self.review = None;
         self.acknowledged = false;
         self.status = "Inputs changed or review discarded; prepare a fresh native setup review.".into();
+        self.status_error = false;
     }
     fn start(
         &mut self,
@@ -65,6 +70,7 @@ impl NativeState {
             work(p).map_err(|e| format!("{e:#}"))
         }));
         self.status.clear();
+        self.status_error = false;
     }
     pub(super) fn ui(&mut self, ui: &mut egui::Ui, root: &Path) {
         if let Some(done) = self.job.as_ref().and_then(Job::poll) {
@@ -75,9 +81,10 @@ impl NativeState {
                     self.review = Some(*r);
                     self.acknowledged = false;
                     self.status="Microsoft publisher verified. Review the observed hash, channel and selected workload before launch.".into();
+                    self.status_error = false;
                 }
-                Ok(Value::Message(m)) => self.status = m,
-                Err(e) => self.status = e,
+                Ok(Value::Message(m)) => { self.status = m; self.status_error = false; }
+                Err(e) => { self.status = format!("{}: {e}", self.status_context); self.status_error = true; }
             }
         }
         super::widgets::collapsing_header(ui,setupscope_core::i18n::t("MSVC / Windows SDK / CMake / Ninja — Vendor Setup")).show(ui,|ui|{
@@ -101,18 +108,18 @@ impl NativeState {
                 });
                 ui.horizontal_wrapped(|ui|{let id=ui.label(setupscope_core::i18n::t("Layout Language")).id;egui::ComboBox::from_id_salt("native_language").selected_text(&self.language).show_ui(ui,|ui|{for l in["en-US","de-DE","es-ES","fr-FR","ja-JP","zh-CN"]{changed|=ui.selectable_value(&mut self.language,l.into(),l).changed();}}).response.labelled_by(id).on_hover_text(setupscope_core::i18n::t("Language packages requested when creating a layout. Does not change Windows language."));changed|=ui.checkbox(&mut self.elevated,setupscope_core::i18n::t("Request Administrator Prompt")).on_hover_text(setupscope_core::i18n::t("Uses Windows runas after review. You handle UAC yourself; no credentials are stored. Vendor setup can independently request elevation.")).changed();});
                 if changed{self.invalidate();}
-                if ui.button(setupscope_core::i18n::t("Verify Publisher And Prepare Native Setup Review")).on_hover_text(setupscope_core::i18n::t("Hash the local bootstrapper and require a valid cached Microsoft signature. Does not download, launch or accept vendor terms.")).clicked(){self.invalidate();let options=Options{bootstrapper:PathBuf::from(&self.bootstrapper),layout:PathBuf::from(&self.layout),action:self.action,arm64:self.arm64,recommended:self.recommended,cmake:self.cmake,sdk:self.sdk,language:self.language.clone(),elevated:self.elevated};self.start(ui.ctx(),move|p|native::review(options,p).map(|r|Value::Review(Box::new(r))));}
+                if ui.button(setupscope_core::i18n::t("Verify Publisher And Prepare Native Setup Review")).on_hover_text(setupscope_core::i18n::t("Hash the local bootstrapper and require a valid cached Microsoft signature. Does not download, launch or accept vendor terms.")).clicked(){self.invalidate();self.status_context = "Could not prepare the native setup review";let options=Options{bootstrapper:PathBuf::from(&self.bootstrapper),layout:PathBuf::from(&self.layout),action:self.action,arm64:self.arm64,recommended:self.recommended,cmake:self.cmake,sdk:self.sdk,language:self.language.clone(),elevated:self.elevated};self.start(ui.ctx(),move|p|native::review(options,p).map(|r|Value::Review(Box::new(r))));}
                 if let Some(review)=&self.review{
                     egui::ScrollArea::vertical().id_salt("native_setup_review").max_height(180.).show(ui,|ui|{ui.add(egui::Label::new(review.text()).wrap().selectable(true));});
                     ui.checkbox(&mut self.acknowledged,setupscope_core::i18n::t("I Reviewed The Command, Vendor Terms, Disk Usage And Recovery")).on_hover_text(setupscope_core::i18n::t("Authorizes this one vendor operation. Review the channel and components in Microsoft's visible installer; changes cannot be automatically undone."));
                     ui.horizontal_wrapped(|ui|{
-                        if ui.add_enabled(self.acknowledged,egui::Button::new(setupscope_core::i18n::t("Launch Reviewed Microsoft Setup"))).on_hover_text(setupscope_core::i18n::t("Rechecks the held file hash and Microsoft signature, records a receipt, then opens the interactive vendor UI.")).clicked(){let review=self.review.take().expect("review exists");self.acknowledged=false;self.launching=true;let root=root.to_path_buf();self.start(ui.ctx(),move|p|native::launch(&root,review,true,p).map(Value::Message));}
+                        if ui.add_enabled(self.acknowledged,egui::Button::new(setupscope_core::i18n::t("Launch Reviewed Microsoft Setup"))).on_hover_text(setupscope_core::i18n::t("Rechecks the held file hash and Microsoft signature, records a receipt, then opens the interactive vendor UI.")).clicked(){let review=self.review.take().expect("review exists");self.acknowledged=false;self.launching=true;self.status_context = "Could not launch Microsoft setup";let root=root.to_path_buf();self.start(ui.ctx(),move|p|native::launch(&root,review,true,p).map(Value::Message));}
                         if ui.button(setupscope_core::i18n::t("Discard Native Review")).on_hover_text(setupscope_core::i18n::t("Release the held bootstrapper without launching.")).clicked(){self.invalidate();}
                     });
                 }
             });
             if let Some(job)=&self.job{ui.spinner();ui.label(job.progress.phase.lock().unwrap().clone());if self.launching{ui.label(setupscope_core::i18n::t("Complete or cancel Microsoft's UI. Closing SetupScope does not cancel vendor work."));}else if ui.button(setupscope_core::i18n::t("Cancel Publisher Verification")).on_hover_text(setupscope_core::i18n::t("Stop hashing at the next checkpoint. No vendor process has launched.")).clicked(){job.cancel();}ui.ctx().request_repaint_after(std::time::Duration::from_millis(150));}
-            if !self.status.is_empty(){ui.add(egui::Label::new(setupscope_core::i18n::t(&self.status)).wrap().selectable(true));}
+            if !self.status.is_empty(){if self.status_error {ui.add(egui::Label::new(egui::RichText::new(format!("✖ {}", setupscope_core::i18n::t(&self.status))).color(super::theme::BAD)).wrap().selectable(true));} else {ui.add(egui::Label::new(setupscope_core::i18n::t(&self.status)).wrap().selectable(true));}}
         });
     }
 }
