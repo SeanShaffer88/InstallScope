@@ -35,3 +35,7 @@ Live checks cover all five tools, saved-log triage, redacted preview, review
 preparation/discard, multi-window navigation and app/tool singleton behavior.
 German/Chinese/Japanese boards and CJK settings are captured. Independent
 native-speaker review remains a limit. See CLI.md and LOCALIZATION.md.
+
+2026-10-24: This status describes the 1.0.0.0 package revision 5d6268b. Later
+commits (README rewrite, failure presentation) did not re-run these checks; see
+AUDIT_INTEGRATION_READINESS.md and RELEASE-VALIDATION.md for the current record.

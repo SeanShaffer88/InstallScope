@@ -28,6 +28,11 @@ Proxies/SDK hosts may remain unknown. No tool is executed to discover its versio
 Ports include TCP listeners and UDP bound endpoints; page numbers start at zero
 with 50 rows per page. Use `-` for an omitted port or PID filter.
 
+`languages` lists the built-in interface codes and names (`es`, `de`, `fr`,
+`pt-BR`, `it`, `ru`, `zh-CN`, `ja`, `ko`, `pl`) for scripts. The CLI's help,
+reports and identifiers stay English; the desktop interface applies the saved
+language choice.
+
 ## Dependencies
 
 ```powershell

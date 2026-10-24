@@ -31,4 +31,4 @@ Copy Readiness Summary is an explicit clipboard action. It contains project/log 
 
 Automated coverage includes non-execution/non-write behavior, raw-log exclusion, missing log failure preservation, cancellation/input validation, accessible explicit controls, keyboard scan requests, stale-input/failed-refresh invalidation and refusal to replace busy diagnostic evidence. Windows visual checks, packaged executable smoke and suite results are recorded in LOCAL-STATUS.txt. Full screen-reader/DPI, broad OS/architecture and vendor recovery acceptance remain separate release gates.
 
-The Workflow Board fills the dashboard without a left sidebar. Its searchable cards include every retained tool and Settings; menus and keyboard shortcuts remain available.
+The Workflow Board fills the dashboard without a left sidebar: six cards in three columns and two rows (the five tools plus the read-only System And OS card), with Settings at the far right of the header. There is no card search. Each card opens its tool in its own window, and the tool's top-right Workflow Board button restores the board without closing any tool or stopping its work.

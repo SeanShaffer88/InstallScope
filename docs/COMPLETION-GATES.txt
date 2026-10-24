@@ -28,3 +28,8 @@ Follow-up: independent second-agent review of 6,000 translations completed; 80
 wording fixes and integrity/layout reruns passed. Clean-host harness passed 12
 checks plus empty-module-path and tampered-hash cases. A real clean Windows VM
 and human native-speaker review remain unavailable; see CLEAN-MACHINE.md.
+
+Scope note (2026-10-24): these gates and counts describe the 1.0.0.0 package
+revision 5d6268b. The later README rewrite and failure-presentation change did
+not re-run packaging, installer or isolated-host checks. Current disposition and
+remaining unverified limits: AUDIT_INTEGRATION_READINESS.md.

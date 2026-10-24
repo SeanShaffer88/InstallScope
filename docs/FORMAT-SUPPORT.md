@@ -1,5 +1,12 @@
 # Installer and archive support
 
+> **Archival record (updated 2026-10-24).** This matrix was verified on the
+> pre-restructure product. Installer monitoring, PortableApps Forge capture,
+> transfer restore and uninstall are retired workflows with no current interface
+> route, although their ZIP and `.setupscope` readers remain compiled library
+> code. The format limits still apply to that retained code; the workflow column
+> does not describe the shipped tools.
+
 Local verification: Windows 11 x64, 2026-10-21. This matrix describes specific
 workflows, not a promise to handle every file bearing an extension. No vendor
 installers were executed on the owner's PC for this milestone.

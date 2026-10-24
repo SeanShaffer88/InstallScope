@@ -1,5 +1,13 @@
 # Developer command center and workspaces
 
+> **Archival record (updated 2026-10-24).** This page describes the earlier
+> single-window command center, its desktop scratch workspaces and the App
+> Migration entry point. Those surfaces are retired: the compiled interface is
+> the six-card Workflow Board with five tool windows, and the searchable
+> dashboard, scratch and migration code is not linked into it. Kept as a dated
+> design record, not as a description of current behavior. Current navigation:
+> the README and [Project Readiness](PROJECT-READINESS.md).
+
 The main window is a searchable tool dashboard. Each tool opens in its own native desktop window using the existing desktop renderer. Several tools can be open at once. Selecting an already open tool focuses its window instead of starting another instance. Window geometry can be adjusted independently.
 
 Closing a tool hides its window and preserves its in-memory inputs, reports and jobs for the current SetupScope session. It does not cancel work. Reopening returns to that state. These in-memory sessions are not persisted across application exits. Closing the main SetupScope window closes all tool windows. Finish active operations before exiting.

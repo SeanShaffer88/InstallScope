@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Documentation is reconciled with the post-restructure tree: the audit and integration record now lists the closed pull requests and each retired-surface audit branch with its disposition, the developer guides point at the current tool windows, and pre-1.0 surface pages are marked archival. Packaging evidence stays scoped to the 1.0.0.0 revision.
 - Failures are no longer styled like ordinary status messages: errors show with a ✖ in the error colour, and error messages say what could not be done.
 
 ## 1.0.0.0 — local release package

@@ -1,6 +1,6 @@
 # WSL and container host readiness
 
-Developer diagnostics > WSL and container host readiness (read-only), regular UI.
+**WSL And Containers** tool window (read-only).
 Click Inspect to collect a dated, bounded host report. Cancel at a checkpoint;
 operating-system calls must finish first. Previous reports remain visible while
 refreshing or if a scan fails, and are labeled as potentially stale.

@@ -1,8 +1,8 @@
 # Project Doctor
 
-Available in the regular interface under Developer diagnostics. Expand Project
-Doctor, choose an ordinary absolute project folder, select a target and click
-Inspect project. Choosing a folder alone never starts work. Results stay in memory;
+Available in **Project Readiness → Requirements**. Choose an ordinary absolute
+project folder, select a target and inspect. The window keeps the project
+evidence it already has; choosing a folder never starts work. Choosing a folder alone never starts work. Results stay in memory;
 Copy project report is explicit and includes local paths. It is not a redacted
 diagnostic bundle. Inspection never executes scripts/tools/builds/installers,
 downloads packages, repairs files or changes the environment.

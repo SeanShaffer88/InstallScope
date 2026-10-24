@@ -18,6 +18,6 @@ Automated checks cover five-tool ownership/singletons, repeated opens, minimum-w
 
 See RELEASE-VALIDATION.md for current build evidence and exact limits; this audit is not a claim of compatibility with untested systems or every assistive technology.
 
-2026-10-22: board changed to a 3×2 grid (five tools plus passive system card); tool return buttons aligned top-right. Automated layout tests cover the grid at 740/960 logical pixels and all tool return buttons at minimum widths. New live screenshots are pending after the user stopped visual automation.
+2026-10-22: board changed to a 3×2 grid (five tools plus passive system card); tool return buttons aligned top-right. Automated layout tests cover the grid at 740/960 logical pixels and all tool return buttons at minimum widths. Refreshed live screenshots of the board, every tool window and the language previews are stored in `docs/screenshots` and referenced by the README.
 
 2026-10-22 localization polish: owned section headings pre-layout wrapped galleys because the stock collapsing header forces nonwrapping text. Compact preferred/minimum-width checks now cover every language in isolated processes with configuration sections expanded. Diagnostic previews use bounded content-driven heights, avoiding shrink feedback from the previous viewport. The environment PATH editor uses available width. Actual screen-reader/clean-machine certification remains outside this evidence.

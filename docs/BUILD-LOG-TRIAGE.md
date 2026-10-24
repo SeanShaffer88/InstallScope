@@ -1,6 +1,7 @@
 # Bounded build-log triage
 
-Developer diagnostics > Build-log triage (read-only), regular interface.
+**Build Troubleshooting** on the Workflow Board, saved-log triage section
+(read-only).
 Select one stable saved local log, then explicitly start triage. Nothing runs on
 selection. The source is opened for reading only; no build, script, installer,
 engine or suggested command is executed. Nothing is modified or uploaded.

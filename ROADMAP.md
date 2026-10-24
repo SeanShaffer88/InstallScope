@@ -24,6 +24,7 @@
 - [x] Complete owned instructions, tooltips and status templates across all ten catalogs; exact placeholders/invariants audited. Original evidence/vendor reviews remain unchanged.
 - [ ] Independent native-speaker review.
 - [x] Refresh live five-tool visual checks, CJK/settings previews and feature screenshots.
+- [x] Reconcile the post-restructure audit record and developer guides: closed PRs #45–#48, retired-surface branches with disposition, current tool navigation, archival status of pre-1.0 pages and the scope of 1.0.0.0 packaging evidence.
 
 ## Optional future work
 

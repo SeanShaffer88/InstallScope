@@ -1,5 +1,10 @@
 # Readiness checkpoint — 2026-10-21
 
+> **Dated record (annotated 2026-10-24).** This checkpoint describes the
+> single-window product and its cleanup/Canary work, which the five-tool
+> restructure later retired. Its test counts and gates belong to that revision.
+> Current scope and evidence: README, `AGENTS.md` and `RELEASE-VALIDATION.md`.
+
 ## Scope and decision
 
 Start from main at `6079cc4`. Preserve existing uncommitted Slowdown Detective
