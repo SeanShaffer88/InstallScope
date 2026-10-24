@@ -1,6 +1,6 @@
 # Redacted diagnostic bundles
 
-Developer diagnostics > Redacted diagnostic bundle (local export), regular interface.
+**Project Readiness → Export**, redacted diagnostic bundle (local export).
 
 1. Refresh the build readiness scan below if needed.
 2. Select application runtime, readiness summary and/or known tool candidate counts.

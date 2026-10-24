@@ -1,5 +1,12 @@
 # SetupScope 1.0.0.0 Local Release Package
 
+> **Evidence scope (annotated 2026-10-24).** Everything below was recorded for the
+> 1.0.0.0 package built from revision `5d6268b`. Two commits landed afterwards:
+> PR #59 rewrote the README, and PR #60 changed failure presentation and added
+> regression coverage. Neither re-ran the packaging, installer or isolated-host
+> checks, so these results stay attached to that revision and are not a
+> re-verification of the current tree.
+
 ## Scope and environment
 
 The packages target Windows 11 x64 and the five Workflow Board tools plus their integrated workflows. The recorded live host is Windows build 26300, x64. Cargo semantic version is 1.0.0; Windows product/file version is 1.0.0.0. Both portable ZIP and per-user installer are unsigned. ARM64 runtime, Windows 10 and other Windows builds are not certified. Local packaging does not itself publish a GitHub release.

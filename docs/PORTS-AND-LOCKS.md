@@ -1,7 +1,7 @@
 # Ports and file owners
 
-Initial read-only workflow implemented in the regular interface under Developer
-diagnostics > Ports and file owners (read-only). Nothing scans automatically.
+Implemented in the **Ports And Processes** tool window (read-only). Nothing
+scans automatically.
 
 ## Local endpoints
 

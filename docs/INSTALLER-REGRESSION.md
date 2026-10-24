@@ -1,5 +1,11 @@
 # Installer regression workspace
 
+> **Archival record (updated 2026-10-24).** The installer regression workspace
+> was retired by the five-tool restructure. `src/gui/regression_ui.rs` and the
+> regression core module remain as uncompiled source, and previously saved
+> evidence is preserved, but none of the workflow below is reachable from the
+> shipped interface.
+
 Status: initial guided workflow implemented in the regular interface under
 Developer diagnostics > Installer regression workspace (local evidence).
 Automated fixture/control checks pass. Real vendor lifecycle, live UI,

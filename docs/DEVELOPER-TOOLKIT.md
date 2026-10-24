@@ -1,5 +1,14 @@
 # Developer toolkit delivery plan
 
+> **Superseded scope (updated 2026-10-24).** This 2026-10-21 delivery plan is a
+> historical decision record. Its "Retained and retired" list still names
+> programs/uninstalls, browser extensions, install monitoring, storage
+> inspection, debloat and privacy controls as retained; the confirmed scope in
+> `AGENTS.md` and the README now keeps exactly five developer tools plus the
+> integrated dependency, diagnostic-export and recovery workflows. Nothing in
+> that retired list is compiled today. Read this page for provenance, not as a
+> description of current capability.
+
 Confirmed scope, 2026-10-21. All processing stays local by default. No paid
 hosting, accounts, automatic downloads, telemetry or new background service.
 These are requested development tasks, not claims of existing functionality.

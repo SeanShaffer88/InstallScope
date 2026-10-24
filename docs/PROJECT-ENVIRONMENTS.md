@@ -1,8 +1,8 @@
 # Project environment profiles
 
-Initial workflow implemented in the regular interface under Developer diagnostics
-> Project environment profiles (reviewed local workflow). This is not a sandbox,
-tool installer, activation-script runner or compatibility guarantee.
+Implemented in the **Environment Profiles** tool window (reviewed local
+workflow). This is not a sandbox, tool installer, activation-script runner or
+compatibility guarantee.
 
 ## Default: child process only
 
